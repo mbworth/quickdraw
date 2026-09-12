@@ -50,3 +50,21 @@ test('runBench scores a fake model against every case and summarize counts passe
   assert.deepEqual(s.cases, { turret: { pass: 2, n: 2 }, push: { pass: 0, n: 2 }, wave: { pass: 2, n: 2 } });
   assert.equal(s.passRate, 67); assert.equal(s.outP50, 20); assert.equal(s.calls, 6);
 });
+
+test('ashfall rules apply on the bench fixtures that embody them and pass on the prompt’s order', async () => {
+  const { rules } = await import('./bench/rules.mjs');
+  const R = Object.fromEntries(rules.map(r => [r.id, r]));
+  const s = id => by[id].fx.state;
+  assert.ok(R.turret.when(s('turret'), [], []) && !R.turret.when(s('push'), [], []), 'turret applies before one exists');
+  assert.ok(R.turret.pass([{ cmd: 'build', type: 'turret' }], [], s('turret')) && !R.turret.pass([{ cmd: 'build', type: 'depot' }], [], s('turret')));
+  const push = s('push'), m = { x: -push.myBase.x, z: -push.myBase.z };
+  assert.ok(R.push8.when(push, [], []));
+  assert.ok(R.push8.pass([{ cmd: 'move', units: ['army'], x: m.x, z: m.z, attackMove: true }], [], push) && !R.push8.pass([{ cmd: 'train' }], [], push));
+  const piece = [{ cmd: 'move', units: [1, 2], x: m.x, z: m.z, attackMove: true }];
+  assert.ok(R.wholeBall.when(push, piece, []) && !R.wholeBall.pass(piece, [], push));
+  assert.ok(R.repair.when(s('repair'), [], []) && !R.repair.when(push, [], []));
+  assert.ok(R.gatherNode.when(s('dry'), [{ cmd: 'gather', ore: null }], []) && !R.gatherNode.pass([{ cmd: 'gather', ore: null }], [], s('dry')));
+  assert.ok(R.attackVisible.when(push, [], [{ reason: 'no-target', cmd: {} }]) && !R.attackVisible.pass([], [{ reason: 'no-target', cmd: {} }]));
+  assert.ok(R.noChase.when(s('wave'), [], []) && R.noChase.pass([{ cmd: 'stop', units: ['army'] }], [], s('wave')));
+  assert.ok(R.depot.when(s('capped'), [], []) && R.depot.pass([{ cmd: 'build', type: 'depot' }], [], s('capped')));
+});

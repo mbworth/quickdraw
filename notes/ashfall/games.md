@@ -25,6 +25,7 @@ Live hub, 200 map unless noted. Prompt for each game is in `prompts/ashfall/` fr
 | 21 | 38 | sonnet, quickdraw | loss | 7:54 | game 20 config + step 7 expand fix (labels resolve on the packet's state, `idle` = idle harvesters for gather/repair, tool description names labels): 144 decisions (18.2/min), reaction p50 4.3 s / p90 8.5 s (wait 1.1 s), model p50 2.1 s, 121 out tokens, packet 423 real, 15 timeouts, kept 47.2%, **2 rejected** (14 in game 20), bad-id 12 (all `idle` with no idle harvester, now a client drop), no-op 13%, $0.60. **0 cluster labels used** (8 in game 20, 15-20 in games 15-19); ids per unit-list order p50 8, p90 13: the model lists ids that are not in the packet at all (sequential guesses like #10011, #10015, #10020, mostly alive, so the server takes them). Lost the ball at 4:00 attacking with 15 into the enemy anchor; core died at 7:54 |
 | 22 | 39 | sonnet, quickdraw | loss | 6:54 | game 20 config + `--thinking off` (step 2 game 1): 112 decisions (16.3/min), reaction p50 5.6 s / p90 8.7 s (wait 2.0 s), **model p50 2.8 s** (2.1 in game 21), **141 out tokens** (121), packet 397 real, 12 timeouts, kept 38%, 3 rejected, no-op 8%, $0.49. Without adaptive thinking the model writes more (out p90 206 vs 158) and slower per token (19.8 vs 17.5 ms); sent riflemen east in ones and twos from 1:00. Adaptive/low stays |
 | 23 | 40 | sonnet, quickdraw | **win** | 4:24 | game 20 config + `--ashfall-no-note true` (step 2 game 2): 82 decisions (18.8/min), reaction p50 5.4 s / p90 8.3 s (wait 1.4 s), model p50 2.7 s, **89 out tokens** (121), packet 396 real, 4 timeouts, kept 41.8%, 0 rejected, no-op 17%, $0.32. Output down a third; model latency did not follow (2.7 s, same as game 22's, so the API was slow this hour). Never built a turret; ball of 11 pushed at 2:55 and killed the core at 4:24, the fastest win |
+| 24 | 41 | sonnet, quickdraw | loss | 14:30 | **first full capture** (prompt, schema, raw responses in the run). Bench config: slim + fold + fields on demand + no note + **compact buildings** + expand sugar: 228 decisions (15.7/min), reaction p50 5.6 s / p90 8.7 s (wait 1.5 s), model p50 2.8 s (API slow this hour, as in 22-23), 101 out tokens, packet 467 real, 21 timeouts, kept 42.8%, 1 rejected, no-op 6%, $0.89. **Turret at 2:41, first push at 3:25 with 11 and the turret up**: the first slim game to follow rule 3 as game 15 did (bench prediction held). 25 pushes over 14 minutes, none broke through; core died at 14:30 |
 
 ## Pace
 Every Claude Code MCP call costs ~2 s client side (local stdio 1.7 s, live 2.1 s, network 0.2 s). Loop length = model gap + call + wait. Game 11 decided every 27 s.
@@ -59,6 +60,30 @@ Nine fixed states, each with the order the prompt calls for (`test/games/ashfall
 | slim + fold + fields on demand + no note + **compact buildings** (`--ashfall-compact-buildings true`: one always-on `B` line, ids and types, positions for core and turrets, hp/bld only when hurt or unfinished) | **76%** | 174 | **88** | equal to the full packet at 39% of its tokens and 66% of its output; turret 1/5 (builds the depot first at s17/18, which rule 1 also asks for) |
 
 The bench found two harness gaps the games had hidden (the `attack target:0` habit and the `idle` harvester selector) in its first run, and showed that the buildings layer, not fields, is what the prompt's build logic reads. Both fixed in expand and the encoder, no prompt change.
+
+### Trajectory replay (`bin/trajectory.mjs`, game 24 recording, every 3rd decision, 84 decisions an arm)
+| arm | agrees with the recording on command kinds | no-op | est tokens | out tokens | cost |
+|---|---|---|---|---|---|
+| the recorded config replayed on itself | 54% | 23% (recorded 30%) | 306 | 116 | $0.33 |
+| full packet (game 15 config) | 36% | 20% | 577 | 146 | $0.42 |
+
+The noise floor is the finding: with identical prompt, packet and schema the model returns the same kinds of orders on 54% of decisions. Per-decision agreement is therefore not a usable metric; arms have to be compared on rates over many decisions (no-op share, orders per decision, drop reasons, rule adherence), and a difference under ~15 points at this sample is noise. The two arms agree with each other on 36% of decisions; agreement is highest in the opening (minute 0: 6-7 of 8) and lowest in fights (minutes 2-6: 0-2 of 4-6).
+
+Rule adherence over the same rows (`test/games/ashfall/bench/rules.mjs`, pass/applies; the recording scored the same way):
+
+| rule | same config | full packet | recorded |
+|---|---|---|---|
+| turret when none and ore ≥ 110 | 1/2 | 1/2 | 1/2 |
+| depot when capped | 1/1 | 1/1 | 1/1 |
+| spend when ore ≥ 120 | 10/13 | 8/13 | 7/13 |
+| push with 8 idle and turret up | 1/10 | 5/10 | 2/10 |
+| whole ball (no pieces) | 1/10 | 6/16 | 2/8 |
+| gather with a node id | 3/6 | 5/10 | 1/5 |
+| attack only what is visible | 3/9 | 4/9 | 2/2 |
+| repair a hurt turret | 0/0 | 0/0 | 0/0 |
+| no chase under 8 | 18/23 | 17/23 | 19/23 |
+
+At 84 decisions most rules apply fewer than 15 times, so only `noChase` and `spend` are read at this sample; the push and gather rows need `--every 1` (three times the calls) or several recordings. The same-config arm is the tool's calibration: its rates should match the recording's, and mostly do (the attack row is the exception: 9 attacks against 2 recorded, worth a look).
 
 ## Opponent profile
 Scout ~25 s, riflemen from ~90 s, waves of 6-9 every 15-40 s from ~3 min, from the map-centre side onto the nearest ore field, then parks ~11 from the core. Base is empty right after a wave fails.

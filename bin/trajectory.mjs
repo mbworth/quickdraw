@@ -5,6 +5,9 @@
 // node bin/trajectory.mjs <run.jsonl> [--every 1] [--from N] [--to N] [--out arm.json] [--model M] [--prompt file]
 //                         [--slim | --full-every N] [--packet-max n] [--thinking …] [--effort …] [--<game>-* …] [--dry]
 // node bin/trajectory.mjs --compare a.json b.json …
+// node bin/trajectory.mjs --rescore a.json … : re-score stored orders against the current rules (free).
+// Rules: test/games/<game>/bench/rules.mjs, per decision {id, when(state, sent, dropped), pass(sent, dropped, state)}; the arm and the
+// recording are both scored, so the recording is the reference column.
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -20,6 +23,18 @@ const BOOL = ['dry', 'slim'];
 const snapOf = (rows, ref) => { const r = rows[ref - 1]; if (!r || r.kind !== 'state') throw new Error(`ref ${ref} is not a state line`); return { header: r.header, native: r.native, t: r.st, idx: r.idx }; };
 const kinds = cmds => cmds.map(c => c.cmd).sort().join(',');
 
+export async function loadRules(game) {
+  const f = path.join(ROOT, `test/games/${game}/bench/rules.mjs`);
+  return fs.existsSync(f) ? (await import(f)).rules : [];
+}
+
+// scoreRules(rows, stateOf, rules) → {arm:{id:{applies, pass}}, recorded:{…}}; stateOf(n) is the decision's native state.
+export function scoreRules(rows, stateOf, rules) {
+  const tally = pick => { const out = {}; for (const r of rules) out[r.id] = { applies: 0, pass: 0 }; for (const row of rows) { const s = stateOf(row.n); if (!s) continue; const { sent, dropped } = pick(row); for (const r of rules) if (r.when(s, sent, dropped)) { out[r.id].applies++; if (r.pass(sent, dropped, s)) out[r.id].pass++; } } return out; };
+  return { arm: tally(r => ({ sent: r.stop === 'tool_use' ? r.sent : [], dropped: r.dropped })), recorded: tally(r => ({ sent: r.recorded, dropped: r.recordedDropped || [] })) };
+}
+export const stateOfRun = rows => { const calls = new Map(rows.filter(r => r.kind === 'call').map(c => [c.n, c])); return n => { const c = calls.get(n); const s = c && rows[c.stateRef - 1]; return s?.kind === 'state' ? s.native : null; }; };
+
 // replayTrajectory({rows, adapter, callModel, flags, divisor, clock, every, from, to, log}) → rows [{n, gt, est, out, latencyMs, cost, stop, recorded, sent, dropped, same}]
 export async function replayTrajectory({ rows, adapter, callModel, flags = {}, divisor, clock, every = 1, from = 1, to = Infinity, log = () => {} }) {
   const cfg = rows[0];
@@ -33,7 +48,7 @@ export async function replayTrajectory({ rows, adapter, callModel, flags = {}, d
     const res = await callModel({ packet: pkt.text });
     const { keep, dropped } = applyOrders({ adapter, orders: res.act ? res.orders : [], state, clock });
     const recorded = decisions.get(call.n)?.sent || [];
-    const row = { n: call.n, gt: state.header?.clocks?.game ?? null, est: pkt.estTokens, out: res.usage?.output_tokens ?? null, latencyMs: res.latencyMs, cost: res.cost || 0, stop: res.stop, recorded, sent: keep, dropped, same: kinds(keep) === kinds(recorded) };
+    const row = { n: call.n, gt: state.header?.clocks?.game ?? null, est: pkt.estTokens, out: res.usage?.output_tokens ?? null, latencyMs: res.latencyMs, cost: res.cost || 0, stop: res.stop, recorded, recordedDropped: decisions.get(call.n)?.dropped || [], sent: keep, dropped, same: kinds(keep) === kinds(recorded) };
     out.push(row);
     log(`n=${call.n} ${row.same ? 'same' : 'DIFF'} ${res.latencyMs} ms out=${row.out ?? '-'} rec[${kinds(recorded)}] new[${kinds(keep)}]`);
   }
@@ -64,11 +79,30 @@ function compare(files) {
   for (const k of keys) console.log([k.padEnd(26), ...arms.map(a => String(a.summary[k]).padStart(14))].join(''));
   const reasons = [...new Set(arms.flatMap(a => Object.keys(a.summary.drops)))];
   for (const r of reasons) console.log([('drop:' + r).padEnd(26), ...arms.map(a => String(a.summary.drops[r] || 0).padStart(14))].join(''));
+  const ruleIds = [...new Set(arms.flatMap(a => Object.keys(a.rules?.arm || {})))];
+  if (ruleIds.length) {
+    const cell = t => (t ? `${t.pass}/${t.applies}` : '-');
+    console.log(['rule (pass/applies)'.padEnd(26), ...arms.map(a => a.name.slice(0, 14).padStart(14)), '      recorded'].join(''));
+    for (const id of ruleIds) console.log([('rule:' + id).padEnd(26), ...arms.map(a => cell(a.rules.arm[id]).padStart(14)), cell(arms[0].rules.recorded[id]).padStart(14)].join(''));
+  }
+}
+
+async function rescore(files) {
+  for (const f of files) {
+    const d = JSON.parse(fs.readFileSync(f, 'utf8'));
+    const runFile = d.arm.runPath || path.join(ROOT, 'runs', d.arm.run);
+    const rows = readRun(runFile);
+    const rules = await loadRules(rows[0].game);
+    d.rules = scoreRules(d.rows, stateOfRun(rows), rules);
+    fs.writeFileSync(f, JSON.stringify(d, null, 1));
+    console.error(`${path.basename(f)}: ${Object.entries(d.rules.arm).map(([k, v]) => `${k} ${v.pass}/${v.applies}`).join('  ')}`);
+  }
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
   const argv = process.argv.slice(2);
   if (argv[0] === '--compare') { compare(argv.slice(1)); process.exit(0); }
+  if (argv[0] === '--rescore') { await rescore(argv.slice(1)); process.exit(0); }
   const file = argv.find(a => !a.startsWith('--'));
   if (!file) { console.error('usage: trajectory <run.jsonl> [--every k] [--out file] [arm flags…] | --compare a.json b.json…'); process.exit(64); }
   const rest = argv.filter(a => a !== file);
@@ -87,10 +121,11 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.a
   const callModel = flags.dry
     ? async () => ({ act: false, orders: [], note: null, usage: null, stop: 'dry', latencyMs: 0, cost: 0 })
     : await modelFor({ adapter, model, system, thinking: flags.thinking ?? cfg.thinking, effort: flags.effort ?? cfg.effort, decisionDeadlineMs: flags.decisionDeadline ?? 20000, clock });
-  const arm = { run: path.basename(file), model, prompt: sha(system).slice(0, 12), schema: sha(JSON.stringify(adapter.tool)).slice(0, 12), flags: redact(flags), gameOpts: redact(opts) };
+  const arm = { run: path.basename(file), runPath: path.resolve(file), model, prompt: sha(system).slice(0, 12), schema: sha(JSON.stringify(adapter.tool)).slice(0, 12), flags: redact(flags), gameOpts: redact(opts) };
   console.error(`trajectory ${arm.run} every ${flags.every ?? 1}, prompt ${arm.prompt} schema ${arm.schema} ${flags.slim ? 'slim' : `full-every ${flags.fullEvery ?? cfg.fullEvery ?? 0}`} ${Object.keys(opts).join(',')}`);
   const out = await replayTrajectory({ rows, adapter, callModel, flags, divisor: mod.divisor ?? cfg.divisor ?? 3.5, clock, every: flags.every ?? 1, from: flags.from ?? 1, to: flags.to ?? Infinity, log: m => console.error(m) });
   const summary = summarize(out);
-  console.log(JSON.stringify(summary));
-  if (flags.out) fs.writeFileSync(flags.out, JSON.stringify({ arm, summary, rows: out }, null, 1));
+  const rules = scoreRules(out, stateOfRun(rows), await loadRules(game));
+  console.log(JSON.stringify({ ...summary, rules: rules.arm }));
+  if (flags.out) fs.writeFileSync(flags.out, JSON.stringify({ arm, summary, rules, rows: out }, null, 1));
 }
