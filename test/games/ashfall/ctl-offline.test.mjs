@@ -86,3 +86,21 @@ test('adapter.send reports each cmd on its own: one failed write does not unsay 
   assert.deepEqual(r.map(x => x.ok), [true, false, true]);
   assert.match(r[1].error, /transport: socket write failed/);
 });
+
+test('--ashfall-event-tick: the adapter hands an event on as it arrives, not at the next state push', async () => {
+  for (const eventTick of [true, false]) {
+    FakeWS.all = []; FakeWS.script = { reply: baseReply };
+    const clock = virtualClock(0);
+    const adapter = createAdapter({}, { clock, open: true, host: 'ws://fake', WS: FakeWS, eventTick });
+    await adapter.connect();
+    const got = [];
+    adapter.on('event', e => got.push(e));
+    const ws = FakeWS.all[0];
+    ws.push({ type: 'event', ev: { kind: 'attacked', id: 19, type: 'trooper', hp: 48, byType: 'trooper', seq: 1 } });
+    assert.equal(got.length, eventTick ? 1 : 0, `eventTick ${eventTick}: before the state push`);
+    ws.push({ type: 'state', state: { time: 1, started: true, mine: [], enemyVisible: [], fields: [], supply: { used: 0, cap: 10 }, ore: 0, crystal: 0 } });
+    assert.equal(got.length, 1, `eventTick ${eventTick}: exactly once after the push`);
+    assert.equal(got[0].cls, 'danger');
+    adapter.ctl.close();
+  }
+});

@@ -30,7 +30,7 @@ export const lastOrdersOf = (keep, results, dropped) =>
 export async function runPilot({ adapter, callModel, clock, record = null, opts = {}, log = () => {}, stop = null }) {
   const o = {
     heartbeatMs: 3000, deadlineMarginMs: 1000, packetMax: 600, divisor: 3.5, fullEvery: 0, staleAfterMs: 8000,
-    maxUsd: Infinity, maxDecisions: Infinity, concedeOn: 'never', stopFile: null, stopPollMs: 500, leaveTimeoutMs: 2000, maxInFlight: 1, ...opts,
+    maxUsd: Infinity, maxDecisions: Infinity, concedeOn: 'never', stopFile: null, stopPollMs: 500, leaveTimeoutMs: 2000, maxInFlight: 1, eventTick: false, ...opts,
   };
   const meta = adapter.meta;
   const rec = record || { writeNow: () => -1, writeState: () => null, ensureState: () => null, flushAndClose() {} };
@@ -87,7 +87,14 @@ export async function runPilot({ adapter, callModel, clock, record = null, opts 
     const events = eventsSince; eventsSince = [];
     handle(trig.tick({ events, derived, canAct, deadline }));
   });
-  adapter.on('event', ev => { if (!finished) eventsSince.push({ ...ev, t: Math.max(ev.t ?? clock.now(), resumeT) }); });   // an event buffered through an outage counts from the reconnect
+  adapter.on('event', ev => {
+    if (finished) return;
+    const tr = { ...ev, t: Math.max(ev.t ?? clock.now(), resumeT) };   // an event buffered through an outage counts from the reconnect
+    if (o.eventTick && latest && latest.header.lifecycle === 'active') {   // tick now on the latest state instead of waiting for the next push
+      const events = [...eventsSince, tr]; eventsSince = [];
+      handle(trig.tick({ events, derived: adapter.derive(latest) || [], canAct: adapter.canAct(latest), deadline: adapter.deadline(latest) }));
+    } else eventsSince.push(tr);
+  });
   adapter.on('done', d => finish(d, 'done'));
   adapter.on('close', () => finish({ outcome: {}, why: 'transport' }, 'transport'));
   adapter.on('disconnect', () => { trig.suspend(); rec.writeNow('disconnect', {}); });

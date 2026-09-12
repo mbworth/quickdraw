@@ -40,10 +40,13 @@ export function createAdapter(env, opts = {}) {
   let gameId = null, team = null, seat = null, doneEmitted = false, why = null;
   const recent = [];   // last 2 decisions' sticky cmd signatures
 
+  // --event-tick: triggers go out the moment the hub delivers the event (the core ticks on them at once); otherwise they ride the
+  // next 500 ms state push, collapsed and capped by the transport's buffer.
+  if (opts.eventTick) ctl.on('event', ev => { if (ev.kind === 'gameover') why = ev.why; em.emit('event', { ...toTrigger(ev, team), t: clock.now() }); });
   ctl.on('state', (s, t) => {
     for (const ev of ctl.takeEvents()) {
       if (ev.kind === 'gameover') why = ev.why;
-      em.emit('event', { ...toTrigger(ev, team), t: ev.t0 ?? t });
+      if (!opts.eventTick) em.emit('event', { ...toTrigger(ev, team), t: ev.t0 ?? t });
     }
     if (s.gameOver && !doneEmitted) { doneEmitted = true; em.emit('done', { outcome: { won: s.winner === team }, duration: s.time / 60, why: why || 'gameover' }); }   // before the ended state: the core must see the outcome first (game 12 recorded {} )
     em.emit('state', { header: toHeader(s, gameId, seat), native: s, t });

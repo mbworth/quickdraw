@@ -15,7 +15,7 @@ Order: M0 scaffold → M1 core against the mock game → M2 Ashfall transport �
 | M4 rehearsal | done on Sonnet (the key is Sonnet-only): 3 runs, run 3 legal 16/16, sensible 14/16, median latency 2.75 s, cache hits 15/16, $0.09; scores in `test/games/ashfall/rehearsal.md`. Divisor calibrated at 1.34 chars/token. Opus/Haiku cache checks not possible with this key |
 | M5 live game | done: checklist green (games 24-25, conceded), smoke (game 27, 40 decisions), game 12 = hub game 28, loss at 4.0 min, `runs/ashfall-28.jsonl`, notes row written |
 | M6 measurement | done: `pace` row for game 12 in `notes/ashfall/games.md`; `replay` reproduces all 77 game-12 packets byte for byte |
-| M7 iterate | in progress (games 13-25, 2026-09-12): packet ablation done, decision bench and trajectory replay built, order language adopted (output 101 → 48 tokens, reaction p50 5.6 → 3.7 s), overlapping calls (`--overlap 2`, reaction p50 2.5 s, game 27 won); see `HANDOFF.md` |
+| M7 iterate | in progress (games 13-25, 2026-09-12): packet ablation done, decision bench and trajectory replay built, order language adopted (output 101 → 48 tokens, reaction p50 5.6 → 3.7 s), overlapping calls (`--overlap 2`) and the event tick: reaction p50 2.3 s, games 27-28 won; see `HANDOFF.md` |
 
 Deviations from the plan as written, and why:
 - **Recorder** uses one ordered in-memory queue flushed with `fs.writeSync` (immediately for `call`/`decision`/`result`/`done`, every 250 ms or 64 KB for `state`) instead of a `createWriteStream`: a stream cannot be flushed synchronously from `uncaughtException`, and two writers on one fd would reorder lines and break refs. Writes loop on the byte count so a short write cannot truncate a line.

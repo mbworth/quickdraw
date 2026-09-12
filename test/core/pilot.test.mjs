@@ -235,3 +235,21 @@ test('maxInFlight 2: a heartbeat never takes the second slot', async () => {
   assert.ok(c.some(x => x.overlap > 0), 'some call overlapped');
   assert.ok(c.every(x => !(x.overlap > 0 && x.triggers.every(t => t.cls === 'heartbeat'))), 'no overlapping call was a bare heartbeat');
 });
+
+test('eventTick: an event fires a decision at once on the latest state instead of waiting for the next state push', async () => {
+  // the mock pushes state every 100 ms; an event at 350 waits 50 ms for the next push unless the core ticks on it
+  const timeline = [[0, 'state', { turn: 1, phase: 'me', deadlineIn: null }], [350, 'event', { cls: 'turn', key: 'late' }], [1000, 'state', { turn: 1, phase: 'me', deadlineIn: null }], [2000, 'done', { outcome: { won: true }, why: 'checkmate' }]];
+  const run = async eventTick => {
+    const clock = virtualClock(1000);
+    const adapter = createAdapter({}, { clock, timeline });
+    await adapter.connect(); await adapter.seat({});
+    const record = memRecorder();
+    const p = runPilot({ adapter, callModel: stub({ clock }), clock, record, opts: { heartbeatMs: 100000, deadlineMarginMs: 100, eventTick } });
+    await clock.advance(3000); await p;
+    return calls(record.lines).find(c => c.triggers.some(t => t.key === 'late'));
+  };
+  const on = await run(true), off = await run(false);
+  assert.equal(on.latency.waitMs, 0, 'ticked on arrival');
+  assert.equal(off.latency.waitMs, 50, 'waited for the next push');
+  assert.equal(on.stateRef > 0 && on.anchor, 'event');
+});
