@@ -10,6 +10,7 @@ import { tool } from './tool.mjs';
 const { note: _n, ...propsNoNote } = tool.properties;
 export const toolNoNote = Object.freeze({ ...tool, properties: propsNoNote, required: tool.required.filter(k => k !== 'note') });
 import { expand as expandCmds, sig, STICKY } from './expand.mjs';
+import { toolLang, decode as decodeLang } from './lang.mjs';
 import { validate } from './validate.mjs';
 import { ABBR_TEXT } from './abbr.mjs';
 
@@ -52,8 +53,9 @@ export function createAdapter(env, opts = {}) {
   ctl.on('close', e => em.emit('close', e));
 
   return {
-    meta: opts.orderCap ? Object.freeze({ ...meta, orderCap: Number(opts.orderCap) }) : meta,   // --ashfall-order-cap N
-    tool: opts.noNote ? toolNoNote : tool,   // --ashfall-no-note true
+    meta: Object.freeze({ ...meta, ...(opts.orderCap ? { orderCap: Number(opts.orderCap) } : {}), ...(opts.lang ? { toolDescription: meta.toolDescription.replace('act:false with empty cmds', 'an empty o') } : {}) }),   // --ashfall-order-cap N; --ashfall-lang rewords the no-op
+    tool: opts.lang ? toolLang : opts.noNote ? toolNoNote : tool,   // --ashfall-lang true: one string, decoded by lang.mjs; --ashfall-no-note true
+    decode: opts.lang ? decodeLang : undefined,
     ctl,
     on: (ev, fn) => em.on(ev, fn),
     async connect() { await ctl.connect(); },

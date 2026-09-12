@@ -26,6 +26,7 @@ Live hub, 200 map unless noted. Prompt for each game is in `prompts/ashfall/` fr
 | 22 | 39 | sonnet, quickdraw | loss | 6:54 | game 20 config + `--thinking off` (step 2 game 1): 112 decisions (16.3/min), reaction p50 5.6 s / p90 8.7 s (wait 2.0 s), **model p50 2.8 s** (2.1 in game 21), **141 out tokens** (121), packet 397 real, 12 timeouts, kept 38%, 3 rejected, no-op 8%, $0.49. Without adaptive thinking the model writes more (out p90 206 vs 158) and slower per token (19.8 vs 17.5 ms); sent riflemen east in ones and twos from 1:00. Adaptive/low stays |
 | 23 | 40 | sonnet, quickdraw | **win** | 4:24 | game 20 config + `--ashfall-no-note true` (step 2 game 2): 82 decisions (18.8/min), reaction p50 5.4 s / p90 8.3 s (wait 1.4 s), model p50 2.7 s, **89 out tokens** (121), packet 396 real, 4 timeouts, kept 41.8%, 0 rejected, no-op 17%, $0.32. Output down a third; model latency did not follow (2.7 s, same as game 22's, so the API was slow this hour). Never built a turret; ball of 11 pushed at 2:55 and killed the core at 4:24, the fastest win |
 | 24 | 41 | sonnet, quickdraw | loss | 14:30 | **first full capture** (prompt, schema, raw responses in the run). Bench config: slim + fold + fields on demand + no note + **compact buildings** + expand sugar: 228 decisions (15.7/min), reaction p50 5.6 s / p90 8.7 s (wait 1.5 s), model p50 2.8 s (API slow this hour, as in 22-23), 101 out tokens, packet 467 real, 21 timeouts, kept 42.8%, 1 rejected, no-op 6%, $0.89. **Turret at 2:41, first push at 3:25 with 11 and the turret up**: the first slim game to follow rule 3 as game 15 did (bench prediction held). 25 pushes over 14 minutes, none broke through; core died at 14:30 |
+| 25 | 42 | sonnet, quickdraw | stopped 11:12 | - | **order language** (`--ashfall-lang true`, prompt `game25-sonnet.md`, strategy byte-identical to game 15): 277 decisions (24.7/min), reaction p50 **3.7 s** / p90 4.8 s (wait 1.2 s), model p50 2.1 s, **48 out tokens** (101 in game 24), packet 605 real, 2 timeouts, kept 34%, no-op 0%, $0.87. Parse failures 6/277: 4 were the model's leaked tool-call closing tag (now stripped), 2 malformed. Watched live: the ball went to the prompt's example coordinates 65,25 fourteen times after the enemy barracks at 22,49 was seen. Cause in the harness: on this config the remembered layer is on the 1-in-5 cadence and, tying with fields at priority 3, was budget-dropped first, so the M line reached the model on 1 packet of 118 (game 24: 24 of 138; 44 calls had a budget drop against 3). Fixed: `--ashfall-keep-remembered` now puts M on every packet at army priority; new `pushTarget` rule scores it. Also: barracks at 97 s (17 s in game 24) because `t wk 2` before `b ba` starved the build every decision; 483 noore drops as the model orders past its bank. Stopped by hand once the targeting bug was understood |
 
 ## Pace
 Every Claude Code MCP call costs ~2 s client side (local stdio 1.7 s, live 2.1 s, network 0.2 s). Loop length = model gap + call + wait. Game 11 decided every 27 s.
@@ -58,6 +59,7 @@ Nine fixed states, each with the order the prompt calls for (`test/games/ashfall
 | game 24 config (slim + fold + full buildings + fields on demand + no note + keep anchor) | 58% | 162 | 110 | train 2/5, turret 1/5, dry 1/5: every case that needs to know what buildings exist |
 | game 24 config + expand sugar | 69% | 162 | 112 | sugar: `idle` with no idle harvester → the harvester nearest the job; `attack` on a remembered building → attack-move there; attack target described as "visible in X". repair 5/5, push 3/5 |
 | slim + fold + fields on demand + no note + **compact buildings** (`--ashfall-compact-buildings true`: one always-on `B` line, ids and types, positions for core and turrets, hp/bld only when hurt or unfinished) | **76%** | 174 | **88** | equal to the full packet at 39% of its tokens and 66% of its output; turret 1/5 (builds the depot first at s17/18, which rule 1 also asks for) |
+| compact + **order language** (`--ashfall-lang true`, prompt `game25-sonnet.md`: one string `o`, e.g. `t 12 tr 3; am army 65,25`, decoded client side; strategy sections byte-identical to game 15) | **98%** | 174 | **46** | first run 76% with every miss a parse failure: the model glues arguments on with commas (`am tr x11@46,34,49,50`), puts a label inside a comma list, writes `tr` as a selector, and copied the prompt's example ids (`10006` → `10011` for `ba#11`). Parser accepts the shapes, examples use neutral ids; second run 44/45, latency p50 2.17 s vs 2.79 s |
 
 The bench found two harness gaps the games had hidden (the `attack target:0` habit and the `idle` harvester selector) in its first run, and showed that the buildings layer, not fields, is what the prompt's build logic reads. Both fixed in expand and the encoder, no prompt change.
 
@@ -66,24 +68,29 @@ The bench found two harness gaps the games had hidden (the `attack target:0` hab
 |---|---|---|---|---|---|
 | the recorded config replayed on itself | 54% | 23% (recorded 30%) | 306 | 116 | $0.33 |
 | full packet (game 15 config) | 36% | 20% | 577 | 146 | $0.42 |
+| compact + order language (`--ashfall-lang true`, prompt game25) | 27% | 13% | 306 | **46** | $0.25 |
 
 The noise floor is the finding: with identical prompt, packet and schema the model returns the same kinds of orders on 54% of decisions. Per-decision agreement is therefore not a usable metric; arms have to be compared on rates over many decisions (no-op share, orders per decision, drop reasons, rule adherence), and a difference under ~15 points at this sample is noise. The two arms agree with each other on 36% of decisions; agreement is highest in the opening (minute 0: 6-7 of 8) and lowest in fights (minutes 2-6: 0-2 of 4-6).
 
 Rule adherence over the same rows (`test/games/ashfall/bench/rules.mjs`, pass/applies; the recording scored the same way):
 
-| rule | same config | full packet | recorded |
-|---|---|---|---|
-| turret when none and ore ≥ 110 | 1/2 | 1/2 | 1/2 |
-| depot when capped | 1/1 | 1/1 | 1/1 |
-| spend when ore ≥ 120 | 10/13 | 8/13 | 7/13 |
-| push with 8 idle and turret up | 1/10 | 5/10 | 2/10 |
-| whole ball (no pieces) | 1/10 | 6/16 | 2/8 |
-| gather with a node id | 3/6 | 5/10 | 1/5 |
-| attack only what is visible | 3/9 | 4/9 | 2/2 |
-| repair a hurt turret | 0/0 | 0/0 | 0/0 |
-| no chase under 8 | 18/23 | 17/23 | 19/23 |
+| rule | same config | full packet | order language | recorded |
+|---|---|---|---|---|
+| turret when none and ore ≥ 110 | 1/2 | 1/2 | 0/2 | 1/2 |
+| depot when capped | 1/1 | 1/1 | 1/1 | 1/1 |
+| spend when ore ≥ 120 | 10/13 | 8/13 | 11/13 | 7/13 |
+| push with 8 idle and turret up | 1/10 | 5/10 | 2/10 | 2/10 |
+| whole ball (no pieces) | 1/10 | 6/16 | 4/8 | 2/8 |
+| gather with a node id | 3/6 | 5/10 | 13/20 | 1/5 |
+| attack only what is visible | 3/9 | 4/9 | 1/2 | 2/2 |
+| repair a hurt turret | 0/0 | 0/0 | 0/0 | 0/0 |
+| no chase under 8 | 18/23 | 17/23 | 19/23 | 19/23 |
 
 At 84 decisions most rules apply fewer than 15 times, so only `noChase` and `spend` are read at this sample; the push and gather rows need `--every 1` (three times the calls) or several recordings. The same-config arm is the tool's calibration: its rates should match the recording's, and mostly do (the attack row is the exception: 9 attacks against 2 recorded, worth a look).
+
+The order-language arm (same packet, one string out): every rule rate within noise of the same-config arm, no parse drops in 84 decisions, output 46 tokens against 116, model latency p50 2.0 s against 2.9 s. It no-ops less (13% against 23%) and gathers four times as often (20 gathers, 13 with a node id): the bench gate and this one both pass, so game 25 plays it live.
+
+Game 25 recording (94 decisions an arm, every 3rd), scoring the targeting bug: with `--ashfall-keep-remembered true` the pushes go to the remembered barracks at 22,49 (16 of 25) and the new `pushTarget` rule passes 22/25 against 1/14 recorded; 65,25 gets 0. The same arm at `--packet-max 1000`: pushTarget 21/29, latency p50 1.97 s against 1.98 s, every other rule within noise. The cap is not what costs seconds, so it becomes a rail at 1000 and layer cadence and priority decide packet content.
 
 ## Opponent profile
 Scout ~25 s, riflemen from ~90 s, waves of 6-9 every 15-40 s from ~3 min, from the map-centre side onto the nearest ore field, then parks ~11 from the core. Base is empty right after a wave fails.

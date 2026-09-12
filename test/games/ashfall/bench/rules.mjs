@@ -29,6 +29,8 @@ export const rules = [
     pass: (sent, dropped) => !dropped.some(d => d.reason === 'no-target') },
   { id: 'repair', text: '6: turret under 60% → repair', when: s => turrets(s).some(t => finished(t) && t.hp < 0.6 * t.max) && s.mine.some(e => e.type === 'worker'),
     pass: (sent, dropped, s) => { const t = new Set(turrets(s).filter(x => x.hp < 0.6 * x.max).map(x => x.id)); return has(sent, c => c.cmd === 'repair' && t.has(c.target)); } },
+  { id: 'pushTarget', text: '3: a push goes at a listed enemy building, or at the mirror of my core until one is listed', when: (s, sent) => pushes(sent, s).some(c => count(c, s) >= 6),
+    pass: (sent, dropped, s) => { const known = [...(s.enemyBuildingsRemembered || []), ...s.enemyVisible.filter(e => isBld(e.type))]; const goals = known.length ? known : [mirror(s)]; return pushes(sent, s).filter(c => count(c, s) >= 6).every(c => goals.some(g => D(c, g) <= 15)); } },
   { id: 'noChase', text: '6: do not chase with fewer than 8', when: s => s.enemyVisible.some(e => !isBld(e.type) && e.type !== 'worker') && troopers(s).length < 8,
     pass: (sent, dropped, s) => !has(sent, c => (c.cmd === 'move' || c.cmd === 'attack') && count(c, s) > 0 && (c.cmd === 'attack' || D(c, s.myBase) > 20)) },
 ];

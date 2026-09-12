@@ -1,16 +1,17 @@
-# Handoff — 2026-09-12, end of day
+# Handoff — 2026-09-12, evening
 
-State of Quickdraw after M0–M6 and the first day of M7 (games 12–24). Everything is committed on `main`; `npm test` is 106 tests, 3 skipped (need `ASHFALL_LOCAL`, `ASHFALL_LIVE=1`, or a key), under a second on virtual time. Chronology and per-game numbers are in `notes/ashfall/games.md`; this file is where things stand and what to do next.
+State of Quickdraw after M0–M6 and M7 through game 25. `npm test` is 114 tests, 3 skipped (need `ASHFALL_LOCAL`, `ASHFALL_LIVE=1`, or a key), under a second on virtual time. Chronology and per-game numbers are in `notes/ashfall/games.md`; this file is where things stand and what to do next.
 
 ## Direction
 
-Harness, not strategy. `prompts/ashfall/game15-sonnet.md` (sha `cc08728a…`) is the frozen prompt for every experiment: strategy sections are byte-identical across games; the format section (packet layers, tool) is harness territory and may change once the bench shows decisions do not move. Iterate on seconds per decision and tokens per packet. **Win rate is a confirmation metric only; the bench and trajectory replay are the gates** (see Measurement).
+Harness, not strategy. The strategy sections (`## Play` onward) of `prompts/ashfall/game15-sonnet.md` are frozen and byte-identical in every prompt variant (`lang.test.mjs` enforces it for `game25-sonnet.md`, the current prompt); the format section (packet layers, tool, order language) is harness territory and may change once the bench shows decisions do not move. Iterate on seconds per decision and tokens per packet. **Win rate is a confirmation metric only; the bench and trajectory replay are the gates** (see Measurement).
 
 ## Working config
 
 ```
-node bin/pilot.mjs --game ashfall --model claude-sonnet-5 --prompt prompts/ashfall/game15-sonnet.md \
+node bin/pilot.mjs --game ashfall --model claude-sonnet-5 --prompt prompts/ashfall/game25-sonnet.md --packet-max 1000 \
   --full-every 5 --ashfall-fold-fields true --ashfall-fields-on-demand true --ashfall-no-note true --ashfall-compact-buildings true \
+  --ashfall-keep-remembered true --ashfall-lang true \
   --max-usd 1.5 --stop-file /tmp/qd-stop --ashfall-concede-stale true
 ```
 
@@ -20,17 +21,20 @@ What each flag does, and why it is on (all off by default so old runs replay byt
 - `--ashfall-fields-on-demand`: fields stay on every packet while a harvester is idle or a worked field is dry; the gather order needs a node id (game 19: 24 blind gathers → 0 in game 20).
 - `--ashfall-no-note`: schema without `note`; output 121 → 89 tokens (game 23).
 - `--ashfall-compact-buildings`: one always-on `B` line, ids and types, positions for core and turrets, hp/bld only when hurt or unfinished. The prompt's whole build logic reads `B`; with it on the bench the slim packet matches the full packet (76%) at 39% of the tokens.
-- Superseded, kept for replay of games 17–23: `--ashfall-full-buildings`, `--ashfall-keep-anchor`, `--ashfall-keep-remembered`. Untested: `--ashfall-order-cap N`. Worse: `--thinking off` (game 22: slower and longer output).
+- `--ashfall-lang` with the game25 prompt: the model returns one string (`t 12 tr 3; am army 65,25`) decoded by `src/games/ashfall/lang.mjs` into the same order objects; bench 98% (JSON tool 76%), output 88 → 46 tokens, game 25 reaction p50 3.7 s against 5.6 s. The parser accepts what the model actually writes (arguments glued on with commas, a label inside a list, `tr` as a selector) and strips the tool-call closing tag it leaks on ~2% of calls; anything else is one `bad-cmd` drop.
+- `--ashfall-keep-remembered`: the M layer on every packet at army priority. Without it the one-line M tied with fields and was budget-dropped first: in game 25 the enemy base position reached the model on 1 packet of 118 and the ball went to the prompt's example coordinates 14 times. Replay with the flag: pushes go to the remembered barracks, `pushTarget` 22/25 against 1/14.
+- `--packet-max 1000`: the 600 default was an M1 guess. Game 25 hit it on 44 calls; replay at 1000 showed no latency or rule change, so it is a rail, not a shaping tool. Packet content is decided by cadence and priority, gated by the bench.
+- Superseded, kept for replay of games 17–23: `--ashfall-full-buildings`, `--ashfall-keep-anchor`. Untested: `--ashfall-order-cap N`. Worse: `--thinking off` (game 22: slower and longer output).
 
 Expand sugar in the same config (no flag): pasted cluster labels resolve against the state the packet was encoded from (60 of 60 stale-label drops fixed); `idle` in `gather`/`repair`/`build` means idle harvesters, else the harvester nearest the job; `"all army"` splits into selectors; `attack` on a remembered building becomes an attack-move at its position; the tool describes attack's target as "visible in X now".
 
-## Where the seconds are (game 23–24, reaction p50 5.4–5.6 s in a slow API hour; 3.9–4.3 s in games 17–21)
+## Where the seconds are (game 25, reaction p50 3.7 s / p90 4.8 s; game 24 was 5.6 s with the JSON tool)
 
 | stage | time | lever |
 |---|---|---|
 | event waits for the 500 ms state push, then a tick, then any call in flight | 1.1–2.0 s | steps 3–4 below |
-| prefill (~9k cached + ~400 fresh tokens) | ~0.5 s | little left in the packet |
-| output, 90–120 tokens at 17–20 ms each | 1.5–2.0 s | output format (step 1 below) |
+| prefill (~9k cached + ~450 fresh tokens) | ~0.5 s | little left in the packet |
+| output, ~48 tokens with the order language (was 90–120) | ~0.9 s | done; ~40 tokens of the 48 are fixed per call (an empty answer costs 37–54) |
 | expand, validate, send | ~0.05 s | done |
 
 Real minus estimated packet tokens is a steady ~150 tokens of message framing, not cuttable.
@@ -56,17 +60,17 @@ Facts the tools established:
 - **Rule adherence live** (`discipline`): game 15 (full) turret 1:34, pushed at 2:22 with the turret up; games 16–23 (slim, no `B`) pushed at 2:10–3:00 with no turret; game 24 (compact `B`) turret 2:41, push at 3:25 with the turret up. First pushes were never pieces; losses come from the ball dying with no follow-up.
 - **Output**: ids per unit-list order p50 3–8, p90 8–13; ≥ 8 ids ≈ +65 output tokens. The model invents sequential ids it never saw (game 21) and pastes labels rarely; `attack target:0` is its way of saying "go to the enemy base".
 - **Packet**: on slim packets the largest layers are army (~50–65 tokens) and last orders (~25–38).
+- **Strategy-text defects seen in every game (not fixed: the prompt is frozen)**: the ball attack-moves to the prompt's example coordinates 65,25 / -65,-25 whenever M is absent; `spend everything` makes the model queue harvesters ahead of the barracks (game 25: barracks at 97 s, 483 noore drops in 277 decisions). Both are recorded for the next prompt revision.
 
 ## Next steps, in order
 
-1. **Output command language** (the largest remaining lever, ~60% of output tokens is JSON keys and ids). One string field, e.g. `t 12 tr 2; m army 65,25 a`, decoded by expand; short per-game entity ids (renumbered client side, both directions); grid coordinates where precision is not needed. Needs the prompt's format section to change (strategy sections frozen). Gate: bench ≥ 76% and trajectory rule rates within noise of the current config, then one live game for pace.
-2. **Layer-sensitivity tool**: bench with each layer removed, so packet content is decided by measured decision sensitivity, not by hand (keep-anchor was the hand version).
-3. **Tick on event arrival** (`--event-tick`): an event waits for the next 500 ms state push today; 145 of 326 trigger outcomes in game 12 coalesced. Measure `waitP50`.
-4. **Overlapping calls**: a second call while one is in flight, each validated against the newest state on return. Design question: ordering of sends and `lastOrders` across two in-flight decisions.
-5. **Streaming per-cmd dispatch**: `eager_input_streaming`, dispatch each cmd as its JSON closes; open question is validate on a partial list.
-6. Then per-class trigger stats and ≥ 20 games on the final config for win rate.
+1. **Layer-sensitivity tool**: bench with each layer removed, so packet content is decided by measured decision sensitivity, not by hand (keep-anchor was the hand version).
+2. **Tick on event arrival** (`--event-tick`): an event waits for the next 500 ms state push today; 145 of 326 trigger outcomes in game 12 coalesced. Measure `waitP50`.
+3. **Overlapping calls**: a second call while one is in flight, each validated against the newest state on return. Design question: ordering of sends and `lastOrders` across two in-flight decisions.
+4. **Streaming per-cmd dispatch**: `eager_input_streaming`, dispatch each cmd as its JSON closes; open question is validate on a partial list.
+5. Then per-class trigger stats and ≥ 20 games on the final config for win rate.
 
-Open items: trajectory replay validates against the packet's own state where live validates against the newest (the same-config arm attacked 9 times against 2 recorded; check that first); `maxItems` on unit lists as a schema-level cap on id lists; the push rule on the bench is 2–3/5 slim vs 5/5 full and neither `M` nor the anchor closed it.
+Open items: the L layer still prints last orders in the old wording (`train tr #10006 noore`), not the order language; short per-game ids (`10006` → `6`, both directions) untested; the fixed ~40 output tokens per call are the floor to look at next. Trajectory replay validates against the packet's own state where live validates against the newest (the same-config arm attacked 9 times against 2 recorded; check that first); `maxItems` on unit lists as a schema-level cap on id lists; the push rule on the bench is 2–3/5 slim vs 5/5 full and neither `M` nor the anchor closed it.
 
 ## Known defects fixed (verify live if touching these areas)
 
@@ -77,7 +81,7 @@ Reconnect single-flight + attempt cap + `close` → `transport` finish; request 
 - `.env` (gitignored): `ANTHROPIC_API_KEY` (**Sonnet only**), `ASHFALL_HUB` (wss://…), `ASHFALL_KEY`. `ASHFALL_LOCAL=~/workspace/ashfall_sector` enables the local-hub tests and fixture capture.
 - `.gitignore` ignores `runs/` and `*.jsonl` (except test fixtures); prompts are tracked.
 - Live game ≈ $0.06–0.09 per game-minute; a game is 5–15 minutes. Background commands longer than 10 minutes have completed in this environment.
-- Account record: hub games 24, 25 (checklist, conceded), 27 (smoke), 28–41 (games 12–24), 34 (stub, stopped at 3 decisions) are on the account.
+- Account record: hub games 24, 25 (checklist, conceded), 27 (smoke), 28–41 (games 12–24), 34 (stub, stopped at 3 decisions), 42 (game 25, stopped by stop-file at 11:12, seat left active: the next run's `--ashfall-concede-stale` concedes it) are on the account.
 
 ## Commands
 
@@ -86,15 +90,15 @@ npm test
 node bin/pilot.mjs --game mock --model none
 ASHFALL_LOCAL=../ashfall_sector npm run test:ashfall
 ASHFALL_LIVE=1 ASHFALL_CONCEDE_STALE=1 node --test test/games/ashfall/live.test.mjs      # live checklist, concedes leftovers
-node bin/pace.mjs --row 24 runs/ashfall-41.jsonl
+node bin/pace.mjs --row 25 runs/ashfall-42.jsonl
 node bin/replay.mjs runs/ashfall-41.jsonl all
 node bin/layers.mjs runs/ashfall-41.jsonl
 node bin/discipline.mjs runs/ashfall-31.jsonl runs/ashfall-41.jsonl
 node bin/bench.mjs --repeats 5 --out /tmp/full.json                                        # full-packet arm
-node bin/bench.mjs --repeats 5 --slim --ashfall-fold-fields true --ashfall-fields-on-demand true --ashfall-no-note true --ashfall-compact-buildings true --out /tmp/arm.json
+node bin/bench.mjs --repeats 5 --slim --prompt prompts/ashfall/game25-sonnet.md --ashfall-fold-fields true --ashfall-fields-on-demand true --ashfall-no-note true --ashfall-compact-buildings true --ashfall-lang true --out /tmp/arm.json
 node bin/bench.mjs --compare /tmp/full.json /tmp/arm.json
 node bin/snapshot.mjs runs/ashfall-36.jsonl --n 191 --out test/games/ashfall/bench/fixtures/dry-t522.json
-node bin/trajectory.mjs runs/ashfall-41.jsonl --every 3 --out /tmp/same.json               # arm flags default to the recording's
+node bin/trajectory.mjs runs/ashfall-42.jsonl --every 3 --ashfall-keep-remembered true --out /tmp/keepM.json   # arm flags default to the recording's
 node bin/trajectory.mjs runs/ashfall-41.jsonl --every 3 --full-every 0 --ashfall-fold-fields false --ashfall-fields-on-demand false --ashfall-no-note false --ashfall-compact-buildings false --out /tmp/fullpkt.json
 node bin/trajectory.mjs --compare /tmp/same.json /tmp/fullpkt.json
 ```

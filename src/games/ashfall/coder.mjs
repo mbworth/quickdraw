@@ -170,7 +170,9 @@ export function encode({ state, prevDecisionState, triggers = [], lastOrders: lo
       ? [lineLayer('buildings', 2, buildings(s, { only: isAnchor })), { name: 'buildings-rest', priority: 2, text: '', lines: buildings(s, { only: b => !isAnchor(b) }).map(text => ({ text, priority: 2 })), full: true }]
       : [lineLayer('buildings', 2, buildings(s), () => 2, fullBuildings ? { full: true } : {})]),
     lineLayer('enemy', 1, enemy(s)),
-    lineLayer('remembered', 3, remembered(s), () => 3, keepRemembered ? {} : { full: true }),   // keepRemembered: `M none` is the prompt's cue to attack the mirror
+    // keepRemembered: on every packet at army priority. At 3 it tied with fields and the assembler drops the first tie, so in game 25 the one
+    // line holding the enemy base position reached the model on 1 packet of 118 and the ball went to the prompt's example coordinates 14 times.
+    lineLayer('remembered', keepRemembered ? 2 : 3, remembered(s), () => (keepRemembered ? 2 : 3), keepRemembered ? {} : { full: true }),
     lineLayer('fields', 3, fields(s, { fold: foldFields }), () => 3, fieldsFull ? { full: true } : {}),
     layer('last', 0, lastOrders(lo)),
   ];

@@ -21,5 +21,5 @@ export async function boot(argv, opts = {}) {
 
 export async function modelFor({ adapter, model, system, thinking = 'adaptive', effort = 'low', decisionDeadlineMs, clock }) {
   const { default: Anthropic } = await import('@anthropic-ai/sdk');
-  return createModel({ client: new Anthropic(), model, system, tool: adapter.tool, toolName: adapter.meta.toolName, toolDescription: adapter.meta.toolDescription, thinking: String(thinking), effort, decisionDeadlineMs, prices: prices(), clock });
+  return createModel({ client: new Anthropic(), model, system, tool: adapter.tool, toolName: adapter.meta.toolName, toolDescription: adapter.meta.toolDescription, decode: adapter.decode, thinking: String(thinking), effort, decisionDeadlineMs, prices: prices(), clock });
 }

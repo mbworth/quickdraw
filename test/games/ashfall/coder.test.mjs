@@ -107,3 +107,18 @@ test('compactBuildings: one always-on B line with ids, anchor positions, and onl
   assert.equal(B.text.split(' ').filter(w => /#\d+/.test(w)).length, n, 'every building named once');
   assert.ok(assemble(layersAt(i, files, { compactBuildings: true }), { maxTokens: 9999, fullEvery: 5, n: 2 }).text.includes('\nB co#'), 'present on slim packets');
 });
+
+test('keepRemembered puts the remembered layer on every packet at army priority, so a one-line M is not budget-dropped behind fields', async () => {
+  const { assemble } = await import('../../../src/core/packet.mjs');
+  const fx = JSON.parse(fs.readFileSync(path.join(HERE, 'bench/fixtures/core-t422.json'), 'utf8'));
+  fx.state.enemyBuildingsRemembered = [{ id: 20027, type: 'barracks', x: 22, z: 49, hp: 1, max: 650, lastSeen: fx.state.time - 64 }];
+  const input = { state: snap(fx), prevDecisionState: null, triggers: [], lastOrders: [] };
+  const keep = encode(input, { foldFields: true, compactBuildings: true, keepRemembered: true });
+  const rem = keep.find(l => l.name === 'remembered');
+  assert.equal(rem.priority, 2); assert.equal(rem.full, undefined);
+  const slim = assemble(keep, { maxTokens: 260, divisor: 1.34, fullEvery: 5, n: 3 });   // tight enough to cut army and buildings
+  assert.ok(slim.text.includes('\nM\nba#20027@22,49'), 'kept on a slim packet under a tight budget');
+  const drop = encode(input, { foldFields: true, compactBuildings: true });
+  assert.equal(drop.find(l => l.name === 'remembered').priority, 3);
+  assert.ok(!assemble(drop, { maxTokens: 260, divisor: 1.34, fullEvery: 5, n: 3 }).text.includes('\nM\n'), 'slim-dropped without the flag');
+});
