@@ -36,7 +36,7 @@ export function classifyError(err) {
   return 'error:unknown';
 }
 
-// createModel(...) → callModel({packet, signal}) → {act, orders, note, usage, stop, latencyMs, cost, error?}
+// createModel(...) → callModel({packet, signal}) → {act, orders, note, usage, stop, latencyMs, cost, raw?, error?}
 // Cold calls write the cache and compile the strict schema: game 12's calls 1 and 2 timed out at 6 s, so every call
 // before the first cache hit gets firstCallDeadlineMs.
 export function createModel({ client, model, system, tool, toolName, toolDescription, thinking, effort, decisionDeadlineMs = 6000, firstCallDeadlineMs = decisionDeadlineMs * 3, prices = {}, clock, warn = m => console.warn(m) }) {
@@ -54,6 +54,7 @@ export function createModel({ client, model, system, tool, toolName, toolDescrip
     try {
       const res = await client.messages.create(req, { maxRetries: 0, signal: sig });
       out.usage = pickUsage(res.usage);
+      out.raw = { model: res.model, stop_reason: res.stop_reason, content: (res.content || []).map(b => (b.type === 'tool_use' ? { type: b.type, name: b.name } : b)) };   // full capture: thinking/text blocks; tool input is `orders`
       out.cost = cost(out.usage, price);
       if (out.usage.cache_read_input_tokens > 0) warm = true;
       const tu = (res.content || []).find(b => b.type === 'tool_use');

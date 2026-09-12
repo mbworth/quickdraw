@@ -135,7 +135,7 @@ export async function runPilot({ adapter, callModel, clock, record = null, opts 
           triggers: set.map(({ cls, key, t, count, urgency, native, gt, derived }) => ({ cls, key, t, count, urgency, native, gt, derived })),
           lastOrders, packet: pkt.text,
           packetMeta: { kept: pkt.kept, dropped: pkt.dropped, estTokens: pkt.estTokens, realTokens: res.usage && res.usage.cache_read_input_tokens > 0 ? res.usage.input_tokens : null },
-          usage: res.usage, stop: res.stop, error: res.error, note: res.note, eventArrivalT, anchor,
+          usage: res.usage, stop: res.stop, error: res.error, note: res.note, raw: res.raw, eventArrivalT, anchor,
         };
         if (finished) { rec.writeNow('call', { ...callBase, latency: { ...T, totalMs: clock.now() - eventArrivalT }, skipped: 'ended' }); break; }
         const failed = res.stop !== 'tool_use';

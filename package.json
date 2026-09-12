@@ -19,7 +19,8 @@
     "layers": "node bin/layers.mjs",
     "discipline": "node bin/discipline.mjs",
     "bench": "node bin/bench.mjs",
-    "snapshot": "node bin/snapshot.mjs"
+    "snapshot": "node bin/snapshot.mjs",
+    "trajectory": "node bin/trajectory.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.125.0",

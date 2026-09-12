@@ -40,7 +40,7 @@ export async function main(argv = process.argv.slice(2)) {
   await adapter.connect();
   const { gameId, seat } = await adapter.seat(gameOpts);
   const rec = createRecorder(path.join(cfg.runDir, `${game}-${safeId(gameId)}.jsonl`), { clock, statePolicy: cfg.recordState });
-  rec.writeNow('config', { ...resolved, gameId, seat });
+  rec.writeNow('config', { ...resolved, gameId, seat, system, tool: adapter.tool });   // the run replays without the repo: prompt text and schema inline
   // First signal stops the run cleanly (done line, leave, exit 130); a second one exits at once.
   const stopper = new AbortController();
   const unguard = guardExit(rec, { onSignal: () => { if (stopper.signal.aborted) { rec.flushAndClose(); process.exit(130); } stopper.abort(); } });
