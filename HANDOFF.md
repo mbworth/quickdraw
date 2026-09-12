@@ -32,7 +32,7 @@ Expand sugar in the same config (no flag): pasted cluster labels resolve against
 
 | stage | time | lever |
 |---|---|---|
-| event waits for the 500 ms state push, then a tick, then any call in flight | 1.1–2.0 s | steps 3–4 below |
+| event waits for a call in flight (139 of 167 event calls in game 25, p50 1.7 s) or, when the loop is idle, for the 500 ms state push (28 of 167, p50 0.33 s) | 1.2–1.6 s | overlapping calls (step 2); the event tick is worth ~50 ms on the p50 |
 | prefill (~9k cached + ~450 fresh tokens) | ~0.5 s | little left in the packet |
 | output, ~48 tokens with the order language (was 90–120) | ~0.9 s | done; ~40 tokens of the 48 are fixed per call (an empty answer costs 37–54) |
 | expand, validate, send | ~0.05 s | done |
@@ -56,7 +56,7 @@ Run files from game 24 on are complete captures: `system` (prompt text), `tool` 
 
 Facts the tools established:
 - **Noise floor**: the recorded config replayed on itself agrees with the recording on command kinds 54% of the time (game 24, 84 decisions). Compare arms on rates only; under ~15 points at 84 decisions is noise; bench cases need ≥ 5 repeats.
-- **Bench**: full packet 76%; slim without `B` 58%; slim + expand sugar 69%; slim + compact `B` 76% at 174 est / 88 output tokens.
+- **Bench** (11 cases since game 25): full packet 76%; slim without `B` 58%; slim + expand sugar 69%; slim + compact `B` 76% at 174 est / 88 output tokens; + order language 98% (the nine older cases) at 46 output tokens. The two game-25 cases: `nobarracks` 5/5, `remembered` 3/5 (the misses send an unhurt ball home). A case is added when a live game shows a decision the bench could not fail on; never tuned to pass.
 - **Rule adherence live** (`discipline`): game 15 (full) turret 1:34, pushed at 2:22 with the turret up; games 16–23 (slim, no `B`) pushed at 2:10–3:00 with no turret; game 24 (compact `B`) turret 2:41, push at 3:25 with the turret up. First pushes were never pieces; losses come from the ball dying with no follow-up.
 - **Output**: ids per unit-list order p50 3–8, p90 8–13; ≥ 8 ids ≈ +65 output tokens. The model invents sequential ids it never saw (game 21) and pastes labels rarely; `attack target:0` is its way of saying "go to the enemy base".
 - **Packet**: on slim packets the largest layers are army (~50–65 tokens) and last orders (~25–38).
@@ -65,8 +65,8 @@ Facts the tools established:
 ## Next steps, in order
 
 1. **Layer-sensitivity tool**: bench with each layer removed, so packet content is decided by measured decision sensitivity, not by hand (keep-anchor was the hand version).
-2. **Tick on event arrival** (`--event-tick`): an event waits for the next 500 ms state push today; 145 of 326 trigger outcomes in game 12 coalesced. Measure `waitP50`.
-3. **Overlapping calls**: a second call while one is in flight, each validated against the newest state on return. Design question: ordering of sends and `lastOrders` across two in-flight decisions.
+2. **Overlapping calls**: at 25 decisions a minute and 2.1 s a call the loop is busy ~85% of the time, so 83% of event calls in game 25 waited behind a call in flight (p50 1.7 s). A second call for a ranked event while one is in flight, each validated against the newest state on return, would remove most of that. Design: cap 2 in flight; the second packet lists the first's orders as pending in `L`; sends in return order; sticky cmds already suppressed by `recent`. Cost roughly doubles calls a game ($0.9 → ~$1.5); needs the user's call.
+3. **Tick on event arrival** (`--event-tick`): the transport already emits events on arrival; the adapter hands them on at the next state push. Worth ~0.33 s on the 17% of event calls that find the loop idle, ~50 ms on the p50. Cheap, after step 2.
 4. **Streaming per-cmd dispatch**: `eager_input_streaming`, dispatch each cmd as its JSON closes; open question is validate on a partial list.
 5. Then per-class trigger stats and ≥ 20 games on the final config for win rate.
 

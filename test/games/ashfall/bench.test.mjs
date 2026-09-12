@@ -37,6 +37,11 @@ test('predicates accept the prompt’s order and reject the wrong one', () => {
   assert.ok(!by.wave.expect([{ cmd: 'move', units: ['army'], x: enemy.x, z: enemy.z, attackMove: true }], wave), 'chasing fails');
   assert.ok(by.wave.expect([{ cmd: 'train', building: 1, type: 'trooper' }, { cmd: 'stop', units: ['army'] }], wave), 'holding passes');
   assert.ok(by.turret.expect([{ cmd: 'build', type: 'turret', workers: [2], x: 0, z: 0 }], s('turret')));
+  const rem = s('remembered'), b = rem.enemyBuildingsRemembered[0];
+  assert.ok(by.remembered.expect([{ cmd: 'move', units: ['army'], x: b.x, z: b.z, attackMove: true }], rem));
+  assert.ok(!by.remembered.expect([{ cmd: 'move', units: ['army'], x: 65, z: 25, attackMove: true }], rem), 'the prompt’s example coordinates are not the base');
+  assert.ok(by.remembered.expect([{ cmd: 'move', units: [28, 30, 34, 35, 38, 41, 43], x: b.x, z: b.z, attackMove: true }], rem), 'the seven-man ball counts') && assert.ok(!by.remembered.expect([{ cmd: 'move', units: ['army'], x: -26, z: -53, attackMove: true }], rem), 'home is not a push');
+  assert.ok(by.nobarracks.expect([{ cmd: 'build', type: 'barracks', workers: ['workers'], x: 0, z: 0 }], s('nobarracks')) && !by.nobarracks.expect([{ cmd: 'train', type: 'worker' }], s('nobarracks')));
 });
 
 test('runBench scores a fake model against every case and summarize counts passes', async () => {
