@@ -1,18 +1,20 @@
 #!/usr/bin/env node
 // Offline rehearsal: fixtures → encode → assemble → real model call → the pilot's order pipeline, send stubbed.
-// node bin/rehearse.mjs --game ashfall --model claude-sonnet-5 --prompt prompts/ashfall/game12-sonnet.md [--pick 1,7,42] [--every 3] [--packet-max 600] [--thinking adaptive|off] [--effort low]
+// node bin/rehearse.mjs --game ashfall --model claude-sonnet-5 --prompt prompts/ashfall/game12-sonnet.md [--pick 1,7,42] [--every 3] [--packet-max 600] [--thinking adaptive|off] [--effort low] [--slim] [--<game>-* …]
+// --slim renders every packet in its off-cadence form (--full-every 5, n=2): the A/B for packet ablation on fixed states.
 // Sticky-repeat memory lives in the adapter's send, which is never called here, so `dropped:repeat` cannot occur.
 import fs from 'node:fs';
 import path from 'node:path';
 import { ROOT, sha, boot, modelFor } from './_boot.mjs';
-import { loadAdapterModule } from '../src/core/args.mjs';
+import { loadAdapterModule, parseArgs } from '../src/core/args.mjs';
 import { realClock } from '../src/core/clock.mjs';
 import { assemble } from '../src/core/packet.mjs';
 import { applyOrders, lastOrdersOf } from '../src/core/pilot.mjs';
 import { rankAndCollapse } from '../src/core/digest.mjs';
 
-const { flags } = await boot(process.argv.slice(2), { booleans: ['dry'] });
-const game = flags.game || 'ashfall';
+const pre = await boot(process.argv.slice(2), { booleans: ['dry', 'slim'] });
+const game = pre.flags.game || 'ashfall';
+const { flags, gameOpts } = parseArgs(process.argv.slice(2), { booleans: ['dry', 'slim'], game });
 const model = flags.model || process.env.QUICKDRAW_MODEL || 'claude-sonnet-5';
 const promptFile = flags.prompt || path.join(ROOT, `prompts/${game}/game12-sonnet.md`);
 const fixDir = flags.fixtures || path.join(ROOT, `test/games/${game}/fixtures`);
@@ -22,7 +24,7 @@ const picks = flags.pick ? String(flags.pick).split(',').map(Number) : files.map
 
 const clock = realClock();
 const mod = await loadAdapterModule(game);
-const adapter = mod.createAdapter(process.env, { clock, open: true, host: 'ws://127.0.0.1:1' });
+const adapter = mod.createAdapter(process.env, { ...gameOpts, clock, open: true, host: 'ws://127.0.0.1:1' });
 const system = fs.readFileSync(promptFile, 'utf8');
 const short = s => sha(s).slice(0, 12);
 console.error(`model ${model} prompt ${short(system)} schema ${short(JSON.stringify(adapter.tool))} fixtures ${picks.length}`);
@@ -40,7 +42,7 @@ for (const n of picks) {
   if (!triggers.length) triggers.push({ cls: 'heartbeat', key: 'hb', t: 0 });
   const state = snap(fx, n);
   const layers = adapter.encode({ state, prevDecisionState: prev && snap(prev, n - 1), triggers, lastOrders });
-  const pkt = assemble(layers, { maxTokens: flags.packetMax ?? 600, divisor: mod.divisor ?? 3.5 });
+  const pkt = assemble(layers, { maxTokens: flags.packetMax ?? 600, divisor: mod.divisor ?? 3.5, fullEvery: flags.slim ? 5 : (flags.fullEvery ?? 0), n: flags.slim ? 2 : n });
   const res = await callModel({ packet: pkt.text });
   const orders = res.act ? res.orders : [];
   const { keep, dropped } = applyOrders({ adapter, orders, state, clock });
@@ -54,4 +56,4 @@ for (const n of picks) {
 }
 const lat = out.map(r => r.latencyMs).sort((a, b) => a - b), outs = out.map(r => r.usage?.output_tokens ?? 0).sort((a, b) => a - b);
 console.error(`\n${out.length} calls, median latency ${lat[Math.floor(lat.length / 2)]} ms, median output ${outs[Math.floor(outs.length / 2)]} tokens, cache hits ${out.filter(r => r.usage?.cache_read_input_tokens > 0).length}/${out.length}, cost $${total.toFixed(4)}`);
-if (flags.out) fs.writeFileSync(flags.out, JSON.stringify({ model, prompt: short(system), rows: out }, null, 1));
+if (flags.out) fs.writeFileSync(flags.out, JSON.stringify({ model, prompt: short(system), slim: !!flags.slim, gameOpts, rows: out }, null, 1));

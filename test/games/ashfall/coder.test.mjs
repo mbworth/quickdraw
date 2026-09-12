@@ -85,3 +85,25 @@ test('fieldsOnDemand keeps fields on every packet while a harvester is idle or a
   const dry = { ...base, fields: base.fields.map(f => (f === worked ? { ...f, ore: 0 } : f)) };
   assert.equal(F(dry, { fieldsOnDemand: true }).full, undefined);
 });
+
+test('keepAnchor: core and turret lines stay on slim packets, other buildings ride the cadence', { skip: !files.length }, () => {
+  const i = Math.min(PICK.late, files.length) - 1;
+  const L = layersAt(i, files, { fullBuildings: true, keepAnchor: true });
+  const B = L.find(l => l.name === 'buildings'), rest = L.find(l => l.name === 'buildings-rest');
+  assert.ok(B.lines.every(l => /^(co|tu)#/.test(l.text)) && B.lines.length >= 1, 'anchor lines only');
+  assert.ok(rest.full && rest.lines.length >= 1 && rest.lines.every(l => !/^(co|tu)#/.test(l.text)));
+  const slim = assemble(L, { maxTokens: 9999, fullEvery: 5, n: 2 }).text, full = assemble(L, { maxTokens: 9999, fullEvery: 5, n: 6 }).text;
+  assert.ok(slim.includes('\nB\nco#') && !rest.lines.some(l => slim.includes(l.text)), 'slim: B holds the anchor only');
+  assert.equal(full, assemble(layersAt(i, files, { fullBuildings: true }), { maxTokens: 9999, fullEvery: 5, n: 6 }).text, 'full packet unchanged');
+  assert.equal(layersAt(i, files, { keepRemembered: true }).find(l => l.name === 'remembered').full, undefined, 'keepRemembered takes M off the cadence');
+});
+
+test('compactBuildings: one always-on B line with ids, anchor positions, and only hurt or unfinished detail', { skip: !files.length }, () => {
+  const i = Math.min(PICK.late, files.length) - 1;
+  const B = layersAt(i, files, { compactBuildings: true }).find(l => l.name === 'buildings');
+  assert.equal(B.lines, undefined); assert.equal(B.full, undefined);
+  assert.match(B.text, /^B co#\d+@-?\d+,-?\d+( (ba|dp|tu|wl|ar|se|co)#\d+(@-?\d+,-?\d+)?( (hp\d+|bld\d+))?)*$/);
+  const n = layersAt(i, files, {}).find(l => l.name === 'buildings').lines.length;
+  assert.equal(B.text.split(' ').filter(w => /#\d+/.test(w)).length, n, 'every building named once');
+  assert.ok(assemble(layersAt(i, files, { compactBuildings: true }), { maxTokens: 9999, fullEvery: 5, n: 2 }).text.includes('\nB co#'), 'present on slim packets');
+});

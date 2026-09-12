@@ -97,9 +97,13 @@ export function army(s) {
   return cl.map(c => `${ty(c.type)} x${c.n}@${c.x},${c.z} ${STATE[c.state] || c.state || '?'}${c.n <= 2 ? ' #' + c.ids.join(',#') : ''}`);
 }
 
-export function buildings(s) {
-  return bldsOf(s).map(b => `${ref(b)}@${pos(b)} ${done(b) ? `hp${pct(b.hp, b.max)}` : `bld ${pct(b.progress, 1)}`}`);
+export const bldLine = b => `${ref(b)}@${pos(b)} ${done(b) ? `hp${pct(b.hp, b.max)}` : `bld ${pct(b.progress, 1)}`}`;
+export function buildings(s, { only = null } = {}) {
+  return bldsOf(s).filter(b => !only || only(b)).map(bldLine);
 }
+const isAnchor = b => b.type === 'core' || b.type === 'turret';
+// compact: `co#1@70,4 ba#13 dp#22 tu#30@50,-3 hp58 ba#40 bld40` — what exists, where the anchor is, what is hurt or unfinished
+export const compactBuildings = s => bldsOf(s).map(b => `${ref(b)}${isAnchor(b) ? '@' + pos(b) : ''}${!done(b) ? ` bld${pct(b.progress, 1)}` : pct(b.hp, b.max) < 100 ? ` hp${pct(b.hp, b.max)}` : ''}`).join(' ') || 'none';
 
 export function enemy(s) {
   const blds = bldsOf(s), units = unitsOf(s).filter(u => u.type !== 'worker');
@@ -151,7 +155,8 @@ const lineLayer = (name, priority, items, prio = () => priority, extra = {}) => 
 // encode({state, prevDecisionState, triggers, lastOrders}, opts) → Layer[]
 // opts.foldFields folds unexplored fields into one line; opts.fullBuildings puts the buildings layer on the --full-every cadence;
 // opts.fieldsOnDemand keeps fields on every packet while a harvester is idle or a worked field is dry (the decision that needs node ids).
-export function encode({ state, prevDecisionState, triggers = [], lastOrders: lo = [] }, { foldFields = false, fullBuildings = false, fieldsOnDemand = false } = {}) {
+// opts.keepAnchor (with fullBuildings): core and turret lines stay on every packet; the prompt's turret and mirror rules read them.
+export function encode({ state, prevDecisionState, triggers = [], lastOrders: lo = [] }, { foldFields = false, fullBuildings = false, fieldsOnDemand = false, keepAnchor = false, keepRemembered = false, compactBuildings: compactB = false } = {}) {
   const s = state.native, prev = prevDecisionState?.native || null;
   const fieldsFull = !(fieldsOnDemand && fieldsNeeded(s));
   return [
@@ -161,9 +166,11 @@ export function encode({ state, prevDecisionState, triggers = [], lastOrders: lo
     layer('production', 0, production(s)),
     layer('economy', 1, economy(s)),
     lineLayer('army', 2, army(s)),
-    lineLayer('buildings', 2, buildings(s), () => 2, fullBuildings ? { full: true } : {}),
+    ...(compactB ? [layer('buildings', 2, compactBuildings(s))] : fullBuildings && keepAnchor
+      ? [lineLayer('buildings', 2, buildings(s, { only: isAnchor })), { name: 'buildings-rest', priority: 2, text: '', lines: buildings(s, { only: b => !isAnchor(b) }).map(text => ({ text, priority: 2 })), full: true }]
+      : [lineLayer('buildings', 2, buildings(s), () => 2, fullBuildings ? { full: true } : {})]),
     lineLayer('enemy', 1, enemy(s)),
-    lineLayer('remembered', 3, remembered(s), () => 3, { full: true }),
+    lineLayer('remembered', 3, remembered(s), () => 3, keepRemembered ? {} : { full: true }),   // keepRemembered: `M none` is the prompt's cue to attack the mirror
     lineLayer('fields', 3, fields(s, { fold: foldFields }), () => 3, fieldsFull ? { full: true } : {}),
     layer('last', 0, lastOrders(lo)),
   ];

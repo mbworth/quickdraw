@@ -44,3 +44,15 @@ test('every variant validates under strict rules and is discriminated by cmd', (
   assert.deepEqual(names, ['move', 'attack', 'stop', 'disband', 'gather', 'repair', 'build', 'train', 'research', 'cancel', 'rally']);
   for (const n of names) { assert.equal(tool.$defs[n].properties.cmd.const, n); checkStrict(tool.$defs[n], n, tool.$defs); }
 });
+
+test('step 2 variants: --ashfall-no-note drops note and stays strict; --ashfall-order-cap sets the cap', async () => {
+  const { createAdapter, toolNoNote } = await import('../../../src/games/ashfall/index.mjs');
+  const { virtualClock } = await import('../../../src/core/clock.mjs');
+  assert.deepEqual(Object.keys(toolNoNote.properties), ['act', 'cmds']); assert.deepEqual(toolNoNote.required, ['act', 'cmds']);
+  checkStrict(toolNoNote, 'orders', toolNoNote.$defs);
+  assert.notEqual(sha(toolNoNote), sha(tool));
+  const a = createAdapter({}, { clock: virtualClock(0), noNote: true, orderCap: 8, WS: class { close() {} } });
+  assert.equal(a.tool, toolNoNote); assert.equal(a.meta.orderCap, 8); assert.equal(a.meta.toolName, 'orders');
+  const b = createAdapter({}, { clock: virtualClock(0), WS: class { close() {} } });
+  assert.equal(b.tool, tool); assert.equal(b.meta.orderCap, 15);
+});

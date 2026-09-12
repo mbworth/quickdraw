@@ -1,7 +1,7 @@
 // Frozen literal schema for `orders`: a discriminated union of the wire cmds plus act:boolean.
 // Strict-compatible: every property required, optionals typed [x,"null"], additionalProperties false.
 // Ids are strings only: an integer|string union here made the compiled strict grammar too large (400) on 2026-09-12.
-const IDS = { type: 'array', items: { type: 'string' }, description: 'entity ids as strings ("12") and/or selectors: all army idle workers troopers raiders wardens siege' };
+const IDS = { type: 'array', items: { type: 'string' }, description: 'entity ids as strings ("12"), selectors (all army idle workers troopers raiders wardens siege), or cluster labels pasted from A ("tr x5@39,1" = those riflemen); one label beats a list of ids' };
 const INT = { type: 'integer' };
 export const tool = Object.freeze({
   type: 'object',
@@ -17,7 +17,7 @@ export const tool = Object.freeze({
   additionalProperties: false,
   $defs: {
     move: { type: 'object', properties: { cmd: { const: 'move' }, units: IDS, x: INT, z: INT, attackMove: { type: 'boolean' } }, required: ['cmd', 'units', 'x', 'z', 'attackMove'], additionalProperties: false },
-    attack: { type: 'object', properties: { cmd: { const: 'attack' }, units: IDS, target: INT }, required: ['cmd', 'units', 'target'], additionalProperties: false },
+    attack: { type: 'object', properties: { cmd: { const: 'attack' }, units: IDS, target: { type: 'integer', description: 'an enemy id listed in X right now; for anything else (the enemy base, a remembered building) use move with attackMove at its position' } }, required: ['cmd', 'units', 'target'], additionalProperties: false },
     stop: { type: 'object', properties: { cmd: { const: 'stop' }, units: IDS }, required: ['cmd', 'units'], additionalProperties: false },
     disband: { type: 'object', properties: { cmd: { const: 'disband' }, units: IDS }, required: ['cmd', 'units'], additionalProperties: false },
     gather: { type: 'object', properties: { cmd: { const: 'gather' }, units: IDS, ore: { type: ['integer', 'null'], description: 'node id, or null for the nearest node within 45' } }, required: ['cmd', 'units', 'ore'], additionalProperties: false },

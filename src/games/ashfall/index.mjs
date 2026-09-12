@@ -5,6 +5,10 @@ import { makeAuth } from './auth.mjs';
 import { CLASSES, COOLDOWN_MS, toTrigger, derive } from './events.mjs';
 import { encode } from './coder.mjs';
 import { tool } from './tool.mjs';
+
+// Step 2 variant: the same schema without `note` (~14 output tokens a call in game 21). Built here so tool.mjs stays a literal.
+const { note: _n, ...propsNoNote } = tool.properties;
+export const toolNoNote = Object.freeze({ ...tool, properties: propsNoNote, required: tool.required.filter(k => k !== 'note') });
 import { expand as expandCmds, sig, STICKY } from './expand.mjs';
 import { validate } from './validate.mjs';
 import { ABBR_TEXT } from './abbr.mjs';
@@ -48,7 +52,9 @@ export function createAdapter(env, opts = {}) {
   ctl.on('close', e => em.emit('close', e));
 
   return {
-    meta, tool, ctl,
+    meta: opts.orderCap ? Object.freeze({ ...meta, orderCap: Number(opts.orderCap) }) : meta,   // --ashfall-order-cap N
+    tool: opts.noNote ? toolNoNote : tool,   // --ashfall-no-note true
+    ctl,
     on: (ev, fn) => em.on(ev, fn),
     async connect() { await ctl.connect(); },
     async seat(o = {}) {
@@ -75,8 +81,8 @@ export function createAdapter(env, opts = {}) {
     canAct: s => s.header.lifecycle === 'active',
     deadline: () => null,
     derive,
-    encode: input => encode(input, { foldFields: !!opts.foldFields, fullBuildings: !!opts.fullBuildings, fieldsOnDemand: !!opts.fieldsOnDemand }),
-    expand: (cmds, state) => expandCmds(cmds, state, { recent: new Set(recent.flat()) }),
+    encode: input => encode(input, { foldFields: !!opts.foldFields, fullBuildings: !!opts.fullBuildings, fieldsOnDemand: !!opts.fieldsOnDemand, keepAnchor: !!opts.keepAnchor, keepRemembered: !!opts.keepRemembered, compactBuildings: !!opts.compactBuildings }),
+    expand: (cmds, state, decidedOn) => expandCmds(cmds, state, { recent: new Set(recent.flat()), decidedOn }),
     validate,
     async send(cmds) {
       const settled = await Promise.allSettled(cmds.map(c => { const { cmd, ...args } = c; return ctl.cmd(cmd, args); }));   // per cmd: a dropped socket mid-batch must not unsay the ones the hub ran

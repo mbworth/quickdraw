@@ -57,3 +57,20 @@ test('sig keeps nested arg values, so distinct nested orders are not repeats', (
   assert.notEqual(sig({ cmd: 'x', near: { x: 1, z: 2 } }), sig({ cmd: 'x', near: { x: 9, z: 9 } }));
   assert.equal(sig({ b: 1, a: 2 }), sig({ a: 2, b: 1 }));
 });
+
+test('labels resolve against the packet state first; idle means idle harvesters for gather and repair; "all army" splits', () => {
+  const moved = { native: { mine: S.native.mine.map(e => (e.type === 'trooper' ? { ...e, x: e.x + 30 } : e)) } };   // the cluster walked 30 since the packet
+  const byNewest = expand([{ cmd: 'stop', units: ['tr x2@39,1'] }], moved);
+  assert.deepEqual(byNewest.dropped.map(d => d.reason), ['bad-id'], 'the label no longer matches the newest state');
+  const byPacket = expand([{ cmd: 'stop', units: ['tr x2@39,1'] }], moved, { decidedOn: S });
+  assert.deepEqual(byPacket.cmds[0].units, [21, 22]);
+  assert.deepEqual(expand([{ cmd: 'gather', units: ['idle'], ore: null }, { cmd: 'repair', units: ['idle'], target: 5 }, { cmd: 'move', units: ['idle'], x: 0, z: 0, attackMove: false }], S).cmds.map(c => c.units), [[30], [30], ['idle']]);
+  const busy = { native: { mine: [{ id: 31, type: 'worker', state: 'gather', x: 0, z: 0 }, { id: 32, type: 'worker', state: 'gather', x: 50, z: 50 }, { id: 40, type: 'turret', x: 48, z: 52, hp: 100, max: 420 }], fields: [{ x: 5, z: 5, nodes: [{ id: 7 }] }] } };
+  assert.deepEqual(expand([{ cmd: 'repair', units: ['idle'], target: 40 }], busy).cmds[0].units, [32], 'no idle harvester: the one nearest the turret');
+  assert.deepEqual(expand([{ cmd: 'gather', units: ['idle'], ore: 7 }], busy).cmds[0].units, [31], 'nearest the node’s field');
+  assert.deepEqual(expand([{ cmd: 'gather', units: ['idle'], ore: null }], { native: { mine: [] } }).dropped.map(d => d.reason), ['bad-id'], 'no harvester at all');
+  const mem = { native: { mine: S.native.mine, enemyVisible: [{ id: 90, type: 'trooper', x: 1, z: 1 }], enemyBuildingsRemembered: [{ id: 91, type: 'barracks', x: 70.4, z: -9.6 }] } };
+  assert.deepEqual(expand([{ cmd: 'attack', units: ['army'], target: 91 }], mem).cmds[0], { cmd: 'move', units: ['army'], x: 70, z: -10, attackMove: true }, 'a remembered building is attack-moved at');
+  assert.deepEqual(expand([{ cmd: 'attack', units: ['army'], target: 90 }], mem).cmds[0].cmd, 'attack', 'a visible target stays an attack');
+  assert.deepEqual(expand([{ cmd: 'move', units: ['all army'], x: 0, z: 0, attackMove: true }], S).cmds[0].units, ['all', 'army']);
+});

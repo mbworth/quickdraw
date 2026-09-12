@@ -15,7 +15,7 @@ export function exitCodeOf(done) {
 // expand → cap → validate → stale check. The pilot and the rehearsal play this same pipeline.
 export function applyOrders({ adapter, orders, state, decidedOn = state, staleAfterMs = Infinity, clock }) {
   const t0 = clock.now(), dropped = [], cap = adapter.meta.orderCap;
-  let { cmds, dropped: d1 } = adapter.expand(orders, state); dropped.push(...d1);
+  let { cmds, dropped: d1 } = adapter.expand(orders, state, decidedOn); dropped.push(...d1);   // decidedOn: the state the packet came from, for pasted labels
   if (cmds.length > cap) { for (const c of cmds.slice(cap)) dropped.push({ cmd: c, reason: 'cap' }); cmds = cmds.slice(0, cap); }
   const expandMs = clock.now() - t0;
   let { keep, dropped: d2 } = adapter.validate(cmds, state); dropped.push(...d2);
