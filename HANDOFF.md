@@ -1,70 +1,83 @@
-# Handoff — 2026-09-12
+# Handoff — 2026-09-12, end of day
 
-State of Quickdraw after the first implementation pass and the first live games. For the next session and for the adversarial review team. Everything is committed (`c836be1`); the tree is clean.
+State of Quickdraw after M0–M6 and the first day of M7 (games 12–24). Everything is committed on `main`; `npm test` is 106 tests, 3 skipped (need `ASHFALL_LOCAL`, `ASHFALL_LIVE=1`, or a key), under a second on virtual time. Chronology and per-game numbers are in `notes/ashfall/games.md`; this file is where things stand and what to do next.
 
-## Where things stand
+## Direction
 
-| milestone | state |
-|---|---|
-| M0-M3 | done. `npm test`: 91 tests, 3 skipped (need `ASHFALL_LOCAL`, `ASHFALL_LIVE=1`, or a key), < 1 s on virtual time |
-| M4 rehearsal | done on Sonnet only (the key is Sonnet-only): run 3 legal 16/16, sensible 14/16; `test/games/ashfall/rehearsal.md` |
-| M5 live | done: checklist (games 24-25), smoke (27), game 12 = hub game 28, loss at 4:00; `runs/ashfall-28.jsonl` |
-| M6 measurement | done: `bin/pace.mjs`, `bin/replay.mjs` (all 85 game-12 packets, skipped calls included, replay byte for byte; this proves encode is pure over the refs, not that the API saw the packet) |
-| M7 iterate | not started. This document is its plan |
-| review | done: `docs/reviews/2026-09-12-harness.md`, every item fixed; verified live in games 13-15 (hub 29-31): 0 reconnects, 0 crashes, no pregame calls, clean stop-file exits |
-| games 22-23 | step 2: thinking off worse (model p50 2.8 s, 141 tokens, loss); no-note 89 tokens, win 4:24 |
-| quality | `bin/discipline.mjs` + rehearsal A/B: slim packets lose the turret rule; `--ashfall-keep-anchor` restores it offline |
-| game 21 | step 7 expand fix: rejections 14 → 2, but 0 labels used and guessed id lists (p50 8 ids); loss |
-| games 16-19 | M7 packet ablation: game 16 `--full-every 5` packet 467, loss; games 17-19 `--full-every 5 --ashfall-fold-fields true --ashfall-full-buildings true` packet 427/415/508, three wins, reaction p50 3.9-4.0 s. game 20 adds `--ashfall-fields-on-demand true`: blind gathers 24 → 0, loss. `notes/ashfall/games.md` |
-| games 13-15 | prompt work, asked for after game 13: game 15 (`prompts/ashfall/game15-sonnet.md`, sha `cc08728a`) **won** at 7:37 by killing the core. It is the new baseline prompt for M7 |
+Harness, not strategy. `prompts/ashfall/game15-sonnet.md` (sha `cc08728a…`) is the frozen prompt for every experiment: strategy sections are byte-identical across games; the format section (packet layers, tool) is harness territory and may change once the bench shows decisions do not move. Iterate on seconds per decision and tokens per packet. **Win rate is a confirmation metric only; the bench and trajectory replay are the gates** (see Measurement).
 
-Game 12 pace row (`node bin/pace.mjs runs/ashfall-28.jsonl`): 19.4 decisions per game-minute, 8 timeouts, reaction p50 4.0 s / p90 7.2 s (event-anchored, n=35), model p50 2.0 s, 116 output tokens median, **packet 660 real tokens p50** (481 est + ~180 framing; the §1 target of ≤ 600 real is not met), cache 100% but 0 tokens written (the prefix came from the game-27 smoke: a fresh prompt pays ~$0.02 more), orders kept 27.9% (80 of 97 drops are `noore`), 4 rejected, 0 rate-limited, 0 reconnects, $0.32. About 1.3 s p50 of reaction was queue time (arrival → tick → decision start); the run predates the split, so `waitP50`/`queueP50` are null for it.
+## Working config
 
-## Direction (set after game 12)
+```
+node bin/pilot.mjs --game ashfall --model claude-sonnet-5 --prompt prompts/ashfall/game15-sonnet.md \
+  --full-every 5 --ashfall-fold-fields true --ashfall-fields-on-demand true --ashfall-no-note true --ashfall-compact-buildings true \
+  --max-usd 1.5 --stop-file /tmp/qd-stop --ashfall-concede-stale true
+```
 
-Harness, not strategy. The prompt `prompts/ashfall/game15-sonnet.md` (sha `cc08728a…`, the first Quickdraw win) is the **frozen baseline** for every experiment; do not tune it, do not write strategy lessons. Iterate on efficiency: reaction time, decisions per minute, and condensing the packet (the Shannon question: how much of each packet is information the decision needs). Win rate is a confirmation metric only.
+What each flag does, and why it is on (all off by default so old runs replay byte for byte):
+- `--full-every 5`: fields and remembered layers on one packet in five. Packet 720 → ~430 real tokens (games 17–19).
+- `--ashfall-fold-fields`: unexplored fields collapse into one `f? f3@x,z …` line, positions kept.
+- `--ashfall-fields-on-demand`: fields stay on every packet while a harvester is idle or a worked field is dry; the gather order needs a node id (game 19: 24 blind gathers → 0 in game 20).
+- `--ashfall-no-note`: schema without `note`; output 121 → 89 tokens (game 23).
+- `--ashfall-compact-buildings`: one always-on `B` line, ids and types, positions for core and turrets, hp/bld only when hurt or unfinished. The prompt's whole build logic reads `B`; with it on the bench the slim packet matches the full packet (76%) at 39% of the tokens.
+- Superseded, kept for replay of games 17–23: `--ashfall-full-buildings`, `--ashfall-keep-anchor`, `--ashfall-keep-remembered`. Untested: `--ashfall-order-cap N`. Worse: `--thinking off` (game 22: slower and longer output).
 
-## Next steps, in order (one variable per game)
+Expand sugar in the same config (no flag): pasted cluster labels resolve against the state the packet was encoded from (60 of 60 stale-label drops fixed); `idle` in `gather`/`repair`/`build` means idle harvesters, else the harvester nearest the job; `"all army"` splits into selectors; `attack` on a remembered building becomes an attack-move at its position; the tool describes attack's target as "visible in X now".
 
-1. **Instrumentation**: done. `call` lines carry `anchor` and the split `waitMs`/`queueMs`/`encodeMs apiMs expandMs validateMs sendMs`; `pace` prints the split, `pace --row [game]` prints the `games.md` row; `bin/layers.mjs <run>` replays every packet and prints per-layer est tokens, packet share, constant share (layer text unchanged since the previous decision) and repeat share (lines present in the previous packet). Games 12-15: packet est p50 481-588, repeat lines 59-70%; **fields is 41-59% of the packet with 86-93% of its lines repeated** (11 of 13 field lines are unexplored `?` that never change); buildings 10-20%, 100% repeated; the eight live layers (header delta triggers production economy army enemy last) together are ~150-250 tokens. Ablation (step 6) starts from fields and buildings.
-2. **Output length** (X2 step 1), one game each on the game 20 config: `--thinking off` (also removes `output_config`): **game 22, worse**: model p50 2.8 s vs 2.1, 141 vs 121 output tokens, out p90 206 vs 158, reaction 5.6 vs 4.3 s, loss; adaptive/low stays. `--ashfall-no-note true` (schema without `note`, ~14 of 121 output tokens a call in game 21; new schema sha → grammar recompile and a cache write), `--ashfall-order-cap 8` (15 → 8). Measure model p50 and no-op share.
-2b. **Decision quality** (see `notes/ashfall/games.md` § Decision quality and § Decision bench). **`bin/bench.mjs`** is now the gate: nine fixed states with the prompt's expected order, `--repeats 5`, `--compare` across arms, `--rescore` after a predicate edit; fixtures from runs via `bin/snapshot.mjs`. Results: full packet 76%; game 24 config 58%; + expand sugar 69%; slim + `--ashfall-compact-buildings true` **76% at 174 est / 88 output tokens**. The compact `B` line replaces `--ashfall-full-buildings`/`--ashfall-keep-anchor` (both kept for replay). **Game 24** (hub 41) on that config: loss at 14:30 after 25 pushes, but turret at 2:41 and the first push with the turret up, as the bench predicted; packet 467 real, 101 output tokens, no-op 6%. `runs/ashfall-41.jsonl` is the first full capture and the environment for `bin/trajectory.mjs` arms. **Config stays** = `--full-every 5 --ashfall-fold-fields true --ashfall-fields-on-demand true --ashfall-no-note true --ashfall-compact-buildings true`. Bench every packet, schema or expand change before a game; add a case whenever a game shows a rule broken. **`bin/trajectory.mjs`** (added before game 24) replays a whole recorded game open-loop under an arm: same states, triggers, last orders and decision numbers; only the harness differs; ~$0.006 a decision, `--every k` to sample. Run files now carry `system`, `tool` and each call's `raw` response, so game 24 onward is a complete capture. Use it for long-chain questions (does the turret come before the push under arm X) without a live game; the world does not react, so it measures decisions, not outcomes. **First result** (game 24 recording, every 3rd decision): the recorded config replayed on itself agrees with the recording on command kinds only 54% of the time; the full packet 36%. The model is that stochastic per decision, so compare arms on rates (no-op, orders per decision, drops, rule adherence), never on per-decision agreement, and treat < 15 points as noise at 84 decisions. Rule adherence is in: `test/games/ashfall/bench/rules.mjs` (nine per-decision rules, `when`/`pass`), scored for the arm and the recording, `--rescore` free; the compare table ends with pass/applies per rule. At `--every 3` most rules apply < 15 times; use `--every 1` (~$1 an arm) or pool recordings for push/gather questions. Open: the same-config arm attacked 9 times where the recording attacked twice; check whether replay differs from live in validate timing (replay validates against the packet's own state, live against the newest). Two offline tools: `bin/discipline.mjs <run…>` scores rule adherence from run files (turret time, first push size/time/turret-up, pushes, bank, idle harvesters); `bin/rehearse.mjs --slim --ashfall-* … --pick 34,40,43,46` is the packet A/B on fixed states, ~$0.02 a call. Finding: slim packets drop the turret (2/5 vs 5/5 at t169); `--ashfall-keep-anchor true` (core and turret lines on every packet, ~25 tokens) restores it 5/5. The push rule is still 2-3/5 on slim vs 5/5 full at t214; `--ashfall-keep-remembered true` (`M` always) did not close it. Untested live. Next live config = game 20 config + `--ashfall-no-note true` + `--ashfall-keep-anchor true`; run `discipline` after every game.
-3. **Tick on event arrival**: today an event waits for the next 500 ms `state` push (T2), then for any call in flight, then the refresh floor. Add `--event-tick` (fire a tick on event arrival with the latest snapshot) and measure the reaction split from step 1. 145 of 326 trigger outcomes in game 12 were `coalesced`.
-4. **Overlapping calls**: allow a second call to start while the first is in flight, validate each against the newest state on return, drop by `stale`. Design question: ordering of sends and `lastOrders` across two in-flight decisions.
-5. **Streaming per-cmd dispatch** (M8 in REQ): `eager_input_streaming`, dispatch each cmd as its JSON closes; open question is validate on a partial list.
-6. **Packet ablation**, stopping rule = real-token `packetP50` and no-op share over three games (kept share cannot move: 80 of 97 drops are `noore`, a property of the frozen prompt). Offline replay (`bin/layers.mjs`, and re-assembling the replayed layers with variants) over games 12-15, est p50: base 481-715; `--full-every 5` 267-385; folded unexplored fields 403-665; fold + buildings on the full cadence + every 5 → 216-286. Two adapter options exist for the next games, off by default so old runs replay unchanged: `--ashfall-fold-fields true` (unexplored fields collapse into one `f? f3@x,z …` line, positions kept) and `--ashfall-full-buildings true` (buildings layer rides `--full-every`). **Game 16** (hub 32, `--full-every 5` only): packet 720 → 467 real, loss at 10:42, 23 timeouts (7 in game 15; both games' timeouts sit in fights on `danger` triggers, api p90 4.1 vs 3.2 s), bad-id drops 17 vs 7, `no units matched` 8. **Game 17** (hub 33, `--full-every 5 --ashfall-fold-fields true --ashfall-full-buildings true`): packet 427 real / 273 est, **won** at 7:48, reaction p50 3.9 s (best so far), 14 timeouts (11 in the final assault), 3 rejected, $0.66. **Games 18-19** on the same config: wins at 5:48 and 13:00, packet 415 and 508 real, no-op share 8.9% and 7.6%. Stopping rule met over games 17-19: packet real p50 427/415/508 vs 720, no-op 12.7/8.9/7.6%, 3 wins. Game 19 exposed the cost: 24 `gather` rejections (`no ore within 45 units`), 22 on slim packets, once the home fields ran dry and the model had no node ids. Answer built and tested offline, untested live: `--ashfall-fields-on-demand true` keeps `F` on every packet while a harvester is idle or a worked field is at 0 ore (see `notes/ashfall/games.md`). **Game 20** (hub 37, that flag added): blind-gather rejections 24 → 0, `F` on 40% of packets, packet 467 real, loss at 10:24 from a dribbled attack (the game-16 shape). Slim configs now 3 wins, 1 loss over games 17-20. **Working config** (the `# game 20 config` command below) is the new default for every later experiment. Step 6 is done; next is step 2 or step 7. Real minus est is a steady ~150 tokens of framing (not cuttable from the packet). On slim packets the largest layers are now army (65 tokens, 23%) and last orders (38, 12%). The tokenizer is the channel: 1.34 chars/token, digits and punctuation dominate; next candidates after layers: ids on big clusters, 5 node ids per explored field, coarser positions.
-7. **Order size**. Measured over games 15-20 (`runs/ashfall-31..37`): ids per unit-list order p50 3, p90 8-11, max 24; an order with ≥ 8 ids costs ~185 output tokens against ~118 for ≤ 2 ids (n=13-29 per game). The model already pastes cluster labels 9-20 times a game, but 60 of 69 `bad-id` drops across five games were labels that no longer matched: `expand` resolved them against the newest state and the cluster had walked away (units move ~7 a second; every one of the 60 resolves against the packet's own state at r=8). Fixed: `applyOrders` passes `decidedOn` to `expand`, labels resolve there first; `idle` in `gather`/`repair` means idle harvesters (13 `no units matched` rejections in game 20 were this); `"all army"` splits into selectors; the tool's unit-list description now names cluster labels and says one label beats a list of ids (schema sha changes → one cache write). **Game 22** `--thinking off`: worse (see step 2). **Game 23** `--ashfall-no-note true`: 89 output tokens vs 121, win at 4:24; adopted. **Game 21** (hub 38): rejected 14 → 2, label drops 0, bad-id 12 (all `idle` with no idle harvester, now a client drop), loss at 7:54. But labels used: 0 (8-20 before), ids per order p50 8 / p90 13, and the ids are guessed: the packet lists no ids for clusters over 2, the model writes sequential ids anyway and most are alive. Output p50 unchanged at 121; the id lists are a p90 cost (158). Untried: `maxItems` (6?) on the unit-list schema so big groups must be a label or selector (grammar recompile + cache write), or step 2 first since it moves the p50.
-8. Then per-class trigger stats and ≥ 20 games on the final config for win rate.
+## Where the seconds are (game 23–24, reaction p50 5.4–5.6 s in a slow API hour; 3.9–4.3 s in games 17–21)
 
-## What the review team should attack
+| stage | time | lever |
+|---|---|---|
+| event waits for the 500 ms state push, then a tick, then any call in flight | 1.1–2.0 s | steps 3–4 below |
+| prefill (~9k cached + ~400 fresh tokens) | ~0.5 s | little left in the packet |
+| output, 90–120 tokens at 17–20 ms each | 1.5–2.0 s | output format (step 1 below) |
+| expand, validate, send | ~0.05 s | done |
 
-Reviewed 2026-09-12: findings in `docs/reviews/2026-09-12-harness.md` (S1 items 1–4 before the next live game; 5–7 before another pace row; 8–9 before any M7 experiment). Original target list below.
+Real minus estimated packet tokens is a steady ~150 tokens of message framing, not cuttable.
 
-- **Concurrency**: `decide` loop, dirty re-entry, `markDone` ordering, `finish` racing an in-flight call, the new one-refresh wait on an ended state (`src/core/pilot.mjs`).
-- **Trigger engine**: cooldown before coalescing, edge memory across `resume`, deadline never firing twice, heartbeat alignment (`src/core/triggers.mjs`).
-- **Recorder**: one sync-flushed queue instead of a stream; drop-past-4 MB backpressure; refs stay valid under `on-decision`/`sampled` (`src/core/record.mjs`).
-- **Transport**: reconnect holds a ref'd timer; pending cmds resolve `disconnected`; event buffer caps per kind; `seq` is per game across both teams (`src/games/ashfall/ctl.mjs`).
-- **Tool schema**: ids are strings only because the `integer|string` union made the strict grammar too large (probe with `messages.create`, not `countTokens`); 11 variants + enums + nullables + `note` compile (`src/games/ashfall/tool.mjs`).
-- **Expand sugar**: pasted cluster labels resolve to ids within r=8; `idle` in `workers` → idle harvesters; repeat suppression only for build/research/cancel/rally across decisions (`src/games/ashfall/expand.mjs`).
-- **Validate** threads a provisional bank; is anything it drops something the server would have accepted (`noore` timing at 500 ms granularity)?
-- **Measurement honesty**: `pace` excludes decision 1, counts reaction only on decisions with sent orders, reports raw `input_tokens` (includes ~200 framing). Is kept share the right proxy when most drops are client-side and free?
-- **Boundary**: `test/core/boundary.test.mjs` walks imports and runs the core suite in a copy without `src/games/ashfall`.
-- **Generality** (X5): what in core would break for a second game? Candidates: `clocks.game` assumed seconds; `stale` uses game time when present, wall otherwise; core trigger classes `heartbeat`/`deadline`/`resume`.
+## Measurement (all offline unless stated)
 
-## Known defects fixed today (verify the fixes)
+| tool | question it answers | cost |
+|---|---|---|
+| `bin/pace.mjs <run…>` (`--row N` prints the games.md row) | pace, latency split, tokens, cache, orders kept, cost | free |
+| `bin/replay.mjs <run> all` | encode is pure over the recorded refs (byte-for-byte) | free |
+| `bin/layers.mjs <run…>` | per-layer tokens, share, constant and repeat lines | free |
+| `bin/discipline.mjs <run…>` | rule adherence of a live game: turret time, first push size/turret-up, pushes, bank, idle harvesters | free |
+| `bin/bench.mjs [arm flags] --repeats 5 --out a.json`; `--compare`; `--rescore` | decision quality of a harness config on nine fixed states with the prompt's expected order (`test/games/ashfall/bench/cases.mjs`) | ~$0.20 an arm |
+| `bin/snapshot.mjs <run> (--row R \| --n N) --out fixture.json` | a scrubbed, committable fixture from any recorded state | free |
+| `bin/trajectory.mjs <run> [--every k] [arm flags] --out a.json`; `--compare`; `--rescore` | open-loop replay of a recorded game under one arm: same states, triggers, last orders, decision numbers; scored on rates and on nine per-decision rules (`test/games/ashfall/bench/rules.mjs`), recording as the reference column | ~$0.006 a decision |
+| `bin/rehearse.mjs [--slim] [arm flags] --pick …` | the older fixed-state A/B (threads last orders across picks) | ~$0.02 a call |
 
-- Review fixes (all in `docs/reviews/2026-09-12-harness.md`, untested live): reconnect single-flight + attempt cap + `close` → `transport` finish; request timeout 10 s; heartbeat rides the next tick and always reschedules; no heartbeat calls in pregame; `Object.hasOwn` on every model-string lookup; per-cmd send results; `--full-every` wired; rehearsal shares `applyOrders`; SIGINT finishes cleanly (exit 130, second Ctrl-C hard exits).
-- `--stale-after` default 2 s dropped every order (model latency 2.3-2.9 s); now decision deadline + 2 s.
-- Ended state reached the core before the adapter's `done`: outcome recorded `{}`; adapter now emits `done` first, core waits one refresh.
-- Calls 1-2 timed out at 6 s on the cold cache write; every call before the first cache hit now gets 3× the deadline.
-- Reconnect backoff on unref'd timers let the process exit mid-reconnect; a ref'd timer now spans the reconnect.
+Run files from game 24 on are complete captures: `system` (prompt text), `tool` (schema) and `meta` in the config line; every state; per call the packet, triggers, refs, `raw` model response, usage, latency split; per decision the raw orders, sent, dropped; every server result.
+
+Facts the tools established:
+- **Noise floor**: the recorded config replayed on itself agrees with the recording on command kinds 54% of the time (game 24, 84 decisions). Compare arms on rates only; under ~15 points at 84 decisions is noise; bench cases need ≥ 5 repeats.
+- **Bench**: full packet 76%; slim without `B` 58%; slim + expand sugar 69%; slim + compact `B` 76% at 174 est / 88 output tokens.
+- **Rule adherence live** (`discipline`): game 15 (full) turret 1:34, pushed at 2:22 with the turret up; games 16–23 (slim, no `B`) pushed at 2:10–3:00 with no turret; game 24 (compact `B`) turret 2:41, push at 3:25 with the turret up. First pushes were never pieces; losses come from the ball dying with no follow-up.
+- **Output**: ids per unit-list order p50 3–8, p90 8–13; ≥ 8 ids ≈ +65 output tokens. The model invents sequential ids it never saw (game 21) and pastes labels rarely; `attack target:0` is its way of saying "go to the enemy base".
+- **Packet**: on slim packets the largest layers are army (~50–65 tokens) and last orders (~25–38).
+
+## Next steps, in order
+
+1. **Output command language** (the largest remaining lever, ~60% of output tokens is JSON keys and ids). One string field, e.g. `t 12 tr 2; m army 65,25 a`, decoded by expand; short per-game entity ids (renumbered client side, both directions); grid coordinates where precision is not needed. Needs the prompt's format section to change (strategy sections frozen). Gate: bench ≥ 76% and trajectory rule rates within noise of the current config, then one live game for pace.
+2. **Layer-sensitivity tool**: bench with each layer removed, so packet content is decided by measured decision sensitivity, not by hand (keep-anchor was the hand version).
+3. **Tick on event arrival** (`--event-tick`): an event waits for the next 500 ms state push today; 145 of 326 trigger outcomes in game 12 coalesced. Measure `waitP50`.
+4. **Overlapping calls**: a second call while one is in flight, each validated against the newest state on return. Design question: ordering of sends and `lastOrders` across two in-flight decisions.
+5. **Streaming per-cmd dispatch**: `eager_input_streaming`, dispatch each cmd as its JSON closes; open question is validate on a partial list.
+6. Then per-class trigger stats and ≥ 20 games on the final config for win rate.
+
+Open items: trajectory replay validates against the packet's own state where live validates against the newest (the same-config arm attacked 9 times against 2 recorded; check that first); `maxItems` on unit lists as a schema-level cap on id lists; the push rule on the bench is 2–3/5 slim vs 5/5 full and neither `M` nor the anchor closed it.
+
+## Known defects fixed (verify live if touching these areas)
+
+Reconnect single-flight + attempt cap + `close` → `transport` finish; request timeout 10 s; heartbeat rides the next tick and always reschedules; no heartbeat calls in pregame; `Object.hasOwn` on every model-string lookup; per-cmd send results; SIGINT finishes cleanly (exit 130, second Ctrl-C hard exits); `--stale-after` = decision deadline + 2 s; adapter emits `done` before the ended state; calls before the first cache hit get 3× the deadline; a ref'd timer spans reconnect backoff. Review record: `docs/reviews/2026-09-12-harness.md`.
 
 ## Environment
 
 - `.env` (gitignored): `ANTHROPIC_API_KEY` (**Sonnet only**), `ASHFALL_HUB` (wss://…), `ASHFALL_KEY`. `ASHFALL_LOCAL=~/workspace/ashfall_sector` enables the local-hub tests and fixture capture.
 - `.gitignore` ignores `runs/` and `*.jsonl` (except test fixtures); prompts are tracked.
-- Account record: games 24, 25 (checklist, conceded), 27 (smoke, abandoned), 28 (game 12) are scripted losses.
-- Live game cost ≈ $0.08 per game-minute at the current config.
+- Live game ≈ $0.06–0.09 per game-minute; a game is 5–15 minutes. Background commands longer than 10 minutes have completed in this environment.
+- Account record: hub games 24, 25 (checklist, conceded), 27 (smoke), 28–41 (games 12–24), 34 (stub, stopped at 3 decisions) are on the account.
 
 ## Commands
 
@@ -73,15 +86,15 @@ npm test
 node bin/pilot.mjs --game mock --model none
 ASHFALL_LOCAL=../ashfall_sector npm run test:ashfall
 ASHFALL_LIVE=1 ASHFALL_CONCEDE_STALE=1 node --test test/games/ashfall/live.test.mjs      # live checklist, concedes leftovers
-node bin/rehearse.mjs --game ashfall --model claude-sonnet-5 --prompt prompts/ashfall/game12-sonnet.md --every 3
-node bin/pilot.mjs --game ashfall --model claude-sonnet-5 --prompt prompts/ashfall/game15-sonnet.md --full-every 5 --ashfall-fold-fields true --ashfall-full-buildings true --ashfall-fields-on-demand true --ashfall-no-note true --ashfall-compact-buildings true --max-usd 1.5 --stop-file /tmp/qd-stop --ashfall-concede-stale true   # game 24 config
+node bin/pace.mjs --row 24 runs/ashfall-41.jsonl
+node bin/replay.mjs runs/ashfall-41.jsonl all
+node bin/layers.mjs runs/ashfall-41.jsonl
+node bin/discipline.mjs runs/ashfall-31.jsonl runs/ashfall-41.jsonl
+node bin/bench.mjs --repeats 5 --out /tmp/full.json                                        # full-packet arm
 node bin/bench.mjs --repeats 5 --slim --ashfall-fold-fields true --ashfall-fields-on-demand true --ashfall-no-note true --ashfall-compact-buildings true --out /tmp/arm.json
 node bin/bench.mjs --compare /tmp/full.json /tmp/arm.json
 node bin/snapshot.mjs runs/ashfall-36.jsonl --n 191 --out test/games/ashfall/bench/fixtures/dry-t522.json
-node bin/discipline.mjs runs/ashfall-31.jsonl runs/ashfall-33.jsonl
-node bin/rehearse.mjs --game ashfall --model claude-sonnet-5 --prompt prompts/ashfall/game15-sonnet.md --pick 34,40,43,46 --slim --ashfall-fold-fields true --ashfall-full-buildings true --ashfall-fields-on-demand true --ashfall-keep-anchor true
-node bin/pace.mjs runs/ashfall-28.jsonl
-node bin/replay.mjs runs/ashfall-28.jsonl all
-node bin/layers.mjs runs/ashfall-31.jsonl
-node bin/pace.mjs --row 15 runs/ashfall-31.jsonl
+node bin/trajectory.mjs runs/ashfall-41.jsonl --every 3 --out /tmp/same.json               # arm flags default to the recording's
+node bin/trajectory.mjs runs/ashfall-41.jsonl --every 3 --full-every 0 --ashfall-fold-fields false --ashfall-fields-on-demand false --ashfall-no-note false --ashfall-compact-buildings false --out /tmp/fullpkt.json
+node bin/trajectory.mjs --compare /tmp/same.json /tmp/fullpkt.json
 ```

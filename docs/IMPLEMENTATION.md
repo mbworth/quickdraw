@@ -15,7 +15,7 @@ Order: M0 scaffold → M1 core against the mock game → M2 Ashfall transport �
 | M4 rehearsal | done on Sonnet (the key is Sonnet-only): 3 runs, run 3 legal 16/16, sensible 14/16, median latency 2.75 s, cache hits 15/16, $0.09; scores in `test/games/ashfall/rehearsal.md`. Divisor calibrated at 1.34 chars/token. Opus/Haiku cache checks not possible with this key |
 | M5 live game | done: checklist green (games 24-25, conceded), smoke (game 27, 40 decisions), game 12 = hub game 28, loss at 4.0 min, `runs/ashfall-28.jsonl`, notes row written |
 | M6 measurement | done: `pace` row for game 12 in `notes/ashfall/games.md`; `replay` reproduces all 77 game-12 packets byte for byte |
-| M7 iterate | not started |
+| M7 iterate | in progress (games 13-24, 2026-09-12): packet ablation done, decision bench and trajectory replay built; see `HANDOFF.md` |
 
 Deviations from the plan as written, and why:
 - **Recorder** uses one ordered in-memory queue flushed with `fs.writeSync` (immediately for `call`/`decision`/`result`/`done`, every 250 ms or 64 KB for `state`) instead of a `createWriteStream`: a stream cannot be flushed synchronously from `uncaughtException`, and two writers on one fd would reorder lines and break refs. Writes loop on the byte count so a short write cannot truncate a line.
@@ -223,18 +223,12 @@ Exit: `pace` row for game 12; `replay` reproduces every game-12 packet byte for 
 
 ## M7 — Iterate
 
-Per X1/X2, one variable per game, proxies not win rate:
-1. Output length: thinking off vs low effort; order cap 15 → 8; drop `note`.
-2. Decision deadline 6 → 4 s.
-3. Heartbeat 3 → 5 s.
-4. Packet 600 → 400 → 300 (X4 stopping rule).
-5. `--full-every 3`.
-6. Model: haiku, opus, on the same prefix.
-7. Prompt.
-8. Streaming per-cmd dispatch (open question on partial validate).
-Then `pace --row` and per-class trigger stats; then ≥ 20 games on the final config for win rate.
+Status 2026-09-12 (details in `HANDOFF.md`, per-game numbers in `notes/ashfall/games.md`):
+- Done: instrumentation (`layers`, `pace --row`); packet ablation (fields cadence, folded fields, fields on demand, compact buildings: 720 → ~430 real tokens, decision quality restored per the bench); output length (no `note`: 121 → 89 tokens; thinking off rejected); order size (label resolution on the packet's state, harvester selectors, attack-target description).
+- Measurement gates added: `bin/discipline.mjs` (rule adherence of live runs), `bin/bench.mjs` + `test/games/ashfall/bench/` (fixed states with the prompt's expected order, repeats, compare, rescore), `bin/snapshot.mjs` (fixtures from runs), `bin/trajectory.mjs` (open-loop replay of a recorded game under one arm, rule rates against the recording). Run files carry prompt text, schema and raw responses from game 24 on.
+- Next, in order: output command language with short ids; layer-sensitivity bench; tick on event arrival; overlapping calls; streaming per-cmd dispatch; then ≥ 20 games on the final config for win rate.
 
-Hub-side asks to file with `ashfall` once game 12 shows the need: `train{count}`, bank-threshold wake, event-only mode, `seq` scope.
+Hub-side asks to file with `ashfall` once needed: `train{count}`, bank-threshold wake, event-only mode, `seq` scope.
 
 ## Risks and where they are retired
 
@@ -254,7 +248,7 @@ Hub-side asks to file with `ashfall` once game 12 shows the need: `train{count}`
 
 ## Cut until after game 12
 
-Per-class `pace` table, `--row`, streaming dispatch. The second game adapter is the next plan.
+Per-class `pace` table and streaming dispatch (still open); `--row` shipped in M7. The second game adapter is the next plan.
 
 ## Review 2026-09-12
 
