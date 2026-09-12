@@ -4,7 +4,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { assemble } from '../../../src/core/packet.mjs';
 import { VOCAB } from '../../../src/games/ashfall/abbr.mjs';
-import { HERE, fixtureFiles, loadFixture, layersAt } from './helpers.mjs';
+import { HERE, fixtureFiles, loadFixture, layersAt, snap } from './helpers.mjs';
+import { encode } from '../../../src/games/ashfall/coder.mjs';
 import { divisor } from '../../../src/games/ashfall/index.mjs';
 
 const files = fixtureFiles();
@@ -52,4 +53,35 @@ test('properties over every fixture', { skip: !files.length }, () => {
 test('encode is deterministic', { skip: !files.length }, () => {
   const i = files.length - 1;
   assert.equal(JSON.stringify(layersAt(i)), JSON.stringify(layersAt(i)));
+});
+
+test('foldFields collapses unexplored fields into one line; fullBuildings marks the layer full', { skip: !files.length }, () => {
+  const i = Math.min(PICK.firefight, files.length) - 1;
+  const base = layersAt(i), folded = layersAt(i, files, { foldFields: true, fullBuildings: true });
+  const F = L => L.find(l => l.name === 'fields'), B = L => L.find(l => l.name === 'buildings');
+  const unexplored = F(base).lines.filter(l => / \?$/.test(l.text));
+  assert.ok(unexplored.length >= 2, 'fixture has unexplored fields');
+  assert.equal(F(folded).lines.length, F(base).lines.length - unexplored.length + 1);
+  const fold = F(folded).lines.at(-1).text;
+  assert.match(fold, /^f\? (f\d+c?@-?\d+,-?\d+ ?)+$/);
+  for (const l of unexplored) { const m = l.text.match(/^(f\d+) \w+ (\w+)@(-?\d+,-?\d+)/); assert.ok(fold.includes(`${m[1]}${m[2] === 'cry' ? 'c' : ''}@${m[3]}`), l.text); }
+  assert.equal(F(folded).lines.filter(l => !l.text.startsWith('f? ')).length, F(base).lines.length - unexplored.length, 'explored lines untouched');
+  assert.equal(B(base).full, undefined); assert.equal(B(folded).full, true);
+  assert.equal(assemble(folded, { maxTokens: 9999, fullEvery: 5, n: 2 }).text.includes('\nB'), false, 'buildings dropped off-cadence');
+  assert.ok(assemble(folded, { maxTokens: 9999, fullEvery: 5, n: 6 }).text.includes('\nB'), 'buildings back on the full packet');
+});
+
+test('fieldsOnDemand keeps fields on every packet while a harvester is idle or a worked field is dry', { skip: !files.length }, () => {
+  const fx = loadFixture(files[Math.min(PICK.firefight, files.length) - 1]);
+  const F = (native, o) => encode({ state: snap({ state: native }), triggers: [], lastOrders: [] }, o).find(l => l.name === 'fields');
+  const base = fx.state;
+  assert.equal(F(base, { fieldsOnDemand: true }).full, true, 'busy harvesters: fields stay on the full cadence');
+  const wk = base.mine.find(u => u.type === 'worker');
+  const idle = { ...base, mine: base.mine.map(u => (u === wk ? { ...u, state: 'idle' } : u)) };
+  assert.equal(F(idle, {}).full, true); assert.equal(F(idle, { fieldsOnDemand: true }).full, undefined);
+  assert.ok(assemble(encode({ state: snap({ state: idle }), triggers: [], lastOrders: [] }, { fieldsOnDemand: true }), { maxTokens: 9999, fullEvery: 5, n: 2 }).text.includes('\nF\n'));
+  const worked = base.fields.find(f => base.mine.some(u => u.type === 'worker' && u.state === 'gather' && Math.hypot(u.x - f.x, u.z - f.z) <= 14));
+  assert.ok(worked, 'a fixture field with harvesters on it');
+  const dry = { ...base, fields: base.fields.map(f => (f === worked ? { ...f, ore: 0 } : f)) };
+  assert.equal(F(dry, { fieldsOnDemand: true }).full, undefined);
 });

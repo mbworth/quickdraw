@@ -12,7 +12,8 @@
     "record": "node bin/record.mjs",
     "rehearse": "node bin/rehearse.mjs",
     "pace": "node bin/pace.mjs",
-    "replay": "node bin/replay.mjs"
+    "replay": "node bin/replay.mjs",
+    "layers": "node bin/layers.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.125.0",

@@ -113,13 +113,27 @@ export function remembered(s) {
   return (s.enemyBuildingsRemembered || []).map(b => `${ref(b)}@${pos(b)} hp${pct(b.hp, b.max)} age${R(Math.max(0, s.time - (b.lastSeen ?? s.time)))}`);
 }
 
-export function fields(s) {
-  return (s.fields || []).map((f, i) => {
+// fold: unexplored fields (no ore seen) collapse into one `f? f3@x,z f11c@x,z` line; positions kept, ~40% of the layer saved
+export function fields(s, { fold = false } = {}) {
+  const all = (s.fields || []).map((f, i) => ({ f, i: i + 1 }));
+  const line = ({ f, i }) => {
     const kind = FIELD_KIND[f.kind] || f.kind;
     const nodes = (f.nodes || []).map(n => n.id);
     const ore = f.ore == null ? '?' : `o${R(f.ore)}`;
-    return `f${i + 1} ${kind} ${f.res === 'crystal' ? 'cry' : 'ore'}@${pos(f)} ${ore}${f.live ? ' live' : ''}${nodes.length ? ' n#' + nodes.join(',#') : ''}`;
-  });
+    return `f${i} ${kind} ${f.res === 'crystal' ? 'cry' : 'ore'}@${pos(f)} ${ore}${f.live ? ' live' : ''}${nodes.length ? ' n#' + nodes.join(',#') : ''}`;
+  };
+  if (!fold) return all.map(line);
+  const unexplored = all.filter(x => x.f.ore == null);
+  const out = all.filter(x => x.f.ore != null).map(line);
+  if (unexplored.length) out.push('f? ' + unexplored.map(({ f, i }) => `f${i}${f.res === 'crystal' ? 'c' : ''}@${pos(f)}`).join(' '));
+  return out;
+}
+
+// an idle harvester or a worked field at 0 ore means the next order is a gather that needs a node id
+export function fieldsNeeded(s) {
+  const workers = unitsOf(s).filter(u => u.type === 'worker');
+  if (workers.some(w => w.state === 'idle')) return true;
+  return (s.fields || []).some(f => f.ore === 0 && workers.some(w => (w.state === 'gather' || w.state === 'return') && dist(w, f) <= 14));
 }
 
 export function lastOrders(list) {
@@ -134,9 +148,12 @@ export function lastOrders(list) {
 const layer = (name, priority, text, extra = {}) => ({ name, priority, text: `${TAG[name]} ${text}`, ...extra });
 const lineLayer = (name, priority, items, prio = () => priority, extra = {}) => (items.length ? { name, priority, text: TAG[name], lines: items.map((text, i) => ({ text, priority: prio(i) })), ...extra } : { name, priority, text: `${TAG[name]} none`, ...extra });
 
-// encode({state, prevDecisionState, triggers, lastOrders}) → Layer[]
-export function encode({ state, prevDecisionState, triggers = [], lastOrders: lo = [] }) {
+// encode({state, prevDecisionState, triggers, lastOrders}, opts) → Layer[]
+// opts.foldFields folds unexplored fields into one line; opts.fullBuildings puts the buildings layer on the --full-every cadence;
+// opts.fieldsOnDemand keeps fields on every packet while a harvester is idle or a worked field is dry (the decision that needs node ids).
+export function encode({ state, prevDecisionState, triggers = [], lastOrders: lo = [] }, { foldFields = false, fullBuildings = false, fieldsOnDemand = false } = {}) {
   const s = state.native, prev = prevDecisionState?.native || null;
+  const fieldsFull = !(fieldsOnDemand && fieldsNeeded(s));
   return [
     layer('header', 0, header(s)),
     layer('delta', 0, delta(prev, s)),
@@ -144,10 +161,10 @@ export function encode({ state, prevDecisionState, triggers = [], lastOrders: lo
     layer('production', 0, production(s)),
     layer('economy', 1, economy(s)),
     lineLayer('army', 2, army(s)),
-    lineLayer('buildings', 2, buildings(s)),
+    lineLayer('buildings', 2, buildings(s), () => 2, fullBuildings ? { full: true } : {}),
     lineLayer('enemy', 1, enemy(s)),
     lineLayer('remembered', 3, remembered(s), () => 3, { full: true }),
-    lineLayer('fields', 3, fields(s), () => 3, { full: true }),
+    lineLayer('fields', 3, fields(s, { fold: foldFields }), () => 3, fieldsFull ? { full: true } : {}),
     layer('last', 0, lastOrders(lo)),
   ];
 }

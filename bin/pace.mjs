@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-// node bin/pace.mjs <run.jsonl>… : decisions, reaction time, latency split, tokens, cache, orders, cost.
+// node bin/pace.mjs [--row [game]] <run.jsonl>… : decisions, reaction time, latency split, tokens, cache, orders, cost.
+// --row prints a markdown row for notes/<game>/games.md instead of the JSON summary.
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readRun } from '../src/core/record.mjs';
@@ -50,13 +51,32 @@ export function summarize(rows) {
   };
 }
 
+const mmss = min => (min == null ? '' : `${Math.floor(min)}:${String(Math.round((min % 1) * 60)).padStart(2, '0')}`);
+const sec = ms => (ms == null ? '-' : `${r1(ms / 1000)} s`);
+
+// row(s, game) → one markdown row: | game | id | model | result | time | notes |
+export function row(s, game = '?') {
+  const result = s.outcome == null ? 'stopped' : s.outcome.won ? '**win**' : 'loss';
+  const notes = [
+    `${s.decisions} decisions (${s.perMinute}/min)`,
+    `reaction p50 ${sec(s.reactionP50)} / p90 ${sec(s.reactionP90)}${s.waitP50 != null ? ` (wait ${sec(s.waitP50)})` : ''}`,
+    `model p50 ${sec(s.apiP50)}`, `${s.outputP50} out tokens`, `packet ${s.packetP50} real`,
+    `${s.timeouts} timeouts`, `kept ${s.keptShare}%`, `${s.ordersRejected} rejected`, `cache ${s.cacheHitRate}%`, `$${s.usd}`,
+  ];
+  return `| ${game} | ${s.gameId ?? ''} | ${s.model}, quickdraw | ${result} | ${mmss(s.minutes)} | ${notes.join(', ')} |`;
+}
+
 if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
-  const files = process.argv.slice(2);
-  if (!files.length) { console.error('usage: pace <run.jsonl>…'); process.exit(64); }
+  const argv = process.argv.slice(2);
+  const ri = argv.indexOf('--row');
+  let game = '?';
+  if (ri >= 0) { argv.splice(ri, 1); if (argv[ri] && !argv[ri].endsWith('.jsonl')) game = argv.splice(ri, 1)[0]; }
+  const files = argv;
+  if (!files.length) { console.error('usage: pace [--row [game]] <run.jsonl>…'); process.exit(64); }
   let bad = 0;
   for (const f of files) {
     const s = summarize(readRun(f));
-    console.log(`${path.basename(f)}: ${JSON.stringify(s)}`);
+    console.log(ri >= 0 ? row(s, game) : `${path.basename(f)}: ${JSON.stringify(s)}`);
     if (!s.ok) { bad++; console.error(`${path.basename(f)}: FAIL cache hit rate ${s.cacheHitRate}% after call 1 (< 90%)`); }
   }
   process.exit(bad ? 1 : 0);

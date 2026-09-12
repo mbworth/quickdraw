@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { summarize, pctl } from '../../bin/pace.mjs';
+import { summarize, pctl, row } from '../../bin/pace.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 
@@ -45,6 +45,8 @@ test('summary from a synthetic run with known numbers', () => {
   assert.deepEqual(s.stops, { tool_use: 6, timeout: 1 });
   assert.deepEqual(s.outcome, { won: true }); assert.equal(s.usd, 0.1235);
   assert.equal(s.gameId, '7'); assert.equal(s.promptSha, 'abcdef01');
+  const r = row(s, 16);
+  assert.match(r, /^\| 16 \| 7 \| m, quickdraw \| \*\*win\*\* \| 2:00 \| 6 decisions \(3\/min\), reaction p50 4 s \/ p90 6 s \(wait 0.1 s\), model p50 2 s, 50 out tokens, packet 400 real, 1 timeouts, kept 80%, 1 rejected, cache 80%, \$0.1235 \|$/);
 });
 
 test('the pace CLI fails a run whose cache misses, and replay fails a run whose packet differs', () => {

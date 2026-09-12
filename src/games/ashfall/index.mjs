@@ -75,7 +75,7 @@ export function createAdapter(env, opts = {}) {
     canAct: s => s.header.lifecycle === 'active',
     deadline: () => null,
     derive,
-    encode,
+    encode: input => encode(input, { foldFields: !!opts.foldFields, fullBuildings: !!opts.fullBuildings, fieldsOnDemand: !!opts.fieldsOnDemand }),
     expand: (cmds, state) => expandCmds(cmds, state, { recent: new Set(recent.flat()) }),
     validate,
     async send(cmds) {

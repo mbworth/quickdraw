@@ -10,7 +10,7 @@ import { realClock } from '../src/core/clock.mjs';
 
 const snapOf = (rows, ref) => { const r = rows[ref - 1]; if (!r || r.kind !== 'state') throw new Error(`ref ${ref} is not a state line`); return { header: r.header, native: r.native, t: r.st, idx: r.idx }; };
 
-// replayDecision(rows, n, adapter, cfg) → {recorded, replayed, same, layers}
+// replayDecision(rows, n, adapter, cfg) → {recorded, replayed, same, layers, kept}
 export function replayDecision(rows, n, adapter, cfg) {
   const call = rows.find(r => r.kind === 'call' && r.n === n);
   if (!call) throw new Error(`no call line for decision ${n}`);
@@ -18,7 +18,7 @@ export function replayDecision(rows, n, adapter, cfg) {
   const prevDecisionState = call.prevDecisionRef ? snapOf(rows, call.prevDecisionRef) : null;
   const layers = adapter.encode({ state, prevDecisionState, triggers: call.triggers, lastOrders: call.lastOrders });
   const pkt = assemble(layers, { maxTokens: cfg.packetMax, divisor: cfg.divisor, fullEvery: cfg.fullEvery || 0, n });
-  return { recorded: call.packet, replayed: pkt.text, same: pkt.text === call.packet, layers };
+  return { recorded: call.packet, replayed: pkt.text, same: pkt.text === call.packet, layers, kept: pkt.kept.map(k => k.name) };
 }
 
 export async function replayFile(file, n) {
