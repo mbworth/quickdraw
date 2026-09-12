@@ -45,7 +45,7 @@ export function summarize(rows) {
     packetP50: pctl(tokens, 0.5), packetSamples: tokens.length, estP50: pctl(later.map(c => c.packetMeta?.estTokens).filter(x => x != null), 0.5),
     cacheHitRate: hitRate == null ? null : r1(hitRate * 100), cacheSamples: warm.length, cacheWriteTokens: calls.reduce((n, c) => n + (c.usage?.cache_creation_input_tokens || 0), 0),
     ordersSent: sent, ordersDropped: dropped, ordersRejected: rejected, keptShare: sent + dropped ? r1((100 * (sent - rejected)) / (sent + dropped)) : null,
-    rateLimited, reconnects: rows.filter(r => r.kind === 'reconnect').length, stops,
+    overlapped: calls.filter(c => c.overlap > 0).length, rateLimited, reconnects: rows.filter(r => r.kind === 'reconnect').length, stops,
     outcome: done?.outcome ?? null, why: done?.why ?? null, usd: done?.usd != null ? Math.round(done.usd * 1e4) / 1e4 : null,
     ok: hitRate == null || hitRate >= 0.9,
   };
@@ -61,7 +61,7 @@ export function row(s, game = '?') {
     `${s.decisions} decisions (${s.perMinute}/min)`,
     `reaction p50 ${sec(s.reactionP50)} / p90 ${sec(s.reactionP90)}${s.waitP50 != null ? ` (wait ${sec(s.waitP50)})` : ''}`,
     `model p50 ${sec(s.apiP50)}`, `${s.outputP50} out tokens`, `packet ${s.packetP50} real`,
-    `${s.timeouts} timeouts`, `kept ${s.keptShare}%`, `${s.ordersRejected} rejected`, `cache ${s.cacheHitRate}%`, `$${s.usd}`,
+    `${s.timeouts} timeouts`, ...(s.overlapped ? [`${s.overlapped} overlapped`] : []), `kept ${s.keptShare}%`, `${s.ordersRejected} rejected`, `cache ${s.cacheHitRate}%`, `$${s.usd}`,
   ];
   return `| ${game} | ${s.gameId ?? ''} | ${s.model}, quickdraw | ${result} | ${mmss(s.minutes)} | ${notes.join(', ')} |`;
 }

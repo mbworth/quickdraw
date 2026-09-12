@@ -43,7 +43,7 @@ export async function replayTrajectory({ rows, adapter, callModel, flags = {}, d
   const out = [];
   for (const call of calls) {
     const state = snapOf(rows, call.stateRef), prev = call.prevDecisionRef ? snapOf(rows, call.prevDecisionRef) : null;
-    const layers = adapter.encode({ state, prevDecisionState: prev, triggers: call.triggers, lastOrders: call.lastOrders });
+    const layers = adapter.encode({ state, prevDecisionState: prev, triggers: call.triggers, lastOrders: call.lastOrders, pending: call.pending || [] });
     const pkt = assemble(layers, { maxTokens: flags.packetMax ?? cfg.packetMax ?? 600, divisor, fullEvery: flags.slim ? 5 : (flags.fullEvery ?? cfg.fullEvery ?? 0), n: call.n });
     const res = await callModel({ packet: pkt.text });
     const { keep, dropped } = applyOrders({ adapter, orders: res.act ? res.orders : [], state, clock });

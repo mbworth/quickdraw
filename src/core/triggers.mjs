@@ -4,10 +4,11 @@ import { rankAndCollapse, rankOf } from './digest.mjs';
 export const CORE_CLS = { deadline: 'deadline', heartbeat: 'heartbeat', resume: 'resume' };
 export const isCore = cls => cls === CORE_CLS.deadline || cls === CORE_CLS.heartbeat || cls === CORE_CLS.resume;
 
-export function createTriggers({ classes, cooldownMs = {}, heartbeatMs = 3000, refreshMs = 0, deadlineMarginMs = 1000, clock, onFire }) {
+// maxInFlight > 1 lets a ranked trigger start another call while one is in flight (heartbeats and resumes never do).
+export function createTriggers({ classes, cooldownMs = {}, heartbeatMs = 3000, refreshMs = 0, deadlineMarginMs = 1000, maxInFlight = 1, clock, onFire }) {
   const rank = tr => tr.cls === CORE_CLS.deadline ? -1 : tr.cls === CORE_CLS.heartbeat || tr.cls === CORE_CLS.resume ? classes.length : rankOf(tr, classes);
   const st = {
-    inFlight: false, dirty: null, lastStartT: -Infinity, lastTickT: -Infinity, suspended: false, forceNext: false,
+    inFlight: 0, dirty: null, lastStartT: -Infinity, lastTickT: -Infinity, suspended: false, forceNext: false,
     lastFire: new Map(), derivedActive: new Set(), hbTimer: null, hbDue: false, dlTimer: null, dlAt: null,
     lastCanAct: true,
   };
@@ -30,7 +31,8 @@ export function createTriggers({ classes, cooldownMs = {}, heartbeatMs = 3000, r
       survivors.push(tr);
     }
     if (!survivors.length) return { fire: null, outcomes };
-    if (st.inFlight && !reoffer) {
+    const idleOnly = survivors.every(tr => tr.cls === CORE_CLS.heartbeat || tr.cls === CORE_CLS.resume);
+    if (st.inFlight > 0 && !reoffer && (st.inFlight >= maxInFlight || idleOnly)) {
       st.dirty = rankAndCollapse([...(st.dirty || []), ...survivors], { classes }).sort((a, b) => rank(a) - rank(b) || a.t - b.t);
       for (const tr of survivors) outcomes.push(outcomeOf(tr, 'coalesced'));
       return { fire: null, outcomes };
@@ -92,10 +94,11 @@ export function createTriggers({ classes, cooldownMs = {}, heartbeatMs = 3000, r
 
   return {
     tick, reoffer,
-    markStart() { st.inFlight = true; st.hbDue = false; st.lastStartT = clock.now(); scheduleHeartbeat(); },
+    markStart() { st.inFlight++; this.touch(); },   // once per decision; later calls of the same decision (retry, reoffer) touch()
+    touch() { st.hbDue = false; st.lastStartT = clock.now(); scheduleHeartbeat(); },
     markDone() {
-      st.inFlight = false;
-      if (st.hbDue && !ticking()) fireHeartbeat();   // else the next tick carries it
+      st.inFlight = Math.max(0, st.inFlight - 1);
+      if (!st.inFlight && st.hbDue && !ticking()) fireHeartbeat();   // else the next tick carries it
     },
     takeDirty() { const d = st.dirty; st.dirty = null; return d; },
     floorDelayMs() { return Math.max(0, st.lastStartT + refreshMs - clock.now()); },

@@ -16,7 +16,7 @@ export function replayDecision(rows, n, adapter, cfg) {
   if (!call) throw new Error(`no call line for decision ${n}`);
   const state = snapOf(rows, call.stateRef);
   const prevDecisionState = call.prevDecisionRef ? snapOf(rows, call.prevDecisionRef) : null;
-  const layers = adapter.encode({ state, prevDecisionState, triggers: call.triggers, lastOrders: call.lastOrders });
+  const layers = adapter.encode({ state, prevDecisionState, triggers: call.triggers, lastOrders: call.lastOrders, pending: call.pending || [] });
   const pkt = assemble(layers, { maxTokens: cfg.packetMax, divisor: cfg.divisor, fullEvery: cfg.fullEvery || 0, n });
   return { recorded: call.packet, replayed: pkt.text, same: pkt.text === call.packet, layers, kept: pkt.kept.map(k => k.name) };
 }

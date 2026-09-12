@@ -122,3 +122,11 @@ test('keepRemembered puts the remembered layer on every packet at army priority,
   assert.equal(drop.find(l => l.name === 'remembered').priority, 3);
   assert.ok(!assemble(drop, { maxTokens: 260, divisor: 1.34, fullEvery: 5, n: 3 }).text.includes('\nM\n'), 'slim-dropped without the flag');
 });
+
+test('pending calls in flight are told on the L line, by their triggers', () => {
+  const fx = loadFixture(fixtureFiles()[3]);
+  const pending = [[{ cls: 'danger', key: 'dmg', native: { kind: 'attacked', id: 19, hp: 48, byType: 'trooper' } }]];
+  const L = encode({ state: snap(fx), prevDecisionState: null, triggers: [], lastOrders: [], pending }).find(l => l.name === 'last').text;
+  assert.ok(L.startsWith('L none; pending: '), L);
+  assert.ok(!encode({ state: snap(fx), prevDecisionState: null, triggers: [], lastOrders: [] }).find(l => l.name === 'last').text.includes('pending'));
+});

@@ -156,7 +156,7 @@ const lineLayer = (name, priority, items, prio = () => priority, extra = {}) => 
 // opts.foldFields folds unexplored fields into one line; opts.fullBuildings puts the buildings layer on the --full-every cadence;
 // opts.fieldsOnDemand keeps fields on every packet while a harvester is idle or a worked field is dry (the decision that needs node ids).
 // opts.keepAnchor (with fullBuildings): core and turret lines stay on every packet; the prompt's turret and mirror rules read them.
-export function encode({ state, prevDecisionState, triggers = [], lastOrders: lo = [] }, { foldFields = false, fullBuildings = false, fieldsOnDemand = false, keepAnchor = false, keepRemembered = false, compactBuildings: compactB = false } = {}) {
+export function encode({ state, prevDecisionState, triggers = [], lastOrders: lo = [], pending = [] }, { foldFields = false, fullBuildings = false, fieldsOnDemand = false, keepAnchor = false, keepRemembered = false, compactBuildings: compactB = false } = {}) {
   const s = state.native, prev = prevDecisionState?.native || null;
   const fieldsFull = !(fieldsOnDemand && fieldsNeeded(s));
   return [
@@ -174,6 +174,6 @@ export function encode({ state, prevDecisionState, triggers = [], lastOrders: lo
     // line holding the enemy base position reached the model on 1 packet of 118 and the ball went to the prompt's example coordinates 14 times.
     lineLayer('remembered', keepRemembered ? 2 : 3, remembered(s), () => (keepRemembered ? 2 : 3), keepRemembered ? {} : { full: true }),
     lineLayer('fields', 3, fields(s, { fold: foldFields }), () => 3, fieldsFull ? { full: true } : {}),
-    layer('last', 0, lastOrders(lo)),
+    layer('last', 0, lastOrders(lo) + (pending.length ? `; pending: ${pending.map(set => set.slice(0, 4).map(renderTrigger).join(', ')).join(' | ')}` : '')),   // --overlap: calls already in flight, by their triggers
   ];
 }

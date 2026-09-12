@@ -20,13 +20,13 @@ const stub = ({ delayMs = 0, clock, orders = [{ cmd: 'move', id: 1, to: 5 }], ac
   if (delayMs) await new Promise(r => clock.setTimeout(r, delayMs));
   return { act, orders, note: null, usage: { input_tokens: 10, cache_creation_input_tokens: 0, cache_read_input_tokens: 100, output_tokens: 5 }, stop: 'tool_use', latencyMs: delayMs, cost: 0.001 };
 };
-async function play({ seed = 1, faults = [], turns = 2, delayMs = 0, opts = {}, record = memRecorder(), callModel } = {}) {
+async function play({ seed = 1, faults = [], turns = 2, delayMs = 0, opts = {}, record = memRecorder(), callModel, advanceMs } = {}) {
   const clock = virtualClock(1000);
   const adapter = createAdapter({}, { clock, seed, faults, turns });
   let conceded = 0; const realConcede = adapter.concede; adapter.concede = async () => { conceded++; return realConcede(); };
   await adapter.connect(); await adapter.seat({});
   const p = runPilot({ adapter, callModel: callModel || stub({ delayMs, clock }), clock, record, opts: { heartbeatMs: 100000, deadlineMarginMs: 100, ...opts } });
-  await clock.advance(turns * 1000 + 500);
+  await clock.advance(advanceMs ?? turns * 1000 + 500);
   const out = await p;
   return { out, adapter, lines: record.lines, clock, conceded: () => conceded };
 }
@@ -208,4 +208,30 @@ test('a stop signal finishes the run with exit 130; a transport close finishes i
   assert.equal(out.exitCode, 130); assert.equal(out.done.why, 'signal');
   const t = await play({ turns: 5, faults: [{ at: 1500, kind: 'close' }] });
   assert.equal(t.out.exitCode, 1); assert.equal(t.lines.find(l => l.kind === 'done').why, 'transport');
+});
+
+test('maxInFlight 2: a ranked trigger during a slow call starts a second call instead of waiting; decisions land in return order', async () => {
+  // mock timeline, 1200 ms calls: call 1 on t1 at 1000 runs to 2200; the turn deadline at 1500 starts call 2 while it is in flight.
+  const { lines, adapter } = await play({ delayMs: 1200, turns: 3, opts: { maxInFlight: 2, staleAfterMs: 5000 }, advanceMs: 6000 });
+  const c = calls(lines);
+  const ns = c.map(x => x.n);
+  assert.deepEqual(ns.slice(0, 4), [1, 2, 3, 4]); assert.equal(new Set(ns).size, ns.length, 'numbers are assigned at start and unique');
+  assert.equal(c[1].overlap, 1, 'the second call started while the first was in flight');
+  assert.equal(c[1].latency.waitMs, 0, 'the deadline fired at once instead of after the first call');
+  assert.ok(c[1].pending[0].some(t => t.key === 't1'), 'the second packet was told the first call was still in flight');
+  assert.equal(c[1].prevDecisionRef, c[0].stateRef, 'the overlapping packet’s delta starts at the previous packet’s state');
+  assert.equal(c[0].pending, undefined); assert.equal(c[0].overlap, undefined);
+  assert.deepEqual(lines.filter(l => l.kind === 'decision').map(l => l.n), [1, 2, 3, 4], 'completed decisions in return order; the fifth ended with the game');
+  assert.ok(c.slice(4).every(x => x.skipped === 'ended'), 'calls in flight at the end are skipped');
+  assert.ok(adapter.sent.length >= 4);
+  const coalescedTwo = lines.some(l => l.kind === 'trigger' && l.outcomes.some(o => o.outcome === 'coalesced'));
+  assert.ok(coalescedTwo, 'with both slots busy the next trigger still coalesces');
+  assert.ok(c.some(x => x.triggers.some(t => t.key === 't3')), 'game 26: after overlaps and reoffers the engine still fires (in-flight count returns to 0)');
+});
+
+test('maxInFlight 2: a heartbeat never takes the second slot', async () => {
+  const { lines } = await play({ delayMs: 1200, turns: 2, opts: { maxInFlight: 2, heartbeatMs: 200, staleAfterMs: 5000 }, advanceMs: 5000 });
+  const c = calls(lines);
+  assert.ok(c.some(x => x.overlap > 0), 'some call overlapped');
+  assert.ok(c.every(x => !(x.overlap > 0 && x.triggers.every(t => t.cls === 'heartbeat'))), 'no overlapping call was a bare heartbeat');
 });

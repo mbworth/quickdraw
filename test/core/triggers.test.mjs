@@ -143,3 +143,23 @@ test('every outcome carries the arrival t', () => {
   const r = tr.tick({ events: [ev('info', 'a', 42)] });
   assert.equal(r.outcomes[0].t, 42);
 });
+
+test('maxInFlight 2: the in-flight count is per decision, and returns to zero so later triggers fire (game 26)', async () => {
+  const { createTriggers } = await import('../../src/core/triggers.mjs');
+  const { virtualClock } = await import('../../src/core/clock.mjs');
+  const clock = virtualClock(0);
+  const fired = [];
+  const trig = createTriggers({ classes: ['a', 'b'], heartbeatMs: 100000, maxInFlight: 2, clock, onFire: r => fired.push(r) });
+  const ev = key => ({ cls: 'a', key, t: clock.now() });
+  assert.ok(trig.tick({ events: [ev('e1')] }).fire, 'idle: fires');
+  trig.markStart();
+  assert.ok(trig.tick({ events: [ev('e2')] }).fire, 'one in flight, capacity 2: fires');
+  trig.markStart(); trig.touch(); trig.touch();   // the second decision retries twice
+  assert.equal(trig.tick({ events: [ev('e3')] }).fire, null, 'two in flight: coalesces');
+  assert.equal(trig.tick({ events: [{ cls: 'heartbeat', key: 'hb', t: clock.now() }] }).fire, null);
+  trig.markDone();
+  assert.ok(trig.tick({ events: [ev('e4')] }).fire, 'one slot free again');
+  trig.markDone(); trig.markDone();
+  assert.equal(trig.inFlight, 0);
+  assert.ok(trig.tick({ events: [ev('e5')] }).fire);
+});

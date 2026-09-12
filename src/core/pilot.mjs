@@ -30,19 +30,20 @@ export const lastOrdersOf = (keep, results, dropped) =>
 export async function runPilot({ adapter, callModel, clock, record = null, opts = {}, log = () => {}, stop = null }) {
   const o = {
     heartbeatMs: 3000, deadlineMarginMs: 1000, packetMax: 600, divisor: 3.5, fullEvery: 0, staleAfterMs: 8000,
-    maxUsd: Infinity, maxDecisions: Infinity, concedeOn: 'never', stopFile: null, stopPollMs: 500, leaveTimeoutMs: 2000, ...opts,
+    maxUsd: Infinity, maxDecisions: Infinity, concedeOn: 'never', stopFile: null, stopPollMs: 500, leaveTimeoutMs: 2000, maxInFlight: 1, ...opts,
   };
   const meta = adapter.meta;
   const rec = record || { writeNow: () => -1, writeState: () => null, ensureState: () => null, flushAndClose() {} };
 
   let latest = null, prevDecisionState = null, prevDecisionRef = null, idx = 0, eventsSince = [], resumeT = -Infinity;
-  let lastOrders = [], decisions = 0, usd = 0, started = false, budgetStopped = false, deciding = false;
-  let finished = null, finishResolve, abortDecision = null, stopTimer = null, endTimer = null;
+  let lastOrders = [], decisions = 0, usd = 0, started = false, budgetStopped = false, inFlight = 0, nextN = 0;
+  const aborts = new Set(), pendingSets = new Map();   // in-flight decisions: n → their trigger sets, told to the next packet
+  let finished = null, finishResolve, stopTimer = null, endTimer = null;
   const finishedP = new Promise(r => (finishResolve = r));
 
   const trig = createTriggers({
     classes: meta.classes, cooldownMs: meta.cooldownMs || {}, heartbeatMs: o.heartbeatMs, refreshMs: meta.refreshMs || 0,
-    deadlineMarginMs: o.deadlineMarginMs, clock, onFire: handle,
+    deadlineMarginMs: o.deadlineMarginMs, maxInFlight: o.maxInFlight, clock, onFire: handle,
   });
 
   function recordOutcomes(r, extra = {}) {
@@ -53,8 +54,8 @@ export async function runPilot({ adapter, callModel, clock, record = null, opts 
     return n;
   }
   function handle(r) {
-    recordOutcomes(r, r.fire ? { fireN: decisions + 1 } : {});
-    if (r.fire && !deciding && !finished && !budgetStopped) decide(r.fire).catch(e => { log('decide failed', e); rec.writeNow('crash', { kind: 'decide', error: String(e?.stack || e) }); });
+    recordOutcomes(r, r.fire ? { fireN: nextN + 1 } : {});
+    if (r.fire && inFlight < o.maxInFlight && !finished && !budgetStopped) decide(r.fire).catch(e => { log('decide failed', e); rec.writeNow('crash', { kind: 'decide', error: String(e?.stack || e) }); });
   }
 
   function finish(done, why) {
@@ -63,7 +64,7 @@ export async function runPilot({ adapter, callModel, clock, record = null, opts 
     trig.stop();
     if (stopTimer !== null) clock.clearInterval(stopTimer);
     if (endTimer !== null) clock.clearTimeout(endTimer);
-    abortDecision?.abort();
+    for (const a of aborts) a.abort();
     rec.writeNow('done', { ...done, why: done?.why || why, decisions, usd });
     finishResolve();
   }
@@ -100,9 +101,10 @@ export async function runPilot({ adapter, callModel, clock, record = null, opts 
     return null;
   }
 
+  const reduceTr = ({ cls, key, t, count, urgency, native, gt, derived }) => ({ cls, key, t, count, urgency, native, gt, derived });
   async function decide(set) {
-    deciding = true;
-    let retried = false;
+    inFlight++; trig.markStart();
+    let retried = false, myN = null;
     try {
       while (!finished) {
         const why = budgetHit();
@@ -112,27 +114,31 @@ export async function runPilot({ adapter, callModel, clock, record = null, opts 
           break;
         }
         const startT = clock.now();
-        trig.markStart();
+        trig.touch();   // game 26: markStart here per iteration left the engine's in-flight count stuck at 2 after one overlap, and every later trigger coalesced
         const snap = latest;
         if (!snap) break;   // a heartbeat before the first state
-        const n = decisions + 1;
+        const n = ++nextN; myN = n;
         const stateRef = rec.ensureState(snap);
+        const prevSnap = prevDecisionState, prevRef = prevDecisionRef;
+        const pending = [...pendingSets.entries()].filter(([k]) => k !== n).map(([, s]) => s);   // the other calls in flight, by their triggers
+        pendingSets.set(n, set);
+        if (o.maxInFlight > 1) { prevDecisionState = snap; prevDecisionRef = stateRef; }   // the next overlapping packet's delta starts here
         const evs = set.filter(tr => !tr.derived && !isCore(tr.cls));   // reaction time is anchored on real events only
         const anchor = evs.length ? 'event' : 'tick';
         const eventArrivalT = Math.min(...(evs.length ? evs : set).map(tr => tr.t));
         const tickT = set.tickT ?? startT;
         const T = { waitMs: tickT - eventArrivalT, queueMs: startT - tickT }; let t0 = startT;
-        const layers = adapter.encode({ state: snap, prevDecisionState, triggers: set, lastOrders });
+        const layers = adapter.encode({ state: snap, prevDecisionState: prevSnap, triggers: set, lastOrders, pending });
         const pkt = assemble(layers, { maxTokens: o.packetMax, divisor: o.divisor, fullEvery: o.fullEvery, n });
         T.encodeMs = clock.now() - t0; t0 = clock.now();
-        abortDecision = new AbortController();
-        const res = await callModel({ packet: pkt.text, signal: abortDecision.signal });
-        abortDecision = null;
+        const ac = new AbortController(); aborts.add(ac);
+        const res = await callModel({ packet: pkt.text, signal: ac.signal });
+        aborts.delete(ac);
         T.apiMs = clock.now() - t0; t0 = clock.now();
         usd += res.cost || 0;
         const callBase = {
-          n, stateRef, prevDecisionRef, triggerRefs: [...new Set(set.map(tr => tr.ref).filter(x => x >= 0))],
-          triggers: set.map(({ cls, key, t, count, urgency, native, gt, derived }) => ({ cls, key, t, count, urgency, native, gt, derived })),
+          n, stateRef, prevDecisionRef: prevRef, triggerRefs: [...new Set(set.map(tr => tr.ref).filter(x => x >= 0))],
+          triggers: set.map(reduceTr), ...(pending.length ? { pending: pending.map(s => s.map(reduceTr)), overlap: pending.length } : {}),
           lastOrders, packet: pkt.text,
           packetMeta: { kept: pkt.kept, dropped: pkt.dropped, estTokens: pkt.estTokens, realTokens: res.usage && res.usage.cache_read_input_tokens > 0 ? res.usage.input_tokens : null },
           usage: res.usage, stop: res.stop, error: res.error, note: res.note, raw: res.raw, eventArrivalT, anchor,
@@ -162,15 +168,16 @@ export async function runPilot({ adapter, callModel, clock, record = null, opts 
         rec.writeNow('decision', { n, callRef, act: res.act, orders, sent: keep, dropped });
         rec.writeNow('result', { n, results });
         decisions++;
-        prevDecisionState = snap; prevDecisionRef = stateRef;
+        if (o.maxInFlight <= 1) { prevDecisionState = snap; prevDecisionRef = stateRef; }
+        pendingSets.delete(n);
         const dirty = trig.takeDirty();
         if (!dirty) break;
         set = await reofferOrNull(dirty);
         if (!set) break;
       }
     } finally {
-      deciding = false;
-      abortDecision = null;
+      inFlight--;
+      if (myN !== null) pendingSets.delete(myN);
       trig.markDone();
     }
   }
@@ -186,7 +193,7 @@ export async function runPilot({ adapter, callModel, clock, record = null, opts 
   trig.start();
 
   await finishedP;
-  while (deciding) await wait(clock, 10);
+  while (inFlight > 0) await wait(clock, 10);
   try { await Promise.race([adapter.leave(), wait(clock, o.leaveTimeoutMs)]); } catch (e) { log('leave failed', e); }
   const done = finished.done;
   const exitCode = finished.why === 'stop-file' ? 2 : finished.why === 'signal' ? 130 : exitCodeOf(done);
