@@ -1,0 +1,32 @@
+H t3:59 o730 c0 s18/18 CAPPED
+D +tr#55 -tr#24 -tr#31 E-tr x1 o-70
+T dmg tr#24 hp0 by tr; seen wk@-23,-3; lost tr#24 by tr; lost tr#31 by tr; trained tr#55; kill tr#51
+P co#1 q0 IDLE; ba#13 q2 tr 0 r58,4
+E f1 ore wk4 o1285; f2 ore wk3 o1755
+A
+wk x2@65,-3 g #2,#4
+wk x4@64,10 g
+tr x4@-10,-1 i
+tr x2@3,-2 i #23,#32
+tr x4@55,2 i
+B
+co#1@70,4 hp100
+ba#13@57,5 hp100
+dp#22@70,-4 hp100
+X none
+M none
+F
+f1 home ore@61,13 o1285 live n#1,#2,#3,#4,#5
+f2 home ore@62,-6 o1755 live n#6,#7,#8,#9,#10
+f3 exp ore@-5,-34 ?
+f4 exp ore@62,-35 ?
+f5 exp ore@-25,-71 ?
+f6 exp ore@38,-19 o5500 n#11,#12,#13,#14,#15
+f7 exp ore@-58,53 ?
+f8 exp ore@-5,46 ?
+f9 exp ore@21,72 ?
+f10 exp ore@28,-63 ?
+f11 cry cry@-4,10 o1460 live n#16,#17,#18
+f12 cry cry@67,67 ?
+f13 cry cry@2,-78 ?
+L train tr #13 ok; build dp 70,-12 noore; move 1 0,0 am dropped:stale

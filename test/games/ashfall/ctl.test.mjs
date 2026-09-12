@@ -1,0 +1,51 @@
+// Integration against the local open hub; runs only with ASHFALL_LOCAL set.
+import { test, before, after } from 'node:test';
+import assert from 'node:assert/strict';
+import { connect } from '../../../src/games/ashfall/ctl.mjs';
+import { makeAuth } from '../../../src/games/ashfall/auth.mjs';
+import { spawnLocalHub } from '../../../src/games/ashfall/localhub.mjs';
+import { realClock } from '../../../src/core/clock.mjs';
+
+const LOCAL = process.env.ASHFALL_LOCAL;
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+let hub, c;
+before(async () => { if (LOCAL) hub = await spawnLocalHub({ port: 8791 }); }, { timeout: 30000 });
+after(() => { c?.close(); hub?.stop(); });
+
+test('open-auth register, create vs scripted, state, cmd, terminate+rejoin, leave, no rate limits', { skip: !LOCAL, timeout: 40000 }, async () => {
+  const clock = realClock();
+  const auth = makeAuth({ name: `qd-${Date.now().toString(36)}` });
+  c = connect({ host: hub.host, auth, clock });
+  const hello = await c.connect();
+  assert.equal(hello.type, 'hello');
+  assert.ok(auth.player, 'registered');
+  const g = await c.create({ size: 200, opponent: 'scripted' });
+  assert.ok(g.ok, g.error);
+  assert.equal(c.seat.team, 0);
+  const t0 = Date.now();
+  const first = await new Promise(r => c.on('state', s => r(s)));
+  assert.ok(Date.now() - t0 < 1500, 'state within 1 s');
+  assert.equal(first.started, false);
+  assert.ok((await c.start()).ok);
+  await new Promise(r => { const h = s => { if (s.started) { c.off('state', h); r(); } }; c.on('state', h); });
+  const core = c.latest.state.mine.find(e => e.type === 'core');
+  const r = await c.cmd('train', { building: core.id, type: 'worker' });
+  assert.ok(r.ok, r.error);
+  const bad = await c.cmd('attack', { units: ['army'], target: 999999 });
+  assert.equal(bad.ok, false);
+  assert.match(bad.error, /not found|not visible|no units/);
+  const states0 = c.stats.frames;
+  const dc = new Promise(r => c.on('disconnect', r)), rc = new Promise(r => c.on('reconnect', r));
+  c.terminate();
+  await dc; await rc;
+  assert.equal(c.stats.reconnects, 1);
+  const fresh = await new Promise(r => c.on('state', s => r(s)));
+  assert.equal(fresh.game, g.result.game.id);
+  assert.ok(c.stats.frames > states0);
+  const burst = await Promise.all(Array.from({ length: 70 }, () => c.request('state')));
+  assert.ok(burst.every(x => x.ok), burst.find(x => !x.ok)?.error);
+  assert.equal(c.stats.rateLimited, 0);
+  assert.equal(c.stats.seqGaps, 0);
+  assert.ok((await c.leave()).ok);
+  assert.equal(c.seat, null);
+});

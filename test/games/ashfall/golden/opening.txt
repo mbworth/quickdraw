@@ -1,0 +1,26 @@
+H t0:00 o150 c0 s4/10
+D none
+T started
+P co#1 q0 IDLE
+E f1 ore wk4 o2500; f2 ore wk4 o2500
+A
+wk x4@63,4 g
+B
+co#1@70,4 hp100
+X none
+M none
+F
+f1 home ore@61,13 o2500 live n#1,#2,#3,#4,#5
+f2 home ore@62,-6 o2500 live n#6,#7,#8,#9,#10
+f3 exp ore@-5,-34 ?
+f4 exp ore@62,-35 ?
+f5 exp ore@-25,-71 ?
+f6 exp ore@38,-19 ?
+f7 exp ore@-58,53 ?
+f8 exp ore@-5,46 ?
+f9 exp ore@21,72 ?
+f10 exp ore@28,-63 ?
+f11 cry cry@-4,10 ?
+f12 cry cry@67,67 ?
+f13 cry cry@2,-78 ?
+L none
