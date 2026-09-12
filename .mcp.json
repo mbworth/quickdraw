@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "ashfall-live": {
+      "type": "http",
+      "url": "https://play.ashfallsector.com/mcp"
+    }
+  }
+}
