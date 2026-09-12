@@ -4,7 +4,10 @@
   "description": "Harness for agents that play real-time games through a model API, built for decisions per second",
   "type": "module",
   "private": true,
-  "engines": { "node": ">=20.6" },
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=20.6"
+  },
   "scripts": {
     "test": "node --test test/",
     "test:ashfall": "node --test test/games/ashfall/",

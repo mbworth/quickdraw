@@ -29,3 +29,7 @@ node bin/replay.mjs runs/ashfall-<id>.jsonl all           # re-encodes every dec
 ```
 
 Flags: `--heartbeat --deadline-margin --decision-deadline --packet-max --thinking adaptive|off --effort --max-usd --max-decisions --concede-on never|budget --record-state all|on-decision|sampled --run-dir --stop-file --stale-after`, then `--ashfall-size 200 --ashfall-opponent scripted --ashfall-game <id> --ashfall-team 0 --ashfall-open true --ashfall-host ws://… --ashfall-concede-stale true`. Exit codes: 0 won, 1 lost, 2 stopped, 3 draw.
+
+## License
+
+Apache-2.0. Copyright 2026 RaleighWorth Consulting, LLC. See `LICENSE`.
