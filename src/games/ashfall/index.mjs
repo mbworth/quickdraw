@@ -38,8 +38,8 @@ export function createAdapter(env, opts = {}) {
   const ctl = connect({ host, auth, clock, log, WS: opts.WS });   // WS: test seam for an offline fake socket
   const em = new EventEmitter();
   let gameId = null, team = null, seat = null, doneEmitted = false, why = null;
-  const recent = [];   // last 2 decisions' sticky cmd signatures
-  let open = false;   // the last recent entry belongs to a decision still sending (--stream)
+  const recent = [];   // last 2 decisions' sticky cmd signatures (entries of decisions still streaming are never evicted)
+  const openEntries = new Map();   // --stream: decision n → its recent entry while it is still sending (overlapping streams keep separate entries)
 
   // --event-tick: triggers go out the moment the hub delivers the event (the core ticks on them at once); otherwise they ride the
   // next 500 ms state push, collapsed and capped by the transport's buffer.
@@ -71,9 +71,11 @@ export function createAdapter(env, opts = {}) {
           if (g.status === 'over' || String(g.id) === String(o.game)) continue;
           const mySeat = (g.seats || []).findIndex(x => x && me && x.player === me);
           if (mySeat < 0) continue;
-          if (g.status === 'waiting') { await ctl.join({ game: g.id, team: mySeat }); await ctl.leave(); log(`left unstarted seat in game ${g.id}`); }
-          else if (o.concedeStale) { await ctl.join({ game: g.id, team: mySeat }); await ctl.concede(); await ctl.leave(); log(`conceded stale game ${g.id}`); }
-          else log(`warning: unfinished seat in game ${g.id} (pass --ashfall-concede-stale to concede it)`);
+          try {
+            if (g.status === 'waiting') { await ctl.join({ game: g.id, team: mySeat }); await ctl.leave(); log(`left unstarted seat in game ${g.id}`); }
+            else if (o.concedeStale) { await ctl.join({ game: g.id, team: mySeat }); await ctl.concede(); await ctl.leave(); log(`conceded stale game ${g.id}`); }
+            else log(`warning: unfinished seat in game ${g.id} (pass --ashfall-concede-stale to concede it)`);
+          } catch (e) { log(`stale seat ${g.id}: ${e.message}`); }   // a hiccup here must not kill the run about to start
         }
       }
       const r = o.game ? await ctl.join({ game: Number(o.game), team: o.team ?? 0 }) : await ctl.create({ size: o.size ?? 200, opponent: o.opponent ?? 'scripted', team: o.team ?? 0, name: o.gameName });
@@ -87,16 +89,20 @@ export function createAdapter(env, opts = {}) {
     canAct: s => s.header.lifecycle === 'active',
     deadline: () => null,
     derive,
-    encode: input => encode(input, { foldFields: !!opts.foldFields, fullBuildings: !!opts.fullBuildings, fieldsOnDemand: !!opts.fieldsOnDemand, keepAnchor: !!opts.keepAnchor, keepRemembered: !!opts.keepRemembered, compactBuildings: !!opts.compactBuildings }),
+    encode: input => encode(input, { foldFields: !!opts.foldFields, fullBuildings: !!opts.fullBuildings, fieldsOnDemand: !!opts.fieldsOnDemand, keepAnchor: !!opts.keepAnchor, keepRemembered: !!opts.keepRemembered, compactBuildings: !!opts.compactBuildings, searchFields: !!opts.searchFields }),
     expand: (cmds, state, decidedOn, prior = []) => expandCmds(cmds, state, { recent: new Set(recent.flat()), decidedOn, prior }),
     validate,
-    async send(cmds, { partial = false } = {}) {   // partial: more of the same decision follows (--stream); its sticky cmds join this decision's recent entry
+    async send(cmds, { partial = false, n = null } = {}) {   // partial: more of decision n follows (--stream); its sticky cmds join that decision's recent entry
+      if (!cmds.length && !partial) { openEntries.delete(n); return []; }   // a close with nothing to send: never a new (empty) window entry
       const settled = await Promise.allSettled(cmds.map(c => { const { cmd, ...args } = c; return ctl.cmd(cmd, args); }));   // per cmd: a dropped socket mid-batch must not unsay the ones the hub ran
       const results = settled.map(s => (s.status === 'fulfilled' ? s.value : { ok: false, error: `transport: ${s.reason?.message || s.reason}` }));
       const sigs = cmds.filter((c, i) => results[i].ok && STICKY.has(c.cmd)).map(sig);
-      if (open) recent[recent.length - 1].push(...sigs); else recent.push(sigs);
-      open = partial;
-      while (recent.length > 2) recent.shift();
+      let entry = openEntries.get(n);
+      if (!entry) { entry = []; recent.push(entry); }
+      entry.push(...sigs);
+      if (partial) openEntries.set(n, entry); else openEntries.delete(n);
+      const openSet = new Set(openEntries.values());
+      while (recent.length > 2 && !openSet.has(recent[0])) recent.shift();
       return results.map(r => (r.ok ? { ok: true, result: typeof r.result === 'string' ? r.result : undefined } : { ok: false, error: r.error }));
     },
   };

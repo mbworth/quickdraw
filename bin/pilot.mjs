@@ -15,7 +15,7 @@ const BOOLEANS = ['help', 'print-config', 'event-tick', 'stream'];
 export async function main(argv = process.argv.slice(2)) {
   const pre = await boot(argv, { booleans: BOOLEANS });
   const game = pre.flags.game;
-  if (!game || pre.flags.help) { console.error('usage: pilot --game <name> [--model M|none] [--prompt file] [--heartbeat ms] [--deadline-margin ms] [--decision-deadline ms] [--packet-max n] [--full-every n] [--thinking adaptive|off] [--effort low|medium|high] [--reply tool|text]|off] [--effort low|medium|high] [--max-usd x] [--max-decisions n] [--concede-on never|budget] [--record-state all|on-decision|sampled] [--run-dir dir] [--stop-file path] [--stale-after ms] [--overlap n] [--reserve cls,cls] [--event-tick] [--stream] [--<game>-* ...]'); return 64; }
+  if (!game || pre.flags.help) { console.error('usage: pilot --game <name> [--model M|none] [--prompt file] [--heartbeat ms] [--deadline-margin ms] [--decision-deadline ms] [--packet-max n] [--full-every n] [--thinking adaptive|off] [--effort low|medium|high] [--reply tool|text] [--max-usd x] [--max-decisions n] [--concede-on never|budget] [--record-state all|on-decision|sampled] [--run-dir dir] [--stop-file path] [--stale-after ms] [--overlap n] [--reserve cls,cls] [--event-tick] [--stream] [--<game>-* ...]'); return 64; }
   const { flags, gameOpts } = parseArgs(argv, { booleans: BOOLEANS, game });
   const cfg = {
     game, model: flags.model ?? process.env.QUICKDRAW_MODEL ?? 'claude-sonnet-5', prompt: flags.prompt ?? null,

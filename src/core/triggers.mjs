@@ -16,6 +16,7 @@ export function createTriggers({ classes, cooldownMs = {}, heartbeatMs = 3000, r
   };
   const outcomeOf = (tr, outcome) => ({ cls: tr.cls, key: tr.key, t: tr.t, outcome, count: tr.count });
   const hbCand = () => ({ cls: CORE_CLS.heartbeat, key: 'hb', t: clock.now() });
+  for (const c of reserveFor) if (!classes.includes(c)) throw new Error(`--reserve: unknown class "${c}" (classes: ${classes.join(',')})`);   // a typo would silently run with one slot fewer
   const reserved = new Set(reserveFor);
   // States are flowing: the next tick carries a due heartbeat, so its packet is built from a fresh snapshot.
   const ticking = () => refreshMs > 0 && clock.now() - st.lastTickT <= 2 * refreshMs;
@@ -103,7 +104,7 @@ export function createTriggers({ classes, cooldownMs = {}, heartbeatMs = 3000, r
     touch() { st.hbDue = false; st.lastStartT = clock.now(); scheduleHeartbeat(); },
     markDone() {
       st.inFlight = Math.max(0, st.inFlight - 1);
-      if (!st.inFlight && st.hbDue && !ticking()) fireHeartbeat();   // else the next tick carries it
+      if (!st.inFlight && st.hbDue) { if (ticking()) scheduleHeartbeat(2 * refreshMs); else fireHeartbeat(); }   // the next tick carries it; the timer is the fallback if ticks stop
     },
     takeDirty() { const d = st.dirty; st.dirty = null; return d; },
     floorDelayMs() { return Math.max(0, st.lastStartT + refreshMs - clock.now()); },

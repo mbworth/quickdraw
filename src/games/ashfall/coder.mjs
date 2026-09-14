@@ -113,12 +113,32 @@ export function enemy(s) {
   });
 }
 
-export function remembered(s) {
-  return (s.enemyBuildingsRemembered || []).map(b => `${ref(b)}@${pos(b)} hp${pct(b.hp, b.max)} age${R(Math.max(0, s.time - (b.lastSeen ?? s.time)))}`);
+// searchField(s) → the unexplored field nearest the mirror of my core (where the enemy base most likely is), or null.
+// Ore fields only (crystal is never near a base); when every field is explored the mirror itself is the last waypoint, so the
+// search always names a point.
+export function searchField(s) {
+  if (!s.myBase) return null;
+  const m = { x: -s.myBase.x, z: -s.myBase.z };
+  const un = (s.fields || []).map((f, i) => ({ f, i: i + 1 })).filter(x => x.f.ore == null && x.f.res !== 'crystal');
+  un.sort((a, b) => dist(a.f, m) - dist(b.f, m));
+  return un[0] || { f: m, i: null };
+}
+// searching(s): 8+ combat units and no enemy building listed or remembered: the push has nowhere named to go (game 33: 43 × `am 0,0`).
+export function searching(s) {
+  const known = (s.enemyBuildingsRemembered || []).length || (s.enemyVisible || []).some(e => isBuilding(e.type));
+  return !known && unitsOf(s).filter(u => u.type !== 'worker').length >= 8;
+}
+
+// searchFields: while searching, M carries `search fN@x,z`, the waypoint the prompt's search rule sends the ball to.
+export function remembered(s, { searchFields = false } = {}) {
+  const out = (s.enemyBuildingsRemembered || []).map(b => `${ref(b)}@${pos(b)} hp${pct(b.hp, b.max)} age${R(Math.max(0, s.time - (b.lastSeen ?? s.time)))}`);
+  if (!out.length && searchFields && searching(s)) { const w = searchField(s); if (w) out.push(`search ${w.i == null ? '' : 'f' + w.i}@${pos(w.f)}`); }
+  return out;
 }
 
 // fold: unexplored fields (no ore seen) collapse into one `f? f3@x,z f11c@x,z` line; positions kept, ~40% of the layer saved
-export function fields(s, { fold = false } = {}) {
+// searchFields: the folded `f?` list runs in search order (nearest the mirror of my core first), matching M's `search` waypoint.
+export function fields(s, { fold = false, searchFields = false } = {}) {
   const all = (s.fields || []).map((f, i) => ({ f, i: i + 1 }));
   const line = ({ f, i }) => {
     const kind = FIELD_KIND[f.kind] || f.kind;
@@ -128,6 +148,7 @@ export function fields(s, { fold = false } = {}) {
   };
   if (!fold) return all.map(line);
   const unexplored = all.filter(x => x.f.ore == null);
+  if (searchFields && s.myBase) { const m = { x: -s.myBase.x, z: -s.myBase.z }; unexplored.sort((a, b) => (a.f.res === 'crystal') - (b.f.res === 'crystal') || dist(a.f, m) - dist(b.f, m)); }   // same order as M's search waypoint, crystal last
   const out = all.filter(x => x.f.ore != null).map(line);
   if (unexplored.length) out.push('f? ' + unexplored.map(({ f, i }) => `f${i}${f.res === 'crystal' ? 'c' : ''}@${pos(f)}`).join(' '));
   return out;
@@ -155,8 +176,10 @@ const lineLayer = (name, priority, items, prio = () => priority, extra = {}) => 
 // encode({state, prevDecisionState, triggers, lastOrders}, opts) → Layer[]
 // opts.foldFields folds unexplored fields into one line; opts.fullBuildings puts the buildings layer on the --full-every cadence;
 // opts.fieldsOnDemand keeps fields on every packet while a harvester is idle or a worked field is dry (the decision that needs node ids).
+// opts.searchFields: while 8+ riflemen exist and no enemy building is listed, M carries `search fN@x,z` (the unexplored field nearest the mirror
+// of my core) and the folded `f?` line runs in that order; the game32 prompt's search rule sends the ball there instead of to a guessed coordinate.
 // opts.keepAnchor (with fullBuildings): core and turret lines stay on every packet; the prompt's turret and mirror rules read them.
-export function encode({ state, prevDecisionState, triggers = [], lastOrders: lo = [], pending = [] }, { foldFields = false, fullBuildings = false, fieldsOnDemand = false, keepAnchor = false, keepRemembered = false, compactBuildings: compactB = false } = {}) {
+export function encode({ state, prevDecisionState, triggers = [], lastOrders: lo = [], pending = [] }, { foldFields = false, fullBuildings = false, fieldsOnDemand = false, keepAnchor = false, keepRemembered = false, compactBuildings: compactB = false, searchFields = false } = {}) {
   const s = state.native, prev = prevDecisionState?.native || null;
   const fieldsFull = !(fieldsOnDemand && fieldsNeeded(s));
   return [
@@ -172,8 +195,8 @@ export function encode({ state, prevDecisionState, triggers = [], lastOrders: lo
     lineLayer('enemy', 1, enemy(s)),
     // keepRemembered: on every packet at army priority. At 3 it tied with fields and the assembler drops the first tie, so in game 25 the one
     // line holding the enemy base position reached the model on 1 packet of 118 and the ball went to the prompt's example coordinates 14 times.
-    lineLayer('remembered', keepRemembered ? 2 : 3, remembered(s), () => (keepRemembered ? 2 : 3), keepRemembered ? {} : { full: true }),
-    lineLayer('fields', 3, fields(s, { fold: foldFields }), () => 3, fieldsFull ? { full: true } : {}),
+    lineLayer('remembered', keepRemembered ? 2 : 3, remembered(s, { searchFields }), () => (keepRemembered ? 2 : 3), keepRemembered ? {} : { full: true }),
+    lineLayer('fields', 3, fields(s, { fold: foldFields, searchFields }), () => 3, fieldsFull ? { full: true } : {}),
     layer('last', 0, lastOrders(lo) + (pending.length ? `; pending: ${pending.map(set => set.slice(0, 4).map(renderTrigger).join(', ')).join(' | ')}` : '')),   // --overlap: calls already in flight, by their triggers
   ];
 }

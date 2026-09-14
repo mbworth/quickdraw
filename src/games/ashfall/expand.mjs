@@ -6,7 +6,7 @@ import { dist } from '../../lib/cluster.mjs';
 const own = (table, k) => (typeof k === 'string' && Object.hasOwn(table, k) ? table[k] : undefined);   // never the prototype: cmd:"constructor" is a model string
 export const coerceId = v => {
   if (typeof v === 'number' && Number.isInteger(v)) return v;
-  if (typeof v === 'string') { const m = /^(?:[a-z]+)?#?(\d+)$/i.exec(v.trim()); if (m) return Number(m[1]); }
+  if (typeof v === 'string') { const m = /^(?:n|[a-z]{2})?#?(\d+)$/i.exec(v.trim()); if (m) return Number(m[1]); }   // `n#12`, `ba#12`, `#12`, `12`; never a field label (`f5`)
   return null;
 };
 const UNIT_FIELDS = { move: 'units', attack: 'units', stop: 'units', disband: 'units', gather: 'units', repair: 'units', build: 'workers' };
@@ -41,6 +41,7 @@ export function expand(cmds, state, { recent = new Set(), decidedOn = null, prio
   };
   const out = [], dropped = [], seen = new Set(prior.map(sig));
   const queued = new Map();   // provisional queue length per building this decision
+  for (const c of prior) if (c?.cmd === 'train') queued.set(c.building, (queued.get(c.building) || 0) + 1);   // --stream: earlier chunks of this decision already took queue room
   const byId = new Map((state?.native?.mine || []).map(e => [e.id, e]));
   for (const raw of cmds || []) {
     if (!raw || typeof raw !== 'object' || !CMDS.has(raw.cmd)) { dropped.push({ cmd: raw, reason: 'bad-cmd' }); continue; }

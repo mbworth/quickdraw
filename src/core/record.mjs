@@ -16,7 +16,8 @@ function writeAll(fd, str) {
 export function createRecorder(file, { clock, statePolicy = 'all', sampleEvery = 10 } = {}) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   const fd = fs.openSync(file, 'a');
-  let buf = [], bufBytes = 0, lines = 0, closed = false, timer = null;
+  const existing = fs.fstatSync(fd).size ? fs.readFileSync(file, 'utf8').split('\n').filter(Boolean).length : 0;   // appending to a run: refs must count the lines already there
+  let buf = [], bufBytes = 0, lines = existing, closed = false, timer = null;
   const stateLine = new Map();   // snapshot idx → line number
 
   function flush() {

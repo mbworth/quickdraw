@@ -63,7 +63,7 @@ export function row(s, game = '?') {
     `${s.decisions} decisions (${s.perMinute}/min)`,
     `reaction p50 ${sec(s.reactionP50)} / p90 ${sec(s.reactionP90)}${s.waitP50 != null ? ` (wait ${sec(s.waitP50)})` : ''}${s.firstP50 != null ? `, first order p50 ${sec(s.firstP50)}` : ''}`,
     `model p50 ${sec(s.apiP50)}`, `${s.outputP50} out tokens`, `packet ${s.packetP50} real`,
-    `${s.timeouts} timeouts`, ...(s.overlapped ? [`${s.overlapped} overlapped`] : []), `kept ${s.keptShare}%`, `${s.ordersRejected} rejected`, `cache ${s.cacheHitRate}%`, `$${s.usd}`,
+    `${s.timeouts} timeouts`, ...(s.overlapped ? [`${s.overlapped} overlapped`] : []), `kept ${s.keptShare}%`, `${s.ordersRejected} rejected`, `cache ${s.cacheHitRate}%${s.cacheWriteTokens ? ` (${s.cacheWriteTokens} written)` : ''}`, `$${s.usd}`,
   ];
   return `| ${game} | ${s.gameId ?? ''} | ${s.model}, quickdraw | ${result} | ${mmss(s.minutes)} | ${notes.join(', ')} |`;
 }

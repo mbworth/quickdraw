@@ -5,6 +5,7 @@ import { loadCases, runBench, summarize } from '../../../bin/bench.mjs';
 import { createAdapter, divisor } from '../../../src/games/ashfall/index.mjs';
 import { toTrigger } from '../../../src/games/ashfall/events.mjs';
 import { virtualClock } from '../../../src/core/clock.mjs';
+import { searchField } from '../../../src/games/ashfall/coder.mjs';
 
 const cases = await loadCases('ashfall');
 const by = Object.fromEntries(cases.map(c => [c.id, c]));
@@ -27,6 +28,16 @@ test('predicates accept the prompt’s order and reject the wrong one', () => {
   assert.ok(by.push.expect([{ cmd: 'move', units: ['army'], x: m.x, z: m.z, attackMove: true }], push), 'a selector counts the army');
   assert.ok(!by.push.expect([{ cmd: 'move', units: ids.slice(0, 3), x: m.x, z: m.z, attackMove: true }], push), 'a piece is not the ball');
   assert.ok(!by.push.expect([{ cmd: 'move', units: ids, x: push.myBase.x, z: push.myBase.z, attackMove: true }], push), 'toward home is not a push');
+  for (const id of ['search', 'search2']) {   // the waypoint M names passes; another far field, the centre, home and a piece do not
+    const st = s(id), w = searchField(st).f, ids = st.mine.filter(e => e.type === 'trooper').map(e => e.id);
+    assert.ok(by[id].expect([{ cmd: 'move', units: ids, x: Math.round(w.x), z: Math.round(w.z), attackMove: true }], st), `${id}: the waypoint`);
+    const other = st.fields.find(f => f.ore == null && f.res !== 'crystal' && Math.hypot(f.x - w.x, f.z - w.z) > 40);
+    assert.ok(!by[id].expect([{ cmd: 'move', units: ids, x: Math.round(other.x), z: Math.round(other.z), attackMove: true }], st), `${id}: another far field is not the search`);
+    assert.ok(!by[id].expect([{ cmd: 'move', units: ids, x: 0, z: 0, attackMove: true }], st), `${id}: the centre`);
+    assert.ok(!by[id].expect([{ cmd: 'move', units: ids, x: Math.round(st.myBase.x), z: Math.round(st.myBase.z), attackMove: true }], st), `${id}: home`);
+    assert.ok(!by[id].expect([{ cmd: 'move', units: ids.slice(0, 3), x: Math.round(w.x), z: Math.round(w.z), attackMove: true }], st), `${id}: a piece`);
+  }
+  assert.ok(!by.push.expect([{ cmd: 'move', units: ids, x: 0, z: 0, attackMove: true }], push), 'the centre is not a push target (game 33)');
   const rep = s('repair'), turret = rep.mine.find(e => e.type === 'turret');
   assert.ok(by.repair.expect([{ cmd: 'repair', units: [1], target: turret.id }], rep)); assert.ok(!by.repair.expect([{ cmd: 'repair', units: [1], target: 1 }], rep));
   const dry = s('dry'), node = dry.fields.find(f => f.ore > 0 && f.nodes.length).nodes[0].id;

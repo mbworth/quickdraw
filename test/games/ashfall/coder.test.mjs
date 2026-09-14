@@ -86,6 +86,30 @@ test('fieldsOnDemand keeps fields on every packet while a harvester is idle or a
   assert.equal(F(dry, { fieldsOnDemand: true }).full, undefined);
 });
 
+test('searchFields: M names the search waypoint while 8+ riflemen have no enemy building listed; f? in the same order; fields cadence untouched', () => {
+  const fx = JSON.parse(fs.readFileSync(new URL('./bench/fixtures/search-t345.json', import.meta.url), 'utf8'));
+  const L = (native, o, name) => encode({ state: snap({ state: native }), triggers: [], lastOrders: [] }, { foldFields: true, fieldsOnDemand: true, keepRemembered: true, ...o }).find(l => l.name === name);
+  const s = fx.state;
+  assert.equal(L(s, {}, 'remembered').text, 'M none', 'off by default');
+  assert.equal(L(s, { searchFields: true }, 'remembered').lines.map(l => l.text).join(), 'search f5@78,13', 'the unexplored field nearest the mirror of my core');
+  const few = { ...s, mine: s.mine.filter(u => u.type !== 'trooper').concat(s.mine.filter(u => u.type === 'trooper').slice(0, 7)) };
+  assert.equal(L(few, { searchFields: true }, 'remembered').text, 'M none', 'under 8 riflemen: nothing to search with');
+  const known = { ...s, enemyBuildingsRemembered: [{ id: 20008, type: 'depot', x: 30, z: 60, hp: 1, max: 1, lastSeen: s.time }] };
+  assert.match(L(known, { searchFields: true }, 'remembered').lines[0].text, /^dp#20008@30,60/, 'a listed building replaces the waypoint');
+  const seenVis = { ...s, enemyVisible: [{ id: 20001, type: 'core', x: 30, z: 60, hp: 1, max: 1 }] };
+  assert.equal(L(seenVis, { searchFields: true }, 'remembered').text, 'M none', 'a visible building: no waypoint (X carries it)');
+  const explored = { ...s, fields: s.fields.map(f => (f.ore == null ? { ...f, ore: 500, seen: true } : f)) };
+  assert.equal(L(explored, { searchFields: true }, 'remembered').lines[0].text, 'search @28,64', 'every field explored: the mirror of my core is the last waypoint');
+  const raiders = { ...s, mine: s.mine.map(u => (u.type === 'trooper' ? { ...u, type: 'raider' } : u)) };
+  assert.equal(L(raiders, { searchFields: true }, 'remembered').lines[0].text, 'search f5@78,13', 'any combat unit counts toward the 8');
+  const cry = { ...s, fields: s.fields.map(f => (f.res === 'crystal' ? f : f.ore == null ? { ...f, ore: 500, seen: true } : f)) };
+  assert.equal(L(cry, { searchFields: true }, 'remembered').lines[0].text, 'search @28,64', 'crystal pockets are never the waypoint');
+  const noDry = st => ({ ...st, fields: st.fields.map(f => (f.ore === 0 ? { ...f, ore: 100 } : f)) });
+  assert.equal(L(noDry(s), { searchFields: true }, 'fields').full, true, 'fields keep their cadence');
+  assert.equal(L(s, { searchFields: true }, 'fields').lines.map(l => l.text).find(l => l.startsWith('f? ')), 'f? f5@78,13 f3@-43,73 f8@-45,32 f7@-79,25 f10@25,-80 f9@75,-77 f13c@-46,-1 f12c@20,-48');
+  assert.equal(L(s, {}, 'fields').lines.map(l => l.text).find(l => l.startsWith('f? ')), 'f? f3@-43,73 f5@78,13 f7@-79,25 f8@-45,32 f9@75,-77 f10@25,-80 f12c@20,-48 f13c@-46,-1', 'default order is by id');
+});
+
 test('keepAnchor: core and turret lines stay on slim packets, other buildings ride the cadence', { skip: !files.length }, () => {
   const i = Math.min(PICK.late, files.length) - 1;
   const L = layersAt(i, files, { fullBuildings: true, keepAnchor: true });

@@ -20,7 +20,10 @@
     "discipline": "node bin/discipline.mjs",
     "bench": "node bin/bench.mjs",
     "snapshot": "node bin/snapshot.mjs",
-    "trajectory": "node bin/trajectory.mjs"
+    "trajectory": "node bin/trajectory.mjs",
+    "campaign": "node bin/campaign.mjs",
+    "classes": "node bin/classes.mjs",
+    "sensitivity": "node bin/sensitivity.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.125.0",

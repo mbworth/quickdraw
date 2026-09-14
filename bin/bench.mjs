@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Decision bench: fixed states with the order the prompt calls for, scored over repeats. ~$0.006 a call against ~$0.70 a game.
 // node bin/bench.mjs --model claude-sonnet-5 --prompt prompts/ashfall/game15-sonnet.md [--repeats 5] [--pick push,turret] [--out arm.json]
-//                    [--slim] [--full-every N] [--packet-max 600] [--thinking adaptive|off] [--effort low] [--reply tool|text] [--drop-layer name] [--<game>-* …] [--dry]|off] [--effort low] [--<game>-* …] [--dry]
+//                    [--slim] [--full-every N] [--packet-max 600] [--thinking adaptive|off] [--effort low] [--reply tool|text] [--drop-layer name] [--<game>-* …] [--dry]
 // node bin/bench.mjs --compare a.json b.json … : pass rates side by side.
 // node bin/bench.mjs --rescore a.json … : re-score stored orders against the current cases.mjs (free; predicates change, calls need not).
 // Each case is one call with no history (lastOrders none, the fixture's events or a heartbeat as triggers).
@@ -27,6 +27,8 @@ export async function loadCases(game, pick = null) {
 }
 
 // runBench({adapter, callModel, cases, repeats, toTrigger, flags, divisor, clock}) → rows [{id, rep, pass, est, out, latencyMs, cost, sent, dropped:[{cmd, reason}]}]
+const victimLines = layer => new Set([layer.text, ...(layer.lines || []).map(l => l.text)].filter(Boolean));
+
 export async function runBench({ adapter, callModel, cases, repeats, toTrigger, flags, divisor, clock, log = () => {} }) {
   const snap = fx => ({ header: { lifecycle: 'active', phaseNative: 'running', clocks: { game: fx.state.time }, gameId: '1', seat: 'team0' }, native: fx.state, t: 0, idx: 1 });
   const rows = [];
@@ -42,7 +44,9 @@ export async function runBench({ adapter, callModel, cases, repeats, toTrigger, 
       const victim = flags.dropLayer ? all.find(l => l.name === flags.dropLayer) : null;
       const absent = flags.dropLayer && (!victim || (!victim.lines?.length && /\snone$/.test(victim.text)) || !assemble(all, asm).kept.some(k => k.name === victim.name));
       if (absent) { rows.push({ id: c.id, rep, skipped: 'absent', pass: null, stop: 'skipped', est: null, out: null, latencyMs: 0, cost: 0, sent: [], dropped: [] }); continue; }
-      const pkt = assemble(victim ? all.filter(l => l !== victim) : all, asm);
+      // The victim comes out after assembly, so its budget is not refilled by layers the control had dropped: Δ is "without X", nothing else.
+      const full = assemble(all, asm);
+      const pkt = victim ? { ...full, text: full.text.split('\n').filter(l => !victimLines(victim).has(l)).join('\n') } : full;
       const res = await callModel({ packet: pkt.text });
       const { keep, dropped } = applyOrders({ adapter, orders: res.act ? res.orders : [], state, clock });
       const pass = answered(res.stop) && !!c.expect(keep, c.fx.state);
@@ -89,7 +93,8 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.a
   const game = pre.flags.game || 'ashfall';
   const { flags, gameOpts } = parseArgs(argv, { booleans: BOOL, game });
   const model = flags.model || 'claude-sonnet-5';
-  const promptFile = flags.prompt || path.join(ROOT, `prompts/${game}/game15-sonnet.md`);
+  if (!flags.prompt) { console.error('--prompt is required (the arm is the prompt plus its flags; no default)'); process.exit(64); }
+  const promptFile = flags.prompt;
   const system = fs.readFileSync(promptFile, 'utf8');
   const clock = realClock();
   const mod = await loadAdapterModule(game);

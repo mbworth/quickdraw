@@ -1,11 +1,13 @@
 // Bench cases: a fixture state and what the frozen prompt (prompts/ashfall/game15-sonnet.md) says the order is at that moment.
 // `expect(sent, state)` sees the orders after expand + validate (units are ids or selectors). Fixtures under ../fixtures (opening
 // capture) and ./fixtures (scrubbed from live runs with bin/snapshot.mjs). Add a case when a rule breaks; never tune one to pass.
+import { searchField } from '../../../../src/games/ashfall/coder.mjs';
 const D = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
 const troopers = s => s.mine.filter(e => e.type === 'trooper');
 const count = (c, s) => (c.units || []).reduce((n, v) => n + (typeof v === 'number' ? 1 : v === 'army' || v === 'all' || v === 'troopers' ? troopers(s).length : v === 'idle' ? troopers(s).filter(e => e.state === 'idle').length : 0), 0);
 const mirror = s => ({ x: -s.myBase.x, z: -s.myBase.z });
 const towardEnemy = (c, s) => D(c, mirror(s)) < D(c, s.myBase);
+const atGoal = (c, s) => [mirror(s), searchField(s).f].some(g => D(c, g) <= 15);   // game25: the mirror; game32: the packet's search waypoint
 const has = (sent, f) => sent.some(f);
 
 export const cases = [
@@ -18,7 +20,7 @@ export const cases = [
   { id: 'turret', fixture: '../fixtures/034-t169.json', rule: '2: a turret ~8 from the core on the map-centre side',
     expect: sent => has(sent, c => c.cmd === 'build' && c.type === 'turret') },
   { id: 'push', fixture: './fixtures/push-t143.json', rule: '3: turret up and 8 riflemen → the whole ball attack-moves at the enemy base',
-    expect: (sent, s) => has(sent, c => c.cmd === 'move' && c.attackMove && count(c, s) >= 8 && towardEnemy(c, s)) },
+    expect: (sent, s) => has(sent, c => c.cmd === 'move' && c.attackMove && count(c, s) >= 8 && towardEnemy(c, s) && atGoal(c, s)) },
   { id: 'repair', fixture: './fixtures/repair-t267.json', rule: '6: turret under 60% → repair',
     expect: (sent, s) => { const t = new Set(s.mine.filter(e => e.type === 'turret').map(e => e.id)); return has(sent, c => c.cmd === 'repair' && t.has(c.target)); } },
   { id: 'dry', fixture: './fixtures/dry-t522.json', rule: '4: home fields dry, harvesters idle → gather at an explored node',
@@ -32,6 +34,13 @@ export const cases = [
   // game 25: no barracks until 97 s; `t wk 2` before `b ba` starved the build every decision (validate threads ore, so the build must survive it)
   { id: 'nobarracks', fixture: './fixtures/nobarracks-t60.json', rule: '1: no barracks → barracks, and it must be affordable after the rest of the batch',
     expect: sent => has(sent, c => c.cmd === 'build' && c.type === 'barracks') },
+  // game 33 (hub 51): the ball (19, idle) stood at 0,-1 with M and X empty and was re-sent `am 0,0` 43 times; F listed eight unexplored fields.
+  // The ball goes at the waypoint M names (the unexplored ore field nearest the mirror of my core), never back to 0,0 or home.
+  { id: 'search', fixture: './fixtures/search-t345.json', rule: '3: ball at the centre, nothing listed → attack-move at the M line\'s search waypoint',
+    expect: (sent, s) => has(sent, c => c.cmd === 'move' && c.attackMove && count(c, s) >= 8 && D(c, searchField(s).f) <= 15) },
+  // The same state one step on: the ball stands at the first `f?` field, now explored and empty of enemies; the line's new first entry is the order.
+  { id: 'search2', fixture: './fixtures/search2-t400.json', rule: '3: ball at the first f? field, nothing listed → on to the new first f? field',
+    expect: (sent, s) => has(sent, c => c.cmd === 'move' && c.attackMove && count(c, s) >= 8 && D(c, searchField(s).f) <= 15) },
   { id: 'wave', fixture: './fixtures/wave-t139.json', rule: '6: do not chase; hold the anchor with fewer than 8',
     expect: (sent, s) => !has(sent, c => (c.cmd === 'move' || c.cmd === 'attack') && count(c, s) > 0 && (c.cmd === 'attack' || D(c, s.myBase) > 20)) },
 ];

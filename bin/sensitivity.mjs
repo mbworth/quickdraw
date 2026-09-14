@@ -43,7 +43,8 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.a
   const { flags, gameOpts } = parseArgs(argv, { booleans: BOOL, game });
   if (!flags.out) { console.error('usage: sensitivity [bench arm flags] --repeats N --out dir [--layers a,b] [--control file] [--dry]'); process.exit(64); }
   const model = flags.model || 'claude-sonnet-5';
-  const system = fs.readFileSync(flags.prompt || path.join(ROOT, `prompts/${game}/game15-sonnet.md`), 'utf8');
+  if (!flags.prompt) { console.error('--prompt is required'); process.exit(64); }
+  const system = fs.readFileSync(flags.prompt, 'utf8');
   const clock = realClock();
   const mod = await loadAdapterModule(game);
   const adapter = mod.createAdapter(process.env, { ...gameOpts, clock, open: true, host: 'ws://127.0.0.1:1' });

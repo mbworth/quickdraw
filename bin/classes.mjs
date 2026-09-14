@@ -27,9 +27,9 @@ export function classStats(rows) {
     if (!sent) s.noop++;
     s.raw += raw; s.sent += sent; s.ok += (resN.get(c.n) || []).filter(x => x.ok).length;
     for (const x of d.dropped || []) s.drops[x.reason] = (s.drops[x.reason] || 0) + 1;
-    if (sent && c.latency) { s.react.push(c.latency.totalMs); if (c.latency.firstSendMs != null) s.first.push(c.latency.firstSendMs); }
+    if (sent && c.latency && (c.anchor ?? 'event') === 'event' && !tr.derived) { s.react.push(c.latency.totalMs); if (c.latency.firstSendMs != null) s.first.push(c.latency.firstSendMs); }   // reaction is event arrival → order, as in pace; tick-anchored calls have no arrival
   }
-  for (const t of rows.filter(r => r.kind === 'trigger')) for (const o of t.outcomes || []) { const s = get(o.cls); if (o.outcome === 'fired') s.fired++; else if (o.outcome === 'coalesced') s.coalesced++; else if (o.outcome === 'cooldown') s.cooldown++; }
+  for (const t of rows.filter(r => r.kind === 'trigger' && !r.dropped)) for (const o of t.outcomes || []) { const s = get(o.cls); if (o.outcome === 'fired') s.fired++; else if (o.outcome === 'coalesced') s.coalesced++; else if (o.outcome === 'cooldown') s.cooldown++; }   // dropped: fired at the engine but no call was made
   const total = calls.length;
   const out = {};
   for (const [cls, s] of Object.entries(per)) {
@@ -52,7 +52,5 @@ export function table(stats) {
 if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
   const files = process.argv.slice(2);
   if (!files.length) { console.error('usage: classes <run.jsonl>…'); process.exit(64); }
-  const rows = files.flatMap(f => readRun(f));   // several runs pool; decision numbers repeat across runs but each run's own rows join by n within the run
-  if (files.length > 1) { const stats = files.map(f => classStats(readRun(f))); const merged = { classes: {}, calls: 0 }; for (const s of stats) { merged.calls += s.calls; } for (const f of files) console.error(`${path.basename(f)}: ${classStats(readRun(f)).calls} calls`); }
   for (const f of files) { console.log(`# ${path.basename(f)}`); console.log(table(classStats(readRun(f)))); console.log(); }
 }

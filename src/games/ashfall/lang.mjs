@@ -9,7 +9,7 @@ import { coerceId } from './expand.mjs';
 
 export const toolLang = Object.freeze({
   type: 'object',
-  properties: { o: { type: 'string', description: 'orders in the order language from the system prompt, ";"-separated; empty when nothing is worth ordering. e.g. "t 12 tr 3; am army 65,25"' } },
+  properties: { o: { type: 'string', description: 'orders in the order language from the system prompt, ";"-separated; empty when nothing is worth ordering. e.g. "t 12 tr 3; g idle"' } },
   required: ['o'],
   additionalProperties: false,
 });
@@ -19,19 +19,19 @@ const inv = t => Object.fromEntries(Object.entries(t).map(([k, v]) => [v, k]));
 const UNIT_CODE = inv(UNIT), BLD_CODE = inv(BUILDING), UPG_CODE = inv(UPGRADE);
 const own = (t, k) => (typeof k === 'string' && Object.hasOwn(t, k) ? t[k] : undefined);
 const typeOf = (tok, codes, names) => { const k = (tok || '').toLowerCase(); return own(codes, k) ?? (Object.hasOwn(names, k) ? k : null); };
-const POS = /^(-?\d+),(-?\d+)$/;
+const POS = /^(?:f\d+c?@)?(-?\d+),(-?\d+)$/;   // a field token pasted from F or M (`f5@78,13`) is a position
 const LABEL = /[a-z]{2} x\d+@-?\d+,-?\d+/g;   // a cluster label pasted from A
 const TOKEN = /\x01\S*|\S+/g;
 const pos = tok => { const m = POS.exec(tok || ''); return m ? { x: Number(m[1]), z: Number(m[2]) } : null; };
 const SELECTOR_OF_CODE = { wk: 'workers', tr: 'troopers', rd: 'raiders', wd: 'wardens', sg: 'siege' };   // the model writes the type code as a selector
-const units = tok => (tok ? tok.split(',').filter(Boolean).map(v => (v.startsWith('\x01') ? v.slice(1).replace('\x02', ' ').replace('\x03', ',') : own(SELECTOR_OF_CODE, v.toLowerCase()) || v)) : []);
+const units = tok => (tok ? tok.split(',').filter(Boolean).map(v => (v.startsWith('\x01') ? v.slice(1).replace('\x02', ' ').replace('\x03', ',') : own(SELECTOR_OF_CODE, v.toLowerCase()) || v.toLowerCase())) : []);
 const int = tok => { if (tok == null) return null; const id = coerceId(tok.replace(/^n#?/i, '#')); return id; };
 // The model glues trailing arguments onto the unit list with commas (`am tr x11@46,34,49,50`, `r idle,tr x12@64,24,33`): when the
 // verb's trailing arguments are missing, peel that many comma pieces off the end of the unit token.
 const peel = (toks, n) => { if (toks.length > n + 1 || !toks[1]) return toks; const parts = toks[1].split(','); if (parts.length <= n) return toks; return [toks[0], parts.slice(0, -n).join(','), ...parts.slice(-n)]; };
 
 export function parseOne(text) {
-  const marked = text.replace(LABEL, m => '\x01' + m.replace(' ', '\x02').replace(',', '\x03'));   // a label becomes one token with no space or comma, so it survives both splits
+  const marked = text.replace(/\s*,\s*/g, ',').replace(/\ball army\b/i, 'army').replace(LABEL, m => '\x01' + m.replace(' ', '\x02').replace(',', '\x03'));   // `65, 25` is one position; `all army` is the army; a label becomes one token with no space or comma, so it survives both splits
   let toks = marked.match(TOKEN) || [];
   if (!toks.length) return null;
   const verb = own(VERB, toks[0].toLowerCase()), bad = { cmd: '?', text };

@@ -55,8 +55,9 @@ export async function runPilot({ adapter, callModel, clock, record = null, opts 
     return n;
   }
   function handle(r) {
-    recordOutcomes(r, r.fire ? { fireN: nextN + 1 } : {});
-    if (r.fire && inFlight < o.maxInFlight && !finished && !budgetStopped) decide(r.fire).catch(e => { log('decide failed', e); rec.writeNow('crash', { kind: 'decide', error: String(e?.stack || e) }); });
+    const taken = r.fire && inFlight < o.maxInFlight && !finished && !budgetStopped;
+    recordOutcomes(r, r.fire ? { fireN: nextN + 1, ...(taken ? {} : { dropped: true }) } : {});   // dropped: fired at the engine, no call made (finished/budget/slots)
+    if (taken) decide(r.fire).catch(e => { log('decide failed', e); rec.writeNow('crash', { kind: 'decide', error: String(e?.stack || e) }); });
   }
 
   function finish(done, why) {
@@ -79,6 +80,7 @@ export async function runPilot({ adapter, callModel, clock, record = null, opts 
     if (life !== 'active') {
       if (life === 'pregame' && !started) { started = true; Promise.resolve(adapter.start()).catch(e => log('start failed', e)); }
       else if (life === 'ended' && endTimer === null) endTimer = clock.setTimeout(() => finish({ outcome: {}, why: 'ended' }, 'state:ended'), meta.refreshMs || 500);   // give the adapter's done (with the outcome) one refresh to arrive
+      eventsSince = [];   // pregame/ended events must not anchor the first active decision's reaction time
       handle(trig.tick({ canAct: false }));   // the heartbeat must not buy calls while we cannot act
       return;
     }
@@ -104,7 +106,7 @@ export async function runPilot({ adapter, callModel, clock, record = null, opts 
 
   function budgetHit() {
     if (decisions >= o.maxDecisions) return `decisions ${decisions} >= ${o.maxDecisions}`;
-    const projected = usd + (decisions ? usd / decisions : 0);
+    const projected = usd + (decisions ? usd / decisions : 0) * Math.max(1, inFlight);   // the calls already in flight will bill too
     if (projected >= o.maxUsd) return `usd ${projected.toFixed(4)} >= ${o.maxUsd}`;
     return null;
   }
@@ -136,7 +138,8 @@ export async function runPilot({ adapter, callModel, clock, record = null, opts 
         const eventArrivalT = Math.min(...(evs.length ? evs : set).map(tr => tr.t));
         const tickT = set.tickT ?? startT;
         const T = { waitMs: tickT - eventArrivalT, queueMs: startT - tickT }; let t0 = startT;
-        const layers = adapter.encode({ state: snap, prevDecisionState: prevSnap, triggers: set, lastOrders, pending });
+        const lo = lastOrders;   // captured now: under --overlap another decision may replace lastOrders before this call returns, and the call row must hold what the packet used
+        const layers = adapter.encode({ state: snap, prevDecisionState: prevSnap, triggers: set, lastOrders: lo, pending });
         const pkt = assemble(layers, { maxTokens: o.packetMax, divisor: o.divisor, fullEvery: o.fullEvery, n });
         T.encodeMs = clock.now() - t0; t0 = clock.now();
         const ac = new AbortController(); aborts.add(ac);
@@ -149,7 +152,7 @@ export async function runPilot({ adapter, callModel, clock, record = null, opts 
           const r = applyOrders({ adapter, orders, state: latest, decidedOn: snap, staleAfterMs: o.staleAfterMs, clock, prior: sentSoFar });
           expandAcc += r.expandMs; validateAcc += r.validateMs;
           let results = []; const ts = clock.now();
-          if (r.keep.length) { try { results = await adapter.send(r.keep, { partial: true }); } catch (e) { results = r.keep.map(() => ({ ok: false, error: `transport: ${e.message}` })); } if (firstSendT === null) firstSendT = clock.now(); }
+          if (r.keep.length) { try { results = await adapter.send(r.keep, { partial: true, n }); } catch (e) { results = r.keep.map(() => ({ ok: false, error: `transport: ${e.message}` })); } if (firstSendT === null) firstSendT = clock.now(); }
           sendAcc += clock.now() - ts;
           sentSoFar = sentSoFar.concat(r.keep); chunks.push({ ...r, results });
         };
@@ -162,14 +165,13 @@ export async function runPilot({ adapter, callModel, clock, record = null, opts 
         const callBase = {
           n, stateRef, prevDecisionRef: prevRef, triggerRefs: [...new Set(set.map(tr => tr.ref).filter(x => x >= 0))],
           triggers: set.map(reduceTr), ...(pending.length ? { pending: pending.map(s => s.map(reduceTr)), overlap: pending.length } : {}),
-          lastOrders, packet: pkt.text,
+          lastOrders: lo, packet: pkt.text,
           packetMeta: { kept: pkt.kept, dropped: pkt.dropped, estTokens: pkt.estTokens, realTokens: res.usage && res.usage.cache_read_input_tokens > 0 ? res.usage.input_tokens : null },
           usage: res.usage, stop: res.stop, error: res.error, note: res.note, raw: res.raw, eventArrivalT, anchor,
         };
-        if (finished) { rec.writeNow('call', { ...callBase, latency: { ...T, totalMs: clock.now() - eventArrivalT }, skipped: 'ended' }); break; }
         const failed = !answered(res.stop);
-        if (failed && chunks.some(c => c.keep.length)) {   // --stream: orders already went out before the call died; that is a decision, not a retry
-          try { await adapter.send([], { partial: false }); } catch {}
+        if ((failed || finished) && chunks.some(c => c.keep.length)) {   // --stream: orders already went out before the call died or the game ended; that is a decision, not a retry or a skip
+          try { await adapter.send([], { partial: false, n }); } catch {}
           const keep = chunks.flatMap(c => c.keep), dropped = chunks.flatMap(c => c.dropped), results = chunks.flatMap(c => c.results);
           T.expandMs = expandAcc; T.validateMs = validateAcc; T.sendMs = sendAcc; T.firstSendMs = firstSendT - eventArrivalT; T.totalMs = clock.now() - eventArrivalT;
           lastOrders = lastOrdersOf(keep, results, dropped);
@@ -179,6 +181,7 @@ export async function runPilot({ adapter, callModel, clock, record = null, opts 
           decisions++; pendingSets.delete(n);
           break;
         }
+        if (finished) { rec.writeNow('call', { ...callBase, latency: { ...T, totalMs: clock.now() - eventArrivalT }, skipped: 'ended' }); break; }
         if (failed) {
           const dirty = trig.takeDirty();
           const canRetry = !retried && res.stop !== 'refusal' && res.stop !== 'max_tokens';
@@ -194,7 +197,7 @@ export async function runPilot({ adapter, callModel, clock, record = null, opts 
         let keep, dropped, results;
         const orders = res.act ? res.orders : [];
         if (o.stream) {
-          try { await adapter.send([], { partial: false }); } catch {}   // closes the decision's recent entry
+          if (sentSoFar.length) { try { await adapter.send([], { partial: false, n }); } catch {} }   // closes the decision's recent entry; a no-op never touched it
           keep = chunks.flatMap(c => c.keep); dropped = chunks.flatMap(c => c.dropped); results = chunks.flatMap(c => c.results);
           T.expandMs = expandAcc; T.validateMs = validateAcc; T.sendMs = sendAcc;
           if (firstSendT !== null) T.firstSendMs = firstSendT - eventArrivalT;
@@ -228,7 +231,7 @@ export async function runPilot({ adapter, callModel, clock, record = null, opts 
     await wait(clock, trig.floorDelayMs());
     if (finished || !latest) return null;
     const r = trig.reoffer(dirty, { canAct: adapter.canAct(latest) });
-    recordOutcomes(r, r.fire ? { fireN: decisions + 1, reoffer: true } : { reoffer: true });
+    recordOutcomes(r, r.fire ? { fireN: nextN + 1, reoffer: true } : { reoffer: true });
     return r.fire;
   }
 

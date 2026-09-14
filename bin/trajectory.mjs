@@ -47,7 +47,7 @@ export async function replayTrajectory({ rows, adapter, callModel, flags = {}, d
     const layers = adapter.encode({ state, prevDecisionState: prev, triggers: call.triggers, lastOrders: call.lastOrders, pending: call.pending || [] });
     const pkt = assemble(layers, { maxTokens: flags.packetMax ?? cfg.packetMax ?? 600, divisor, fullEvery: flags.slim ? 5 : (flags.fullEvery ?? cfg.fullEvery ?? 0), n: call.n });
     const res = await callModel({ packet: pkt.text });
-    const { keep, dropped } = applyOrders({ adapter, orders: res.act ? res.orders : [], state, clock });
+    const { keep, dropped } = applyOrders({ adapter, orders: res.act ? res.orders : [], state, decidedOn: state, staleAfterMs: cfg.staleAfter, clock });   // the pilot's own pipeline (stale check included), so the arm is scored like the recording
     const recorded = decisions.get(call.n)?.sent || [];
     const row = { n: call.n, gt: state.header?.clocks?.game ?? null, est: pkt.estTokens, out: res.usage?.output_tokens ?? null, latencyMs: res.latencyMs, cost: res.cost || 0, stop: res.stop, recorded, recordedDropped: decisions.get(call.n)?.dropped || [], sent: keep, dropped, same: kinds(keep) === kinds(recorded) };
     out.push(row);

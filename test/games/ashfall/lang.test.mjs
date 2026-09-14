@@ -38,6 +38,10 @@ test('every verb decodes to the order object the JSON tool would have carried', 
     ['am tr x11@46,34,49,50', { cmd: 'move', units: ['tr x11@46,34'], x: 49, z: 50, attackMove: true }],
     ['r idle,tr x12@64,24,33', { cmd: 'repair', units: ['idle', 'tr x12@64,24'], target: 33 }],
     ['am tr,army 65,25', { cmd: 'move', units: ['troopers', 'army'], x: 65, z: 25, attackMove: true }],
+    ['am army f5@78,13', { cmd: 'move', units: ['army'], x: 78, z: 13, attackMove: true }],   // a field token pasted from M or F is a position
+    ['am army 65, 25', { cmd: 'move', units: ['army'], x: 65, z: 25, attackMove: true }],   // a space inside the coordinate
+    ['am all army 65,25', { cmd: 'move', units: ['army'], x: 65, z: 25, attackMove: true }],   // never the harvesters
+    ['am ARMY 65,25', { cmd: 'move', units: ['army'], x: 65, z: 25, attackMove: true }],
     ['am tr x11@46,34 a 49,50', { cmd: 'move', units: ['tr x11@46,34'], x: 49, z: 50, attackMove: true }],
   ];
   for (const [text, want] of cases) assert.deepEqual(parseOne(text), want, text);
@@ -108,4 +112,15 @@ test('game29 prompt (--reply text): strategy and packet sections byte-identical 
 test('decode strips a code fence or backticks around a text reply', () => {
   assert.deepEqual(decode({ o: '```\nt 12 tr 3\n```' }).orders, [{ cmd: 'train', building: 12, type: 'trooper', count: 3 }]);
   assert.deepEqual(decode({ o: '`-`' }), { act: false, orders: [], note: null });
+});
+
+test('game32 prompt: game25 with rule 3 rewritten (M names the search waypoint, no example coordinate), the M description extended and the `am` example dropped; all else byte-identical', () => {
+  const read = f => fs.readFileSync(path.join(ROOT, 'prompts/ashfall', f), 'utf8');
+  const a = read('game25-sonnet.md').split('\n'), b = read('game32-sonnet.md').split('\n');
+  assert.equal(a.length, b.length);
+  const diff = a.map((l, i) => (l === b[i] ? null : i)).filter(i => i != null);
+  assert.deepEqual(diff.map(i => a[i].slice(0, 12)), ['- `M` rememb', '- `m <units>', '3. **Win by ']);
+  assert.ok(!/65,25|-65,-25|mirror/.test(b.join('\n')), 'no example coordinate and no mirror rule');
+  assert.ok(b[diff[2]].includes('the push itself is the search') && b[diff[2]].includes('`search fN@x,z`') && b[diff[2]].includes('never guessed or copied'));
+  for (const i of diff) assert.ok(!/\d+,-?\d+/.test(b[i]) || /`b tu 62,-4`/.test(b[i]), `changed line ${i + 1} carries no coordinate`);   // the build example is syntax, not a target
 });

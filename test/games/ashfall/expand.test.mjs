@@ -81,3 +81,8 @@ test('prior (--stream): cmds an earlier chunk of the same decision sent count as
   const r = expand([{ ...b }], S, { prior: first.cmds });
   assert.deepEqual(r.cmds, []); assert.deepEqual(r.dropped.map(d => d.reason), ['repeat']);
 });
+
+test('coerceId: node and entity markers only; a field label is never an id', () => {
+  assert.equal(coerceId('n#12'), 12); assert.equal(coerceId('ba#12'), 12); assert.equal(coerceId('#12'), 12); assert.equal(coerceId('12'), 12);
+  assert.equal(coerceId('f5'), null); assert.equal(coerceId('f13c'), null);
+});
