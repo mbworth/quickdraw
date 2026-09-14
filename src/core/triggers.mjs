@@ -5,7 +5,9 @@ export const CORE_CLS = { deadline: 'deadline', heartbeat: 'heartbeat', resume: 
 export const isCore = cls => cls === CORE_CLS.deadline || cls === CORE_CLS.heartbeat || cls === CORE_CLS.resume;
 
 // maxInFlight > 1 lets a ranked trigger start another call while one is in flight (heartbeats and resumes never do).
-export function createTriggers({ classes, cooldownMs = {}, heartbeatMs = 3000, refreshMs = 0, deadlineMarginMs = 1000, maxInFlight = 1, clock, onFire }) {
+// reserveFor: classes allowed to take the last in-flight slot; any other set coalesces once maxInFlight - 1 calls are running
+// (games 28-30: half the danger/contact/loss triggers waited behind two calls that were mostly economy and done).
+export function createTriggers({ classes, cooldownMs = {}, heartbeatMs = 3000, refreshMs = 0, deadlineMarginMs = 1000, maxInFlight = 1, reserveFor = [], clock, onFire }) {
   const rank = tr => tr.cls === CORE_CLS.deadline ? -1 : tr.cls === CORE_CLS.heartbeat || tr.cls === CORE_CLS.resume ? classes.length : rankOf(tr, classes);
   const st = {
     inFlight: 0, dirty: null, lastStartT: -Infinity, lastTickT: -Infinity, suspended: false, forceNext: false,
@@ -14,6 +16,7 @@ export function createTriggers({ classes, cooldownMs = {}, heartbeatMs = 3000, r
   };
   const outcomeOf = (tr, outcome) => ({ cls: tr.cls, key: tr.key, t: tr.t, outcome, count: tr.count });
   const hbCand = () => ({ cls: CORE_CLS.heartbeat, key: 'hb', t: clock.now() });
+  const reserved = new Set(reserveFor);
   // States are flowing: the next tick carries a due heartbeat, so its packet is built from a fresh snapshot.
   const ticking = () => refreshMs > 0 && clock.now() - st.lastTickT <= 2 * refreshMs;
 
@@ -32,7 +35,9 @@ export function createTriggers({ classes, cooldownMs = {}, heartbeatMs = 3000, r
     }
     if (!survivors.length) return { fire: null, outcomes };
     const idleOnly = survivors.every(tr => tr.cls === CORE_CLS.heartbeat || tr.cls === CORE_CLS.resume);
-    if (st.inFlight > 0 && !reoffer && (st.inFlight >= maxInFlight || idleOnly)) {
+    const privileged = !reserved.size || survivors.some(tr => reserved.has(tr.cls) || tr.cls === CORE_CLS.deadline);
+    const cap = privileged ? maxInFlight : Math.max(1, maxInFlight - 1);
+    if (st.inFlight > 0 && !reoffer && (st.inFlight >= cap || idleOnly)) {
       st.dirty = rankAndCollapse([...(st.dirty || []), ...survivors], { classes }).sort((a, b) => rank(a) - rank(b) || a.t - b.t);
       for (const tr of survivors) outcomes.push(outcomeOf(tr, 'coalesced'));
       return { fire: null, outcomes };

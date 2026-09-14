@@ -15,12 +15,12 @@ const BOOLEANS = ['help', 'print-config', 'event-tick', 'stream'];
 export async function main(argv = process.argv.slice(2)) {
   const pre = await boot(argv, { booleans: BOOLEANS });
   const game = pre.flags.game;
-  if (!game || pre.flags.help) { console.error('usage: pilot --game <name> [--model M|none] [--prompt file] [--heartbeat ms] [--deadline-margin ms] [--decision-deadline ms] [--packet-max n] [--full-every n] [--thinking adaptive|off] [--effort low|medium|high] [--reply tool|text]|off] [--effort low|medium|high] [--max-usd x] [--max-decisions n] [--concede-on never|budget] [--record-state all|on-decision|sampled] [--run-dir dir] [--stop-file path] [--stale-after ms] [--overlap n] [--event-tick] [--stream] [--<game>-* ...]'); return 64; }
+  if (!game || pre.flags.help) { console.error('usage: pilot --game <name> [--model M|none] [--prompt file] [--heartbeat ms] [--deadline-margin ms] [--decision-deadline ms] [--packet-max n] [--full-every n] [--thinking adaptive|off] [--effort low|medium|high] [--reply tool|text]|off] [--effort low|medium|high] [--max-usd x] [--max-decisions n] [--concede-on never|budget] [--record-state all|on-decision|sampled] [--run-dir dir] [--stop-file path] [--stale-after ms] [--overlap n] [--reserve cls,cls] [--event-tick] [--stream] [--<game>-* ...]'); return 64; }
   const { flags, gameOpts } = parseArgs(argv, { booleans: BOOLEANS, game });
   const cfg = {
     game, model: flags.model ?? process.env.QUICKDRAW_MODEL ?? 'claude-sonnet-5', prompt: flags.prompt ?? null,
     heartbeat: flags.heartbeat ?? 3000, deadlineMargin: flags.deadlineMargin ?? 1000, decisionDeadline: flags.decisionDeadline ?? 6000,
-    packetMax: flags.packetMax ?? 600, fullEvery: flags.fullEvery ?? 0, overlap: flags.overlap ?? 1, eventTick: !!flags.eventTick, thinking: String(flags.thinking ?? 'adaptive'), effort: flags.effort ?? 'low', reply: flags.reply ?? 'tool', stream: !!flags.stream,
+    packetMax: flags.packetMax ?? 600, fullEvery: flags.fullEvery ?? 0, overlap: flags.overlap ?? 1, eventTick: !!flags.eventTick, thinking: String(flags.thinking ?? 'adaptive'), effort: flags.effort ?? 'low', reply: flags.reply ?? 'tool', stream: !!flags.stream, reserveFor: flags.reserve ? String(flags.reserve).split(',') : [],
     maxUsd: flags.maxUsd ?? Infinity, maxDecisions: flags.maxDecisions ?? Infinity, concedeOn: flags.concedeOn ?? 'never',
     recordState: flags.recordState ?? 'all', runDir: flags.runDir ?? path.join(ROOT, 'runs'), stopFile: flags.stopFile ?? null, staleAfter: flags.staleAfter ?? (flags.decisionDeadline ?? 6000) + 2000,   // must exceed the model's latency: the smoke of game 26 dropped every order at 2 s
     gameOpts: redact(gameOpts),
@@ -48,7 +48,7 @@ export async function main(argv = process.argv.slice(2)) {
   const keepAlive = setInterval(() => {}, 1 << 30);   // core timers are unref'd; the run itself keeps the loop alive
   const callModel = cfg.model === 'none' ? nullModel() : await modelFor({ adapter, model: cfg.model, system, thinking: cfg.thinking, effort: cfg.effort, reply: cfg.reply, stream: cfg.stream, decisionDeadlineMs: cfg.decisionDeadline, clock });
   const out = await runPilot({ adapter, callModel, clock, record: rec, log: (...a) => console.error(...a), stop: stopper.signal, opts: {
-    heartbeatMs: cfg.heartbeat, deadlineMarginMs: cfg.deadlineMargin, packetMax: cfg.packetMax, divisor, fullEvery: cfg.fullEvery, staleAfterMs: cfg.staleAfter, maxInFlight: cfg.overlap, eventTick: cfg.eventTick, stream: cfg.stream,
+    heartbeatMs: cfg.heartbeat, deadlineMarginMs: cfg.deadlineMargin, packetMax: cfg.packetMax, divisor, fullEvery: cfg.fullEvery, staleAfterMs: cfg.staleAfter, maxInFlight: cfg.overlap, eventTick: cfg.eventTick, stream: cfg.stream, reserveFor: cfg.reserveFor,
     maxUsd: cfg.maxUsd, maxDecisions: cfg.maxDecisions, concedeOn: cfg.concedeOn, stopFile: cfg.stopFile,
   } });
   clearInterval(keepAlive);

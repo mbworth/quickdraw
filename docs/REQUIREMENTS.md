@@ -159,7 +159,7 @@ Protocol facts from the Ashfall dev (ask-dev, 2026-09-12; source `README.md` §P
 
 ## 11. Configuration
 
-`bin/pilot.mjs --game <name>` plus `--model --prompt --heartbeat --deadline-margin --decision-deadline --packet-max --full-every --thinking --max-usd --max-decisions --concede-on --record-state --run-dir --stop-file`, then `--<game>-*` flags. Grammar: `--k v`, `--k=v`; boolean flags are an explicit list; everything else takes a value. Env is loaded in JS from `.env` when present (Node 20 has no `--env-file-if-exists`). `--stop-file <path>`: when the file appears the pilot flushes, leaves and exits. Line one of every run records the resolved config.
+`bin/pilot.mjs --game <name>` plus `--model --prompt --heartbeat --deadline-margin --decision-deadline --packet-max --full-every --thinking --effort --reply --overlap --reserve --event-tick --stream --max-usd --max-decisions --concede-on --record-state --run-dir --stop-file`, then `--<game>-*` flags (M7: `--overlap N` calls in flight, `--reserve cls,cls` keeps the last slot for those classes, `--event-tick` decides on event arrival, `--stream` sends each command as its text closes, `--reply text` answers without a tool). Grammar: `--k v`, `--k=v`; boolean flags are an explicit list; everything else takes a value. Env is loaded in JS from `.env` when present (Node 20 has no `--env-file-if-exists`). `--stop-file <path>`: when the file appears the pilot flushes, leaves and exits. Line one of every run records the resolved config.
 
 ## 12. Experiment protocol
 

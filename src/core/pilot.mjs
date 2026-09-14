@@ -31,7 +31,7 @@ export const lastOrdersOf = (keep, results, dropped) =>
 export async function runPilot({ adapter, callModel, clock, record = null, opts = {}, log = () => {}, stop = null }) {
   const o = {
     heartbeatMs: 3000, deadlineMarginMs: 1000, packetMax: 600, divisor: 3.5, fullEvery: 0, staleAfterMs: 8000,
-    maxUsd: Infinity, maxDecisions: Infinity, concedeOn: 'never', stopFile: null, stopPollMs: 500, leaveTimeoutMs: 2000, maxInFlight: 1, eventTick: false, stream: false, ...opts,
+    maxUsd: Infinity, maxDecisions: Infinity, concedeOn: 'never', stopFile: null, stopPollMs: 500, leaveTimeoutMs: 2000, maxInFlight: 1, eventTick: false, stream: false, reserveFor: [], ...opts,
   };
   const meta = adapter.meta;
   const rec = record || { writeNow: () => -1, writeState: () => null, ensureState: () => null, flushAndClose() {} };
@@ -44,7 +44,7 @@ export async function runPilot({ adapter, callModel, clock, record = null, opts 
 
   const trig = createTriggers({
     classes: meta.classes, cooldownMs: meta.cooldownMs || {}, heartbeatMs: o.heartbeatMs, refreshMs: meta.refreshMs || 0,
-    deadlineMarginMs: o.deadlineMarginMs, maxInFlight: o.maxInFlight, clock, onFire: handle,
+    deadlineMarginMs: o.deadlineMarginMs, maxInFlight: o.maxInFlight, reserveFor: o.reserveFor || [], clock, onFire: handle,
   });
 
   function recordOutcomes(r, extra = {}) {

@@ -163,3 +163,19 @@ test('maxInFlight 2: the in-flight count is per decision, and returns to zero so
   assert.equal(trig.inFlight, 0);
   assert.ok(trig.tick({ events: [ev('e5')] }).fire);
 });
+
+test('reserveFor: with one call in flight the last slot goes only to a reserved class', () => {
+  const { tr } = mk({ maxInFlight: 2, reserveFor: ['danger'] });
+  tr.markStart();
+  const eco = tr.tick({ events: [ev('info', 'x', 1)] });
+  assert.equal(eco.fire, null); assert.equal(eco.outcomes[0].outcome, 'coalesced');
+  const dan = tr.tick({ events: [ev('danger', 'y', 2)] });
+  assert.ok(dan.fire && dan.fire.some(t => t.cls === 'danger'), 'danger takes the reserved slot');
+  assert.ok(!dan.fire.some(t => t.cls === 'info'), 'the coalesced info trigger stays dirty for the reoffer, as without a reservation');
+  tr.markStart();
+  const more = tr.tick({ events: [ev('danger', 'z', 3)] });
+  assert.equal(more.fire, null, 'both slots busy: even danger coalesces');
+  const plain = mk({ maxInFlight: 2 });
+  plain.tr.markStart();
+  assert.ok(plain.tr.tick({ events: [ev('info', 'x', 1)] }).fire, 'no reservation: any ranked class takes the second slot');
+});
