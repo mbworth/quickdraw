@@ -17,7 +17,7 @@ test('every bench fixture is scrubbed and every case has a rule and a predicate'
     assert.deepEqual(strayKeys(c.fx), [], c.id);
     assert.ok(!LEAK.test(JSON.stringify(c.fx)), `${c.id}: leak pattern`);
     assert.equal(typeof c.expect, 'function'); assert.ok(c.rule.length > 10);
-    assert.equal(c.expect([], c.fx.state), c.id === 'wave' || c.id === 'push', `${c.id}: no orders passes only the hold cases`);
+    assert.equal(c.expect([], c.fx.state), c.id === 'wave' || c.id === 'push' || c.id === 'sally', `${c.id}: no orders passes only the hold cases`);
   }
 });
 

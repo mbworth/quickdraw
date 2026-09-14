@@ -50,7 +50,13 @@ export async function replayTrajectory({ rows, adapter, callModel, flags = {}, d
     const { keep, dropped } = applyOrders({ adapter, orders: res.act ? res.orders : [], state, decidedOn: state, staleAfterMs: cfg.staleAfter, clock });   // the pilot's own pipeline (stale check included), so the arm is scored like the recording
     const recorded = decisions.get(call.n)?.sent || [];
     const row = { n: call.n, gt: state.header?.clocks?.game ?? null, est: pkt.estTokens, out: res.usage?.output_tokens ?? null, latencyMs: res.latencyMs, cost: res.cost || 0, stop: res.stop, recorded, recordedDropped: decisions.get(call.n)?.dropped || [], sent: keep, dropped, same: kinds(keep) === kinds(recorded) };
-    if (res.note != null) { row.o = res.raw?.o ?? null; row.why = res.note; row.agree = agreement(res.orders, recorded); if (flags.diff && !(row.agree.buy && row.agree.army)) row.packet = pkt.text; }   // a script arm: what it said and whether the recording agrees
+    if (res.note != null) {   // a script arm: what it said and whether the recording agrees, on this decision and within the last `window` decisions (the script re-issues standing orders every packet; the model says them once)
+      row.o = res.raw?.o ?? null; row.why = res.note; row.agree = agreement(res.orders, recorded);
+      const W = flags.window ?? 6, win = []; for (let k = call.n - W; k <= call.n; k++) win.push(...(decisions.get(k)?.sent || []));
+      const aw = agreement(res.orders, win);   // a standing order the model gave earlier counts; a script silence is judged on this decision alone
+      row.agreeW = { buy: res.orders.some(c => BUY.has(c.cmd)) ? aw.buy : row.agree.buy, army: res.orders.some(c => ARMY.has(c.cmd)) ? aw.army : row.agree.army };
+      if (flags.diff && !(row.agreeW.buy && row.agreeW.army)) row.packet = pkt.text;
+    }
     out.push(row);
     log(`n=${call.n} ${row.same ? 'same' : 'DIFF'} ${res.latencyMs} ms out=${row.out ?? '-'} rec[${kinds(recorded)}] new[${kinds(keep)}]${row.agree ? ` buy ${row.agree.buy ? 'y' : 'n'} army ${row.agree.army ? 'y' : 'n'}` : ''}`);
   }
@@ -70,7 +76,7 @@ export function agreement(script, recorded) {
 }
 const brief = cmds => cmds.map(c => [c.cmd, c.type, c.building, c.units?.length, c.x != null ? `${c.x},${c.z}` : null, c.target].filter(v => v != null && v !== '').join(' ')).join('; ') || '-';
 export function diff(rows) {
-  return rows.filter(r => r.agree && !(r.agree.buy && r.agree.army)).map(r => `n=${r.n} t=${r.gt} ${r.agree.buy ? '' : 'BUY '}${r.agree.army ? '' : 'ARMY '}[${r.why}]\n  script:   ${r.o}\n  recorded: ${brief(r.recorded)}${r.packet ? '\n' + r.packet.split('\n').map(l => '  | ' + l).join('\n') : ''}`).join('\n');
+  return rows.filter(r => r.agreeW && !(r.agreeW.buy && r.agreeW.army)).map(r => `n=${r.n} t=${r.gt} ${r.agreeW.buy ? '' : 'BUY '}${r.agreeW.army ? '' : 'ARMY '}[${r.why}]\n  script:   ${r.o}\n  recorded: ${brief(r.recorded)}${r.packet ? '\n' + r.packet.split('\n').map(l => '  | ' + l).join('\n') : ''}`).join('\n');
 }
 
 // Game-agnostic scores over one arm's rows. Per-game rule checks live in the bench; here: agreement with the recording,
@@ -95,12 +101,12 @@ const agreeRates = rows => {
   const ag = rows.filter(r => r.agree);
   if (!ag.length) return {};
   const pc = f => Math.round((100 * ag.filter(f).length) / ag.length);
-  return { buyAgree: pc(r => r.agree.buy), armyAgree: pc(r => r.agree.army), bothAgree: pc(r => r.agree.buy && r.agree.army) };
+  return { buyAgree: pc(r => r.agree.buy), armyAgree: pc(r => r.agree.army), bothAgree: pc(r => r.agree.buy && r.agree.army), buyAgreeW: pc(r => r.agreeW?.buy), armyAgreeW: pc(r => r.agreeW?.army) };
 };
 
 function compare(files) {
   const arms = files.map(f => ({ name: path.basename(f, '.json'), ...JSON.parse(fs.readFileSync(f, 'utf8')) }));
-  const keys = ['decisions', 'failed', 'sameKinds', 'buyAgree', 'armyAgree', 'bothAgree', 'noopPct', 'recordedNoopPct', 'ordersPerDecision', 'recordedOrdersPerDecision', 'estP50', 'outP50', 'latencyP50', 'cost'];
+  const keys = ['decisions', 'failed', 'sameKinds', 'buyAgree', 'armyAgree', 'bothAgree', 'buyAgreeW', 'armyAgreeW', 'noopPct', 'recordedNoopPct', 'ordersPerDecision', 'recordedOrdersPerDecision', 'estP50', 'outP50', 'latencyP50', 'cost'];
   console.log(['metric'.padEnd(26), ...arms.map(a => a.name.slice(0, 14).padStart(14))].join(''));
   for (const k of keys) console.log([k.padEnd(26), ...arms.map(a => String(a.summary[k]).padStart(14))].join(''));
   const reasons = [...new Set(arms.flatMap(a => Object.keys(a.summary.drops)))];

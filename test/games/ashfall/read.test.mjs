@@ -40,7 +40,7 @@ test('the working-config packet of every bench fixture reads back to the state i
 test('every layer shape the encoder writes reads: full buildings, deltas, triggers, last orders, remembered, folded fields', () => {
   const files = fixtureFiles();
   for (let i = 0; i < files.length; i++) {
-    for (const opts of [{}, WORKING, { ...WORKING, compactBuildings: false }, { fullBuildings: true, keepAnchor: true }]) {
+    for (const opts of [{}, WORKING, { ...WORKING, planMarks: true }, { ...WORKING, compactBuildings: false }, { fullBuildings: true, keepAnchor: true }]) {
       for (const n of [1, 2]) {
         const pkt = assemble(layersAt(i, files, opts), { maxTokens: 1000, divisor: 3.5, fullEvery: 5, n });
         const k = read(pkt.text);
@@ -53,15 +53,15 @@ test('every layer shape the encoder writes reads: full buildings, deltas, trigge
 
 test('facts the policy reads: kill, sup cap, idle harvesters, dug, out, search, nospot, pending', () => {
   const k = read(['H t3:59 o730 c0 s18/18 CAPPED wk9 tr12', 'D +tr#55 -tr#24 E-tr x1 o-70', 'T dmg tr#24 hp0 by tr x2; seen wk@-23,-3; lost tr#24 by tr; kill tr#51; sup cap; idle wk#7 dry',
-    'P co#1 q0 IDLE; ba#13 q2 tr 0 r58,4 out; ba#40 bld 60', 'E f1 ore wk4 o0; idle wk #9,#11', 'A', 'tr x4@-10,-1 a out', 'tr x2@3,-2 i #23,#32', 'wk x4@55,2 g',
-    'B co#1@70,4 hp97 post@62,3 yard@82,5 ba#13 dp#22 bld20 tu#30@62,3 hp58', 'X', 'tr x12@-39,-33 d106/8 dug', 'co x1@-70,-4 d140/30 #20001', 'M', 'ba#12@22,49 hp80 age12', 'search @-70,-4', 'F',
+    'P co#1 q0 IDLE; ba#13 q2 tr 0 r58,4 out failed; ba#40 bld 60', 'E f1 ore wk4 o0; idle wk #9,#11', 'A', 'tr x4@-10,-1 a out', 'tr x2@3,-2 i #23,#32', 'wk x4@55,2 g',
+    'B co#1@70,4 hp97 post@62,3 yard@82,5 ba#13 dp#22 bld20 tu#30@62,3 hp58 (2nd ba)', 'X', 'tr x12@-39,-33 d106/8 dug', 'co x1@-70,-4 d140/30 #20001', 'M', 'ba#12@22,49 hp80 age12', 'search @-70,-4', 'F',
     'f1 home ore@61,13 o1285 live n#1,#2', 'f3 exp ore@-5,-34 ?', 'f? f6@-42,7 f11c@13,-17', 'L build dp 82,5 nospot; train tr #13 ok; pending: seen tr@45,22'].join('\n'));
   assert.deepEqual([k.h.capped, k.h.sUsed, k.h.sCap, k.h.wk, k.h.tr], [true, 18, 18, 9, 12]);
   assert.ok(k.d.enemyGone && k.t.kill && k.t.supCap); assert.deepEqual(k.t.idleWk, [7]); assert.deepEqual(k.e.idleWk, [9, 11]); assert.equal(k.e.fields[0].o, 0);
   assert.deepEqual(k.p.map(b => [b.id, b.done, b.q, b.out, b.rally && b.rally.x]), [[1, true, 0, false, null], [13, true, 2, true, 58], [40, false, null, false, null]]);
   assert.deepEqual(k.a.map(c => [c.label, c.state, c.out, c.ids]), [['tr x4@-10,-1', 'a', true, []], ['tr x2@3,-2', 'i', false, [23, 32]], ['wk x4@55,2', 'g', false, []]]);
   assert.deepEqual(k.b.list.map(b => [b.type, b.id, b.hp, b.bld]), [['co', 1, 97, null], ['ba', 13, 100, null], ['dp', 22, 100, 20], ['tu', 30, 58, null]]);
-  assert.deepEqual([k.b.post, k.b.yard, k.b.noTu], [{ x: 62, z: 3 }, { x: 82, z: 5 }, false]);
+  assert.deepEqual([k.b.post, k.b.yard, k.b.noTu, k.b.secondBa, k.p[1].failed], [{ x: 62, z: 3 }, { x: 82, z: 5 }, false, true, true]);
   assert.deepEqual(k.x.map(c => [c.type, c.n, c.dB, c.dA, c.dug, c.ids]), [['tr', 12, 106, 8, true, []], ['co', 1, 140, 30, false, [20001]]]);
   assert.deepEqual([k.m.buildings[0].id, k.m.search], [12, { field: null, x: -70, z: -4 }]);
   assert.deepEqual([k.f.fields[0].nodes, k.f.unexplored.map(f => f.i)], [[1, 2], [3, 6, 11]]);

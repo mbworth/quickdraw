@@ -54,6 +54,17 @@ export const cases = [
     expect: (sent, s) => has(sent, c => c.cmd === 'move' && c.attackMove && count(c, s) >= 8 && atSearch(c, s)) },
   { id: 'wave', fixture: './fixtures/wave-t139.json', rule: 'Army 1/4: riflemen fighting a raid at home get no order; never chase',
     expect: (sent, s) => hold(sent, s) },
+  // 2026-09-14 model campaign (games 50-54): the model's departures from the plan the script does not make.
+  // game 50 (hub 70) n=102: a kill packet at 2:46 with 8 riflemen; the model committed the ball (Army 7 says 15). Hold.
+  { id: 'sally', fixture: './fixtures/sally-t166.json', rule: 'Army 7: a kill packet with under 15 riflemen is not the commit',
+    expect: (sent, s) => hold(sent, s) },
+  // game 51 (hub 71) n=229: ore 235, the one barracks at q4, no second barracks in 5:37; the model attacked the core and bought nothing.
+  { id: 'secondba', fixture: './fixtures/secondba-t337.json', rule: 'Buy 5: ore ≥ 200 and every barracks at q3+ → the second barracks',
+    expect: sent => has(sent, c => c.cmd === 'build' && c.type === 'barracks') },
+  // game 52 (hub 72) n=281: the ball is dead (tr2), the rally still out at a remembered depot, 705 ore banked; the model gathered.
+  // Army 4: under 5 with the rally out → the attack has failed: rally home. Buy 5 holds too (q4, one barracks, 705 ore).
+  { id: 'failed', fixture: './fixtures/failed-t401.json', rule: 'Army 4: rally out and under 5 riflemen → rally every barracks home',
+    expect: (sent, s) => has(sent, c => c.cmd === 'rally' && c.x != null && D(c, s.myBase) <= 20) },
 ];
 
 // The game25/game32 push rule, kept so the older arms can still be scored on the same fixture by anyone rescoring them: not a case.

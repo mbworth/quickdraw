@@ -65,12 +65,12 @@ function triggers(text) {
 }
 
 // P: `co#1 q0 IDLE; ba#13 q2 tr 70 r58,4 out; ba#40 bld 60`
-const PROD = /^([a-z]{2})#(\d+) (?:bld (\d+)|q(\d+)(?: (?:IDLE|([a-z]{2})(?: (\d+))?))?(?: r(-?\d+),(-?\d+)( out)?)?)$/;
+const PROD = /^([a-z]{2})#(\d+) (?:bld (\d+)|q(\d+)(?: (?:IDLE|([a-z]{2})(?: (\d+))?))?(?: r(-?\d+),(-?\d+)( out)?( failed)?)?)$/;
 function production(text) {
   if (text === 'none') return [];
   return text.split('; ').map(item => {
     const m = PROD.exec(item) || bad('P', item);
-    const b = { type: m[1], id: N(m[2]), bld: m[3] != null ? N(m[3]) : null, q: m[4] != null ? N(m[4]) : null, head: m[5] || null, prog: m[6] != null ? N(m[6]) : null, rally: m[7] != null ? { x: N(m[7]), z: N(m[8]) } : null, out: !!m[9] };
+    const b = { type: m[1], id: N(m[2]), bld: m[3] != null ? N(m[3]) : null, q: m[4] != null ? N(m[4]) : null, head: m[5] || null, prog: m[6] != null ? N(m[6]) : null, rally: m[7] != null ? { x: N(m[7]), z: N(m[8]) } : null, out: !!m[9], failed: !!m[10] };
     b.done = b.bld === null; b.idle = b.done && b.q === 0;
     return b;
   });
@@ -110,6 +110,7 @@ function buildingsText(text, b) {
     else if ((m = /^post@(-?\d+),(-?\d+)$/.exec(k))) b.post = { x: N(m[1]), z: N(m[2]) };
     else if ((m = /^yard@(-?\d+),(-?\d+)$/.exec(k))) b.yard = { x: N(m[1]), z: N(m[2]) };
     else if (k === '(no' && toks[i + 1] === 'tu)') { b.noTu = true; i++; }
+    else if (k === '(2nd' && toks[i + 1] === 'ba)') { b.secondBa = true; i++; }
     else bad('B', text);
   }
 }
@@ -158,7 +159,7 @@ function last(text) {
 
 // read(text) → {h, d, t, p, e, a, b, x, m, f, l, layers}; layers = the set of tags present on this packet.
 export function read(text) {
-  const out = { h: null, d: delta('none'), t: triggers('none'), p: [], e: economy('none'), a: [], b: { list: [], post: null, yard: null, noTu: false }, x: [], m: { buildings: [], search: null }, f: { fields: [], unexplored: [] }, l: last('none'), layers: new Set() };
+  const out = { h: null, d: delta('none'), t: triggers('none'), p: [], e: economy('none'), a: [], b: { list: [], post: null, yard: null, noTu: false, secondBa: false }, x: [], m: { buildings: [], search: null }, f: { fields: [], unexplored: [] }, l: last('none'), layers: new Set() };
   let cur = null;
   for (const line of String(text || '').split('\n')) {
     if (!line.trim()) continue;

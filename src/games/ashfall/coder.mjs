@@ -79,14 +79,20 @@ export function renderTrigger(tr) {
   }
 }
 
-export function production(s, { guide = false } = {}) {
+// planMarks (with guide): the compound conditions the plan reads are marked where the rule reads them, so the model never joins two lines.
+// `failed` after a rally `out` while under 5 riflemen (Army 4: the attack has failed, rally home); `(2nd ba)` on the B line while ore ≥ 200,
+// one barracks and its queue at 3+ (Buy 5). Model campaign 2026-09-14: 0/5 on both offline, the script 1/1.
+const troopers = s => unitsOf(s).filter(u => u.type === 'trooper').length;
+export const secondBarracksDue = s => { const ba = bldsOf(s).filter(b => b.type === 'barracks'); return s.ore >= 200 && ba.length === 1 && done(ba[0]) && (ba[0].queue || []).length >= 3; };
+export function production(s, { guide = false, planMarks = false } = {}) {
   const lines = [];
+  const failed = planMarks && troopers(s) < 5;
   for (const b of bldsOf(s)) {
     if (!done(b)) { lines.push({ text: `${ref(b)} bld ${pct(b.progress, 1)}`, priority: 0 }); continue; }
     if (b.type !== 'core' && b.type !== 'barracks' && b.type !== 'armory') continue;
     const q = b.queue || [];
     const head = q.length ? ` ${ty(q[0])}${b.prog != null ? ' ' + pct(b.prog, 1) : ''}` : ' IDLE';
-    lines.push({ text: `${ref(b)} q${q.length}${head}${b.rally ? ` r${R(b.rally.x)},${R(b.rally.z)}${guide && out(s, b.rally) ? ' out' : ''}` : ''}`, priority: 0 });
+    lines.push({ text: `${ref(b)} q${q.length}${head}${b.rally ? ` r${R(b.rally.x)},${R(b.rally.z)}${guide && out(s, b.rally) ? (failed ? ' out failed' : ' out') : ''}` : ''}`, priority: 0 });
   }
   return lines.map(l => l.text).join('; ') || 'none';
 }
@@ -116,7 +122,7 @@ export function buildings(s, { only = null } = {}) {
 }
 const isAnchor = b => b.type === 'core' || b.type === 'turret';
 // compact: `co#1@70,4 ba#13 dp#22 tu#30@50,-3 hp58 ba#40 bld40` — what exists, where the anchor is, what is hurt or unfinished
-export const compactBuildings = (s, { guide = false } = {}) => bldsOf(s).map(b => `${ref(b)}${isAnchor(b) ? '@' + pos(b) : ''}${!done(b) ? ` bld${pct(b.progress, 1)}` : pct(b.hp, b.max) < 100 ? ` hp${pct(b.hp, b.max)}` : ''}${guide && b.type === 'core' && s.myBase ? ` post@${pos(post(s))} yard@${pos(yard(s))}` : ''}`).join(' ').concat(guide && bldsOf(s).length && !bldsOf(s).some(b => b.type === 'turret') ? ' (no tu)' : '') || 'none';
+export const compactBuildings = (s, { guide = false, planMarks = false } = {}) => bldsOf(s).map(b => `${ref(b)}${isAnchor(b) ? '@' + pos(b) : ''}${!done(b) ? ` bld${pct(b.progress, 1)}` : pct(b.hp, b.max) < 100 ? ` hp${pct(b.hp, b.max)}` : ''}${guide && b.type === 'core' && s.myBase ? ` post@${pos(post(s))} yard@${pos(yard(s))}` : ''}`).join(' ').concat(guide && bldsOf(s).length && !bldsOf(s).some(b => b.type === 'turret') ? ' (no tu)' : '').concat(guide && planMarks && secondBarracksDue(s) ? ' (2nd ba)' : '') || 'none';
 
 export function enemy(s) {
   const blds = bldsOf(s), units = unitsOf(s).filter(u => u.type !== 'worker');
@@ -195,17 +201,17 @@ const lineLayer = (name, priority, items, prio = () => priority, extra = {}) => 
 // of my core) and the folded `f?` line runs in that order; the game32 prompt's search rule sends the ball there instead of to a guessed coordinate.
 // opts.keepAnchor (with fullBuildings): core and turret lines stay on every packet; the prompt's turret and mirror rules read them.
 // opts.guide (game38 prompt): counts on H, post/yard on the compact B line, the search waypoint mirror-first (see `post` above).
-export function encode({ state, prevDecisionState, triggers = [], lastOrders: lo = [], pending = [] }, { foldFields = false, fullBuildings = false, fieldsOnDemand = false, keepAnchor = false, keepRemembered = false, compactBuildings: compactB = false, searchFields = false, guide = false } = {}) {
+export function encode({ state, prevDecisionState, triggers = [], lastOrders: lo = [], pending = [] }, { foldFields = false, fullBuildings = false, fieldsOnDemand = false, keepAnchor = false, keepRemembered = false, compactBuildings: compactB = false, searchFields = false, guide = false, planMarks = false } = {}) {
   const s = state.native, prev = prevDecisionState?.native || null;
   const fieldsFull = !(fieldsOnDemand && fieldsNeeded(s));
   return [
     layer('header', 0, header(s, { guide })),
     layer('delta', 0, delta(prev, s)),
     layer('triggers', 1, triggers.filter(tr => !(guide && tr.cls === 'heartbeat')).slice(0, 6).map(renderTrigger).join('; ') || 'none'),   // guide: a heartbeat is not an event; `T hb` made the model answer `-` 7/7 on a bank of 135 with no turret, `T none` buys
-    layer('production', 0, production(s, { guide })),
+    layer('production', 0, production(s, { guide, planMarks })),
     layer('economy', 1, economy(s)),
     lineLayer('army', 2, army(s, { guide })),
-    ...(compactB ? [layer('buildings', 2, compactBuildings(s, { guide }))] : fullBuildings && keepAnchor
+    ...(compactB ? [layer('buildings', 2, compactBuildings(s, { guide, planMarks }))] : fullBuildings && keepAnchor
       ? [lineLayer('buildings', 2, buildings(s, { only: isAnchor })), { name: 'buildings-rest', priority: 2, text: '', lines: buildings(s, { only: b => !isAnchor(b) }).map(text => ({ text, priority: 2 })), full: true }]
       : [lineLayer('buildings', 2, buildings(s), () => 2, fullBuildings ? { full: true } : {})]),
     lineLayer('enemy', 1, enemy(s)),

@@ -141,3 +141,13 @@ test('a label pasted with its state letter or the guide\'s `out` mark is the sam
   for (const o of ['am tr x19@0,-1 28,64', 'am tr x19@0,-1 i 28,64', 'am tr x19@0,-1 i out 28,64', 'am tr x19@0,-1 out 28,64', 'am tr x19@0,-1 out,28,64']) assert.deepEqual(decode({ o }).orders, want, o);
   assert.deepEqual(decode({ o: 'am tr x7@64,24 i out,tr x2@-24,-55 i -30,-54' }).orders, [{ cmd: 'move', units: ['tr x7@64,24', 'tr x2@-24,-55'], x: -30, z: -54, attackMove: true }], 'two labels');
 });
+
+test('game55 prompt: game38 plus the two plan marks named where their rules read them, nothing else', () => {
+  const a = fs.readFileSync(path.join(ROOT, 'prompts/ashfall/game38-sonnet.md'), 'utf8').split('\n'), b = fs.readFileSync(path.join(ROOT, 'prompts/ashfall/game55-sonnet.md'), 'utf8').split('\n');
+  assert.equal(a.length, b.length);
+  const diff = a.map((l, i) => (l === b[i] ? null : i)).filter(i => i !== null);
+  assert.equal(diff.length, 4, `changed lines: ${diff.map(i => i + 1).join(',')}`);
+  assert.ok(b.some(l => l.startsWith('5. ') && l.includes('`(2nd ba)`')), 'Buy 5 reads the mark');
+  assert.ok(b.some(l => l.startsWith('4. Rally out') && l.includes('`out failed`')), 'Army 4 reads the mark');
+  assert.ok(b.some(l => l.startsWith('- `P`') && l.includes('`out failed`')) && b.some(l => l.startsWith('- `B`') && l.includes('`(2nd ba)`')), 'the packet section defines both');
+});

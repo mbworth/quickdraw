@@ -182,3 +182,13 @@ test('guide (game38): counts on H, post and yard on the compact B line, the sear
   assert.equal(T({ guide: true }, hb), 'T none', 'guide: a heartbeat is not an event');
   assert.equal(T({}, hb), 'T hb'); assert.match(T({ guide: true }, [...hb, { cls: 'economy', key: 'oreturret', t: 0, count: 1 }]), /^T ore turret$/);
 });
+
+test('planMarks (with guide): `failed` on a rally out under 5 riflemen, `(2nd ba)` while ore ≥ 200 with one full barracks', () => {
+  const fx = f => JSON.parse(fs.readFileSync(path.join(HERE, 'bench/fixtures', f), 'utf8'));
+  const L = (native, o, name) => encode({ state: snap({ state: native }), triggers: [], lastOrders: [] }, { foldFields: true, compactBuildings: true, keepRemembered: true, searchFields: true, guide: true, ...o }).find(l => l.name === name).text;
+  const failed = fx('failed-t401.json').state, second = fx('secondba-t337.json').state, sally = fx('sally-t166.json').state;
+  assert.match(L(failed, { planMarks: true }, 'production'), / out failed/); assert.doesNotMatch(L(failed, {}, 'production'), /failed/);
+  assert.match(L(failed, { planMarks: true }, 'buildings'), / \(2nd ba\)$/, '705 ore, q4, one barracks');
+  assert.match(L(second, { planMarks: true }, 'buildings'), / \(2nd ba\)$/); assert.doesNotMatch(L(second, {}, 'buildings'), /2nd/);
+  assert.doesNotMatch(L(sally, { planMarks: true }, 'buildings') + L(sally, { planMarks: true }, 'production'), /2nd|failed/, '70 ore, q1, rally home: no mark');
+});
