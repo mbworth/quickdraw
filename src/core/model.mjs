@@ -124,3 +124,20 @@ export function createModel({ client, model, system, tool, toolName, toolDescrip
 export function nullModel() {
   return async () => ({ act: false, orders: [], note: null, usage: { input_tokens: 0, cache_creation_input_tokens: 0, cache_read_input_tokens: 0, output_tokens: 0 }, stop: 'tool_use', latencyMs: 0, cost: 0 });
 }
+
+// scriptModel({decide, decode}) → callModel: a scripted policy in place of the API. decide(packetText) → {o, why}; `o` is decoded by the
+// game's order language like a tool call, `why` rides in `note`. A packet the script cannot read is stop 'error:read', never a silent `-`.
+export function scriptModel({ decide, decode, clock = { now: () => Date.now() } }) {
+  const usage = { input_tokens: 0, cache_creation_input_tokens: 0, cache_read_input_tokens: 0, output_tokens: 0 };
+  return async function callModel({ packet, onOrders = null } = {}) {
+    const t0 = clock.now();
+    try {
+      const { o, why } = decide(packet);
+      const d = decode({ o });
+      if (d.orders.length && onOrders) onOrders(d.orders);
+      return { act: d.act, orders: d.orders, note: why?.length ? why.join(' ') : null, usage: { ...usage }, stop: 'tool_use', latencyMs: clock.now() - t0, cost: 0, raw: { o }, streamed: onOrders ? d.orders.length : 0 };
+    } catch (err) {
+      return { act: false, orders: [], note: null, usage: { ...usage }, stop: 'error:read', error: String(err?.message || err), latencyMs: clock.now() - t0, cost: 0 };
+    }
+  };
+}

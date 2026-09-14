@@ -14,9 +14,22 @@ const unitsOf = s => (s.mine || []).filter(e => !isBuilding(e.type));
 const bldsOf = s => (s.mine || []).filter(e => isBuilding(e.type));
 const done = e => e.progress === undefined;
 
-export function header(s) {
+// guide (game38 prompt): the packet carries what the rules read, so the model never counts, computes or checks an absence. H gets `wk9 tr12`; the
+// compact B line gets `post@x,z` (8 from the core toward the map centre: turret and rally), `yard@x,z` (12 the other way: barracks and depots) and
+// `(no tu)` while no turret exists (the bench: the model skipped the turret line 4/5 on an absence check); A clusters and P rallies more than 30
+// from home are marked `out`; the heartbeat is not listed on T (the model treats `hb` as "nothing to do" whatever the prompt says); the search
+// waypoint is the mirror of my core until a combat unit stands within 12 of it, then the unexplored ore field nearest the mirror (games 54/56: the
+// field-first search hopped 5 and 9 times, twice onto crystal, once back into my own half, while the enemy core sat within 25 of the mirror every game).
+const along = (s, d) => { const b = s.myBase, L = Math.hypot(b.x, b.z) || 1; return { x: b.x - (d * b.x) / L, z: b.z - (d * b.z) / L }; };
+export const post = s => along(s, 8);
+export const yard = s => along(s, -12);
+const combat = s => unitsOf(s).filter(u => u.type !== 'worker');
+const out = (s, p) => s.myBase && dist(p, s.myBase) > 30;   // guide: `out` marks a cluster or rally more than 30 from home (the prompt's only distance test)
+
+export function header(s, { guide = false } = {}) {
   const parts = [`t${clock(s.time)}`, `o${R(s.ore)}`, `c${R(s.crystal)}`, `s${s.supply?.used ?? 0}/${s.supply?.cap ?? 0}`];
   if (s.supply && s.supply.used >= s.supply.cap) parts.push('CAPPED');
+  if (guide) parts.push(`wk${unitsOf(s).filter(u => u.type === 'worker').length}`, `tr${unitsOf(s).filter(u => u.type === 'trooper').length}`);
   const ups = Object.entries(s.upgrades || {}).filter(([, v]) => v > 0).map(([k, v]) => `${UPGRADE[k] || k}${v}`);
   if (ups.length) parts.push('up', ...ups);
   if (s.eliminationIn != null) parts.push(`elim me ${R(s.eliminationIn)}`);
@@ -66,14 +79,14 @@ export function renderTrigger(tr) {
   }
 }
 
-export function production(s) {
+export function production(s, { guide = false } = {}) {
   const lines = [];
   for (const b of bldsOf(s)) {
     if (!done(b)) { lines.push({ text: `${ref(b)} bld ${pct(b.progress, 1)}`, priority: 0 }); continue; }
     if (b.type !== 'core' && b.type !== 'barracks' && b.type !== 'armory') continue;
     const q = b.queue || [];
     const head = q.length ? ` ${ty(q[0])}${b.prog != null ? ' ' + pct(b.prog, 1) : ''}` : ' IDLE';
-    lines.push({ text: `${ref(b)} q${q.length}${head}${b.rally ? ` r${R(b.rally.x)},${R(b.rally.z)}` : ''}`, priority: 0 });
+    lines.push({ text: `${ref(b)} q${q.length}${head}${b.rally ? ` r${R(b.rally.x)},${R(b.rally.z)}${guide && out(s, b.rally) ? ' out' : ''}` : ''}`, priority: 0 });
   }
   return lines.map(l => l.text).join('; ') || 'none';
 }
@@ -91,10 +104,10 @@ export function economy(s) {
   return parts.join('; ') || 'none';
 }
 
-export function army(s) {
+export function army(s, { guide = false } = {}) {
   const units = unitsOf(s);
   const cl = cluster(units, { r: 8 });
-  return cl.map(c => `${ty(c.type)} x${c.n}@${c.x},${c.z} ${STATE[c.state] || c.state || '?'}${c.n <= 2 ? ' #' + c.ids.join(',#') : ''}`);
+  return cl.map(c => `${ty(c.type)} x${c.n}@${c.x},${c.z} ${STATE[c.state] || c.state || '?'}${c.n <= 2 ? ' #' + c.ids.join(',#') : ''}${guide && c.type !== 'worker' && out(s, c) ? ' out' : ''}`);
 }
 
 export const bldLine = b => `${ref(b)}@${pos(b)} ${done(b) ? `hp${pct(b.hp, b.max)}` : `bld ${pct(b.progress, 1)}`}`;
@@ -103,7 +116,7 @@ export function buildings(s, { only = null } = {}) {
 }
 const isAnchor = b => b.type === 'core' || b.type === 'turret';
 // compact: `co#1@70,4 ba#13 dp#22 tu#30@50,-3 hp58 ba#40 bld40` — what exists, where the anchor is, what is hurt or unfinished
-export const compactBuildings = s => bldsOf(s).map(b => `${ref(b)}${isAnchor(b) ? '@' + pos(b) : ''}${!done(b) ? ` bld${pct(b.progress, 1)}` : pct(b.hp, b.max) < 100 ? ` hp${pct(b.hp, b.max)}` : ''}`).join(' ') || 'none';
+export const compactBuildings = (s, { guide = false } = {}) => bldsOf(s).map(b => `${ref(b)}${isAnchor(b) ? '@' + pos(b) : ''}${!done(b) ? ` bld${pct(b.progress, 1)}` : pct(b.hp, b.max) < 100 ? ` hp${pct(b.hp, b.max)}` : ''}${guide && b.type === 'core' && s.myBase ? ` post@${pos(post(s))} yard@${pos(yard(s))}` : ''}`).join(' ').concat(guide && bldsOf(s).length && !bldsOf(s).some(b => b.type === 'turret') ? ' (no tu)' : '') || 'none';
 
 export function enemy(s) {
   const blds = bldsOf(s), units = unitsOf(s).filter(u => u.type !== 'worker');
@@ -116,9 +129,11 @@ export function enemy(s) {
 // searchField(s) → the unexplored field nearest the mirror of my core (where the enemy base most likely is), or null.
 // Ore fields only (crystal is never near a base); when every field is explored the mirror itself is the last waypoint, so the
 // search always names a point.
-export function searchField(s) {
+// guide: the mirror first; the fields only once a combat unit has stood within 12 of it and seen nothing.
+export function searchField(s, { guide = false } = {}) {
   if (!s.myBase) return null;
   const m = { x: -s.myBase.x, z: -s.myBase.z };
+  if (guide && !combat(s).some(u => dist(u, m) <= 12)) return { f: m, i: null };
   const un = (s.fields || []).map((f, i) => ({ f, i: i + 1 })).filter(x => x.f.ore == null && x.f.res !== 'crystal');
   un.sort((a, b) => dist(a.f, m) - dist(b.f, m));
   return un[0] || { f: m, i: null };
@@ -130,9 +145,9 @@ export function searching(s) {
 }
 
 // searchFields: while searching, M carries `search fN@x,z`, the waypoint the prompt's search rule sends the ball to.
-export function remembered(s, { searchFields = false } = {}) {
+export function remembered(s, { searchFields = false, guide = false } = {}) {
   const out = (s.enemyBuildingsRemembered || []).map(b => `${ref(b)}@${pos(b)} hp${pct(b.hp, b.max)} age${R(Math.max(0, s.time - (b.lastSeen ?? s.time)))}`);
-  if (!out.length && searchFields && searching(s)) { const w = searchField(s); if (w) out.push(`search ${w.i == null ? '' : 'f' + w.i}@${pos(w.f)}`); }
+  if (!out.length && searchFields && searching(s)) { const w = searchField(s, { guide }); if (w) out.push(`search ${w.i == null ? '' : 'f' + w.i}@${pos(w.f)}`); }
   return out;
 }
 
@@ -179,23 +194,24 @@ const lineLayer = (name, priority, items, prio = () => priority, extra = {}) => 
 // opts.searchFields: while 8+ riflemen exist and no enemy building is listed, M carries `search fN@x,z` (the unexplored field nearest the mirror
 // of my core) and the folded `f?` line runs in that order; the game32 prompt's search rule sends the ball there instead of to a guessed coordinate.
 // opts.keepAnchor (with fullBuildings): core and turret lines stay on every packet; the prompt's turret and mirror rules read them.
-export function encode({ state, prevDecisionState, triggers = [], lastOrders: lo = [], pending = [] }, { foldFields = false, fullBuildings = false, fieldsOnDemand = false, keepAnchor = false, keepRemembered = false, compactBuildings: compactB = false, searchFields = false } = {}) {
+// opts.guide (game38 prompt): counts on H, post/yard on the compact B line, the search waypoint mirror-first (see `post` above).
+export function encode({ state, prevDecisionState, triggers = [], lastOrders: lo = [], pending = [] }, { foldFields = false, fullBuildings = false, fieldsOnDemand = false, keepAnchor = false, keepRemembered = false, compactBuildings: compactB = false, searchFields = false, guide = false } = {}) {
   const s = state.native, prev = prevDecisionState?.native || null;
   const fieldsFull = !(fieldsOnDemand && fieldsNeeded(s));
   return [
-    layer('header', 0, header(s)),
+    layer('header', 0, header(s, { guide })),
     layer('delta', 0, delta(prev, s)),
-    layer('triggers', 1, triggers.slice(0, 6).map(renderTrigger).join('; ') || 'none'),
-    layer('production', 0, production(s)),
+    layer('triggers', 1, triggers.filter(tr => !(guide && tr.cls === 'heartbeat')).slice(0, 6).map(renderTrigger).join('; ') || 'none'),   // guide: a heartbeat is not an event; `T hb` made the model answer `-` 7/7 on a bank of 135 with no turret, `T none` buys
+    layer('production', 0, production(s, { guide })),
     layer('economy', 1, economy(s)),
-    lineLayer('army', 2, army(s)),
-    ...(compactB ? [layer('buildings', 2, compactBuildings(s))] : fullBuildings && keepAnchor
+    lineLayer('army', 2, army(s, { guide })),
+    ...(compactB ? [layer('buildings', 2, compactBuildings(s, { guide }))] : fullBuildings && keepAnchor
       ? [lineLayer('buildings', 2, buildings(s, { only: isAnchor })), { name: 'buildings-rest', priority: 2, text: '', lines: buildings(s, { only: b => !isAnchor(b) }).map(text => ({ text, priority: 2 })), full: true }]
       : [lineLayer('buildings', 2, buildings(s), () => 2, fullBuildings ? { full: true } : {})]),
     lineLayer('enemy', 1, enemy(s)),
     // keepRemembered: on every packet at army priority. At 3 it tied with fields and the assembler drops the first tie, so in game 25 the one
     // line holding the enemy base position reached the model on 1 packet of 118 and the ball went to the prompt's example coordinates 14 times.
-    lineLayer('remembered', keepRemembered ? 2 : 3, remembered(s, { searchFields }), () => (keepRemembered ? 2 : 3), keepRemembered ? {} : { full: true }),
+    lineLayer('remembered', keepRemembered ? 2 : 3, remembered(s, { searchFields, guide }), () => (keepRemembered ? 2 : 3), keepRemembered ? {} : { full: true }),
     lineLayer('fields', 3, fields(s, { fold: foldFields, searchFields }), () => 3, fieldsFull ? { full: true } : {}),
     layer('last', 0, lastOrders(lo) + (pending.length ? `; pending: ${pending.map(set => set.slice(0, 4).map(renderTrigger).join(', ')).join(' | ')}` : '')),   // --overlap: calls already in flight, by their triggers
   ];

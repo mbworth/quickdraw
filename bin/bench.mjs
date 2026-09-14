@@ -8,7 +8,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { ROOT, sha, boot, modelFor, redact } from './_boot.mjs';
+import { ROOT, sha, boot, modelFor, redact, isScript } from './_boot.mjs';
 import { loadAdapterModule, parseArgs } from '../src/core/args.mjs';
 import { realClock } from '../src/core/clock.mjs';
 import { assemble } from '../src/core/packet.mjs';
@@ -93,9 +93,8 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.a
   const game = pre.flags.game || 'ashfall';
   const { flags, gameOpts } = parseArgs(argv, { booleans: BOOL, game });
   const model = flags.model || 'claude-sonnet-5';
-  if (!flags.prompt) { console.error('--prompt is required (the arm is the prompt plus its flags; no default)'); process.exit(64); }
-  const promptFile = flags.prompt;
-  const system = fs.readFileSync(promptFile, 'utf8');
+  if (!flags.prompt && !isScript(model)) { console.error('--prompt is required (the arm is the prompt plus its flags; no default), or --model script:<name>'); process.exit(64); }
+  const system = flags.prompt ? fs.readFileSync(flags.prompt, 'utf8') : '';
   const clock = realClock();
   const mod = await loadAdapterModule(game);
   const adapter = mod.createAdapter(process.env, { ...gameOpts, clock, open: true, host: 'ws://127.0.0.1:1' });
@@ -103,7 +102,7 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.a
   const cases = await loadCases(game, flags.pick);
   const callModel = flags.dry
     ? async () => ({ act: false, orders: [], note: null, usage: null, stop: 'dry', latencyMs: 0, cost: 0 })
-    : await modelFor({ adapter, model, system, thinking: flags.thinking, effort: flags.effort, reply: flags.reply, stream: flags.stream, decisionDeadlineMs: flags.decisionDeadline ?? 20000, clock });
+    : await modelFor({ adapter, game, model, system, thinking: flags.thinking, effort: flags.effort, reply: flags.reply, stream: flags.stream, decisionDeadlineMs: flags.decisionDeadline ?? 20000, clock });
   const arm = { model, prompt: sha(system).slice(0, 12), schema: sha(JSON.stringify(adapter.tool)).slice(0, 12), flags: redact(flags), gameOpts: redact(gameOpts) };
   console.error(`bench ${cases.length} cases × ${flags.repeats ?? 3} repeats, prompt ${arm.prompt} schema ${arm.schema} ${flags.slim ? 'slim' : 'full'} ${Object.keys(gameOpts).join(',')}`);
   const rows = await runBench({ adapter, callModel, cases, repeats: flags.repeats ?? 3, toTrigger, flags, divisor: mod.divisor ?? 3.5, clock, log: m => console.error(m) });

@@ -8,7 +8,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { ROOT, sha, boot, modelFor, redact } from './_boot.mjs';
+import { ROOT, sha, boot, modelFor, redact, isScript } from './_boot.mjs';
 import { loadAdapterModule, parseArgs } from '../src/core/args.mjs';
 import { realClock } from '../src/core/clock.mjs';
 import { loadCases, runBench, summarize } from './bench.mjs';
@@ -43,8 +43,8 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.a
   const { flags, gameOpts } = parseArgs(argv, { booleans: BOOL, game });
   if (!flags.out) { console.error('usage: sensitivity [bench arm flags] --repeats N --out dir [--layers a,b] [--control file] [--dry]'); process.exit(64); }
   const model = flags.model || 'claude-sonnet-5';
-  if (!flags.prompt) { console.error('--prompt is required'); process.exit(64); }
-  const system = fs.readFileSync(flags.prompt, 'utf8');
+  if (!flags.prompt && !isScript(model)) { console.error('--prompt is required, or --model script:<name>'); process.exit(64); }
+  const system = flags.prompt ? fs.readFileSync(flags.prompt, 'utf8') : '';
   const clock = realClock();
   const mod = await loadAdapterModule(game);
   const adapter = mod.createAdapter(process.env, { ...gameOpts, clock, open: true, host: 'ws://127.0.0.1:1' });
@@ -52,7 +52,7 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.a
   const cases = await loadCases(game, flags.pick);
   const callModel = flags.dry
     ? async () => ({ act: false, orders: [], note: null, usage: null, stop: 'dry', latencyMs: 0, cost: 0 })
-    : await modelFor({ adapter, model, system, thinking: flags.thinking, effort: flags.effort, reply: flags.reply, decisionDeadlineMs: flags.decisionDeadline ?? 20000, clock });
+    : await modelFor({ adapter, game, model, system, thinking: flags.thinking, effort: flags.effort, reply: flags.reply, decisionDeadlineMs: flags.decisionDeadline ?? 20000, clock });
   const layers = flags.layers ? String(flags.layers).split(',') : DEFAULT_LAYERS;
   const repeats = flags.repeats ?? 3;
   const common = { adapter, callModel, cases, repeats, toTrigger, divisor: mod.divisor ?? 3.5, clock, log: m => console.error(m) };

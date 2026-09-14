@@ -124,3 +124,20 @@ test('game32 prompt: game25 with rule 3 rewritten (M names the search waypoint, 
   assert.ok(b[diff[2]].includes('the push itself is the search') && b[diff[2]].includes('`search fN@x,z`') && b[diff[2]].includes('never guessed or copied'));
   for (const i of diff) assert.ok(!/\d+,-?\d+/.test(b[i]) || /`b tu 62,-4`/.test(b[i]), `changed line ${i + 1} carries no coordinate`);   // the build example is syntax, not a target
 });
+
+test('game38 prompt: the packet section names the guide fields, the strategy has no coordinate and none of the old jargon, the no-op is `-`', () => {
+  const p = fs.readFileSync(path.join(ROOT, 'prompts/ashfall/game38-sonnet.md'), 'utf8');
+  const play = p.slice(p.indexOf('## Play'), p.indexOf('## Rules reference'));
+  for (const w of ['`wk` my harvester count', '`tr` my rifleman count', 'post@', 'yard@', 'search @x,z', '`-` alone when no line']) assert.ok(p.includes(w), w);
+  assert.ok(!/\d+,-?\d+/.test(play), 'no coordinate anywhere in Play or Opponent');
+  assert.ok(!/\bball\b|\banchor\b|mirror|map-centre side|65,25|spend everything|income idle/i.test(play), 'old jargon gone');
+  for (const w of ['**Buy**', '**Army**', '**Keep**', '≥ 15', 'Rally out', '<post>', '<yard>', '<target>']) assert.ok(play.includes(w), w);
+  assert.ok(!/near:|group=false|attackMove=true|units:\[/.test(p), 'no JSON-era syntax in the rules reference');
+  assert.equal(decode({ o: '-' }).act, false);
+});
+
+test('a label pasted with its state letter or the guide\'s `out` mark is the same label', () => {
+  const want = [{ cmd: 'move', units: ['tr x19@0,-1'], x: 28, z: 64, attackMove: true }];
+  for (const o of ['am tr x19@0,-1 28,64', 'am tr x19@0,-1 i 28,64', 'am tr x19@0,-1 i out 28,64', 'am tr x19@0,-1 out 28,64', 'am tr x19@0,-1 out,28,64']) assert.deepEqual(decode({ o }).orders, want, o);
+  assert.deepEqual(decode({ o: 'am tr x7@64,24 i out,tr x2@-24,-55 i -30,-54' }).orders, [{ cmd: 'move', units: ['tr x7@64,24', 'tr x2@-24,-55'], x: -30, z: -54, attackMove: true }], 'two labels');
+});

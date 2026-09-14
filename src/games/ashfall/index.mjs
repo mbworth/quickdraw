@@ -57,7 +57,7 @@ export function createAdapter(env, opts = {}) {
   ctl.on('close', e => em.emit('close', e));
 
   return {
-    meta: Object.freeze({ ...meta, ...(opts.orderCap ? { orderCap: Number(opts.orderCap) } : {}), ...(opts.lang ? { toolDescription: meta.toolDescription.replace('act:false with empty cmds', 'an empty o') } : {}) }),   // --ashfall-order-cap N; --ashfall-lang rewords the no-op
+    meta: Object.freeze({ ...meta, ...(opts.orderCap ? { orderCap: Number(opts.orderCap) } : {}), ...(opts.lang ? { toolDescription: meta.toolDescription.replace('act:false with empty cmds', 'o of "-"') } : {}) }),   // --ashfall-order-cap N; --ashfall-lang rewords the no-op (`-`: the model cannot write an empty parameter, it leaks a tag instead)
     tool: opts.lang ? toolLang : opts.noNote ? toolNoNote : tool,   // --ashfall-lang true: one string, decoded by lang.mjs; --ashfall-no-note true
     decode: opts.lang ? decodeLang : undefined,
     ctl,
@@ -89,7 +89,7 @@ export function createAdapter(env, opts = {}) {
     canAct: s => s.header.lifecycle === 'active',
     deadline: () => null,
     derive,
-    encode: input => encode(input, { foldFields: !!opts.foldFields, fullBuildings: !!opts.fullBuildings, fieldsOnDemand: !!opts.fieldsOnDemand, keepAnchor: !!opts.keepAnchor, keepRemembered: !!opts.keepRemembered, compactBuildings: !!opts.compactBuildings, searchFields: !!opts.searchFields }),
+    encode: input => encode(input, { foldFields: !!opts.foldFields, fullBuildings: !!opts.fullBuildings, fieldsOnDemand: !!opts.fieldsOnDemand, keepAnchor: !!opts.keepAnchor, keepRemembered: !!opts.keepRemembered, compactBuildings: !!opts.compactBuildings, searchFields: !!opts.searchFields, guide: !!opts.guide }),
     expand: (cmds, state, decidedOn, prior = []) => expandCmds(cmds, state, { recent: new Set(recent.flat()), decidedOn, prior }),
     validate,
     async send(cmds, { partial = false, n = null } = {}) {   // partial: more of decision n follows (--stream); its sticky cmds join that decision's recent entry

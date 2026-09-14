@@ -9,7 +9,7 @@ import { coerceId } from './expand.mjs';
 
 export const toolLang = Object.freeze({
   type: 'object',
-  properties: { o: { type: 'string', description: 'orders in the order language from the system prompt, ";"-separated; empty when nothing is worth ordering. e.g. "t 12 tr 3; g idle"' } },
+  properties: { o: { type: 'string', description: 'orders in the order language from the system prompt, ";"-separated; "-" when nothing is worth ordering. e.g. "t 12 tr 3; g idle"' } },
   required: ['o'],
   additionalProperties: false,
 });
@@ -20,7 +20,7 @@ const UNIT_CODE = inv(UNIT), BLD_CODE = inv(BUILDING), UPG_CODE = inv(UPGRADE);
 const own = (t, k) => (typeof k === 'string' && Object.hasOwn(t, k) ? t[k] : undefined);
 const typeOf = (tok, codes, names) => { const k = (tok || '').toLowerCase(); return own(codes, k) ?? (Object.hasOwn(names, k) ? k : null); };
 const POS = /^(?:f\d+c?@)?(-?\d+),(-?\d+)$/;   // a field token pasted from F or M (`f5@78,13`) is a position
-const LABEL = /[a-z]{2} x\d+@-?\d+,-?\d+/g;   // a cluster label pasted from A
+const LABEL = /[a-z]{2} x\d+@-?\d+,-?\d+(?: [igmab](?=[ ,]|$))?(?: out(?=[ ,]|$))?/g;   // a cluster label pasted from A, with or without its state letter and the guide's `out` mark
 const TOKEN = /\x01\S*|\S+/g;
 const pos = tok => { const m = POS.exec(tok || ''); return m ? { x: Number(m[1]), z: Number(m[2]) } : null; };
 const SELECTOR_OF_CODE = { wk: 'workers', tr: 'troopers', rd: 'raiders', wd: 'wardens', sg: 'siege' };   // the model writes the type code as a selector
@@ -31,7 +31,7 @@ const int = tok => { if (tok == null) return null; const id = coerceId(tok.repla
 const peel = (toks, n) => { if (toks.length > n + 1 || !toks[1]) return toks; const parts = toks[1].split(','); if (parts.length <= n) return toks; return [toks[0], parts.slice(0, -n).join(','), ...parts.slice(-n)]; };
 
 export function parseOne(text) {
-  const marked = text.replace(/\s*,\s*/g, ',').replace(/\ball army\b/i, 'army').replace(LABEL, m => '\x01' + m.replace(' ', '\x02').replace(',', '\x03'));   // `65, 25` is one position; `all army` is the army; a label becomes one token with no space or comma, so it survives both splits
+  const marked = text.replace(/\s*,\s*/g, ',').replace(/\ball army\b/i, 'army').replace(LABEL, m => '\x01' + m.replace(/(?: [igmab])?(?: out)?$/, '').replace(' ', '\x02').replace(',', '\x03'));   // `65, 25` is one position; `all army` is the army; a label becomes one token with no space or comma, so it survives both splits
   let toks = marked.match(TOKEN) || [];
   if (!toks.length) return null;
   const verb = own(VERB, toks[0].toLowerCase()), bad = { cmd: '?', text };

@@ -154,3 +154,31 @@ test('pending calls in flight are told on the L line, by their triggers', () => 
   assert.ok(L.startsWith('L none; pending: '), L);
   assert.ok(!encode({ state: snap(fx), prevDecisionState: null, triggers: [], lastOrders: [] }).find(l => l.name === 'last').text.includes('pending'));
 });
+
+test('guide (game38): counts on H, post and yard on the compact B line, the search waypoint mirror-first', () => {
+  const fx = JSON.parse(fs.readFileSync(new URL('./bench/fixtures/search-t345.json', import.meta.url), 'utf8'));
+  const L = (native, o, name) => encode({ state: snap({ state: native }), triggers: [], lastOrders: [] }, { foldFields: true, compactBuildings: true, keepRemembered: true, searchFields: true, ...o }).find(l => l.name === name);
+  const s = fx.state;
+  assert.ok(!/ wk\d+ tr\d+/.test(L(s, {}, 'header').text) && !L(s, {}, 'buildings').text.includes('post@'), 'off by default: packet byte-identical');
+  const wk = s.mine.filter(u => u.type === 'worker').length, tr = s.mine.filter(u => u.type === 'trooper').length;
+  assert.match(L(s, { guide: true }, 'header').text, new RegExp(`^H t\\d+:\\d\\d o\\d+ c\\d+ s\\d+/\\d+ wk${wk} tr${tr}`));
+  const B = L(s, { guide: true }, 'buildings').text;
+  const m = B.match(/^B co#\d+@(-?\d+),(-?\d+) post@(-?\d+),(-?\d+) yard@(-?\d+),(-?\d+) /).slice(1).map(Number);
+  const d = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]);
+  assert.ok(Math.abs(d([m[2], m[3]], [m[0], m[1]]) - 8) < 1.5 && d([m[2], m[3]], [0, 0]) < d([m[0], m[1]], [0, 0]), 'post: 8 from the core toward the centre');
+  assert.ok(Math.abs(d([m[4], m[5]], [m[0], m[1]]) - 12) < 1.5 && d([m[4], m[5]], [0, 0]) > d([m[0], m[1]], [0, 0]), 'yard: 12 from the core away from the centre');
+  assert.equal(L(s, { guide: true }, 'remembered').lines[0].text, 'search @28,64', 'the mirror first, unexplored fields or not');
+  const there = { ...s, mine: s.mine.map(u => (u.type === 'trooper' ? { ...u, x: 30, z: 60 } : u)) };
+  assert.equal(L(there, { guide: true }, 'remembered').lines[0].text, 'search f5@78,13', 'standing at the mirror with nothing listed: the nearest unexplored ore field');
+  assert.equal(L(s, {}, 'remembered').lines[0].text, 'search f5@78,13', 'without guide the field comes first, as recorded in games 34-37');
+  assert.ok(!B.includes('(no tu)') && L({ ...s, mine: s.mine.filter(u => u.type !== 'turret') }, { guide: true }, 'buildings').text.endsWith(' (no tu)'), '(no tu) only while no turret exists');
+  const A = L(s, { guide: true }, 'army').lines.map(l => l.text);
+  assert.ok(A.some(l => /^tr x\d+@.* out$/.test(l)) && !A.some(l => /^wk .* out$/.test(l)), 'rifleman clusters far from home are marked out, harvesters never');
+  assert.ok(!L(s, {}, 'army').lines.some(l => / out$/.test(l.text)), 'off by default');
+  assert.match(L(s, { guide: true }, 'production').text, /r-2,0 out/, 'a rally more than 30 from home is marked out');
+  const home = { ...s, mine: s.mine.map(b => (b.rally ? { ...b, rally: { x: s.myBase.x + 5, z: s.myBase.z } } : b)) };
+  assert.ok(!/ out/.test(L(home, { guide: true }, 'production').text), 'a rally at home is not');
+  const hb = [{ cls: 'heartbeat', key: 'hb', t: 0, count: 1 }], T = (o, tr) => encode({ state: snap({ state: s }), triggers: tr, lastOrders: [] }, o).find(l => l.name === 'triggers').text;
+  assert.equal(T({ guide: true }, hb), 'T none', 'guide: a heartbeat is not an event');
+  assert.equal(T({}, hb), 'T hb'); assert.match(T({ guide: true }, [...hb, { cls: 'economy', key: 'oreturret', t: 0, count: 1 }]), /^T ore turret$/);
+});

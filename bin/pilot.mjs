@@ -3,7 +3,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { ROOT, sha, redact, safeId, boot, modelFor } from './_boot.mjs';
+import { ROOT, sha, redact, safeId, boot, modelFor, isScript } from './_boot.mjs';
 import { parseArgs, loadAdapterModule } from '../src/core/args.mjs';
 import { realClock } from '../src/core/clock.mjs';
 import { createRecorder, guardExit } from '../src/core/record.mjs';
@@ -35,7 +35,7 @@ export async function main(argv = process.argv.slice(2)) {
   const resolved = { ...cfg, promptSha256: sha(system), schemaSha256: sha(JSON.stringify(adapter.tool)), divisor, meta: adapter.meta };
   console.error(JSON.stringify(resolved, (k, v) => (v === Infinity ? 'inf' : v), 1));
   if (flags.printConfig) return 0;
-  if (cfg.model !== 'none' && !cfg.prompt) { console.error('--prompt is required unless --model none'); return 64; }
+  if (cfg.model !== 'none' && !isScript(cfg.model) && !cfg.prompt) { console.error('--prompt is required unless --model none or script:<name>'); return 64; }
 
   await adapter.connect();
   const { gameId, seat } = await adapter.seat(gameOpts);
@@ -46,7 +46,7 @@ export async function main(argv = process.argv.slice(2)) {
   const unguard = guardExit(rec, { onSignal: () => { if (stopper.signal.aborted) { rec.flushAndClose(); process.exit(130); } stopper.abort(); } });
 
   const keepAlive = setInterval(() => {}, 1 << 30);   // core timers are unref'd; the run itself keeps the loop alive
-  const callModel = cfg.model === 'none' ? nullModel() : await modelFor({ adapter, model: cfg.model, system, thinking: cfg.thinking, effort: cfg.effort, reply: cfg.reply, stream: cfg.stream, decisionDeadlineMs: cfg.decisionDeadline, clock });
+  const callModel = cfg.model === 'none' ? nullModel() : await modelFor({ adapter, game, model: cfg.model, system, thinking: cfg.thinking, effort: cfg.effort, reply: cfg.reply, stream: cfg.stream, decisionDeadlineMs: cfg.decisionDeadline, clock });
   const out = await runPilot({ adapter, callModel, clock, record: rec, log: (...a) => console.error(...a), stop: stopper.signal, opts: {
     heartbeatMs: cfg.heartbeat, deadlineMarginMs: cfg.deadlineMargin, packetMax: cfg.packetMax, divisor, fullEvery: cfg.fullEvery, staleAfterMs: cfg.staleAfter, maxInFlight: cfg.overlap, eventTick: cfg.eventTick, stream: cfg.stream, reserveFor: cfg.reserveFor,
     maxUsd: cfg.maxUsd, maxDecisions: cfg.maxDecisions, concedeOn: cfg.concedeOn, stopFile: cfg.stopFile,

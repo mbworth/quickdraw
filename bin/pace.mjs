@@ -29,7 +29,7 @@ export function summarize(rows) {
   const wall = rows.length > 1 ? (rows[rows.length - 1].t - rows[0].t) / 60000 : 0;
   const minutes = gt.length > 1 ? (gt[gt.length - 1] - gt[0]) / 60 : wall;
   const tokens = later.map(c => c.packetMeta?.realTokens).filter(x => x != null);
-  const warm = calls.filter(c => c.n > 1 && c.usage);
+  const warm = calls.filter(c => c.n > 1 && c.usage && (c.usage.input_tokens || c.usage.cache_read_input_tokens || c.usage.cache_creation_input_tokens));   // a script model reports zero tokens: no cache to check
   const hits = warm.filter(c => c.usage.cache_read_input_tokens > 0).length;
   const hitRate = warm.length ? hits / warm.length : null;
   const sent = decisions.reduce((n, d) => n + d.sent.length, 0);
