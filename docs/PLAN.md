@@ -31,6 +31,7 @@ The measure is **seconds per decision** at equal or better win rate. Baseline: a
 
 ## Open
 - ~~Event `seq` scope~~: per game, both teams; gaps are normal (M2 found it).
-- Model and cost per game: a 3 s heartbeat is ~200 calls per 10-minute game; packet size sets the bill.
-- Whether the delta alone suffices mid-game, with the full coded state every Nth call.
+- ~~Model and cost per game~~: ~40 calls a minute on the working config, $0.13 a game-minute, $0.6–2 a game (HANDOFF).
+- ~~Whether the delta alone suffices mid-game~~: no; every layer is read (sensitivity, 2026-09-14), the slim cadence keeps fields and remembered on one packet in five.
+- Where the model earns its call (2026-09-14): a scripted policy plays the plan from the packet at $0 and wins 10 of 11; the model wins about as often, slower, with more pushes. The harness's next lever is what the packet pre-computes (`--ashfall-guide`, `--ashfall-plan-marks`) and the open question is how much of that is still the model deciding.
 - Multi-seat (two pilots, one game) for self-play once a single pilot beats the scripted AI reliably.

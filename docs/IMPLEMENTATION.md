@@ -4,7 +4,7 @@ Turns `REQUIREMENTS.md` into milestones. Each names its files, the interfaces it
 
 Order: M0 scaffold → M1 core against the mock game → M2 Ashfall transport → M3 Ashfall coder → M4 offline rehearsal → M5 first live game → M6 measurement → M7 iterate. M2 can start alongside M1. M3 needs fixtures, which M2's `bin/record.mjs` captures from the local hub or live.
 
-## Status (2026-09-12)
+## Status (2026-09-14)
 
 | milestone | state |
 |---|---|
@@ -16,10 +16,11 @@ Order: M0 scaffold → M1 core against the mock game → M2 Ashfall transport �
 | M5 live game | done: checklist green (games 24-25, conceded), smoke (game 27, 40 decisions), game 12 = hub game 28, loss at 4.0 min, `runs/ashfall-28.jsonl`, notes row written |
 | M6 measurement | done: `pace` row for game 12 in `notes/ashfall/games.md`; `replay` reproduces all 77 game-12 packets byte for byte |
 | M7 iterate | in progress (games 13-31, 2026-09-14): packet ablation, decision bench, trajectory replay, layer-sensitivity and trigger-class tools built; order language, overlapping calls (`--overlap 2`), event tick and streaming dispatch (`--stream`) adopted: reaction p50 5.6 → 2.3 s, first order 2.2 s, output 101 → 38 tokens; output floor (tool framing), a third slot and a reserved slot measured and left off; next is the win-rate campaign; see `HANDOFF.md` |
+| M8 scripted policy | done (2026-09-14): `src/games/ashfall/read.mjs` (packet text → facts, strict), `src/games/ashfall/policy/game38.mjs` (the game38 plan as code), `scriptModel` + `--model script:<name>` in every tool, windowed plan agreement and `--diff` in `bin/trajectory.mjs`. Bench 16/16; live 10 of 11 at $0 (games 39–49) against Sonnet 4 of 5 (games 50–54); three bench cases from the model's departures; `--ashfall-plan-marks` + `game55-sonnet.md` lift two of them offline, game 55 won 4:54 |
 
 Deviations from the plan as written, and why:
 - **Recorder** uses one ordered in-memory queue flushed with `fs.writeSync` (immediately for `call`/`decision`/`result`/`done`, every 250 ms or 64 KB for `state`) instead of a `createWriteStream`: a stream cannot be flushed synchronously from `uncaughtException`, and two writers on one fd would reorder lines and break refs. Writes loop on the byte count so a short write cannot truncate a line.
-- **`--model none`** runs the loop with a model that never acts (`act:false`). It is the only way to exercise a real adapter without a key; tests still inject a stub through `runPilot`.
+- **`--model none`** runs the loop with a model that never acts (`act:false`). It is the only way to exercise a real adapter without a key; tests still inject a stub through `runPilot`. **`--model script:<name>`** (M8) runs it with a scripted policy that does act, from the packet text alone, at $0.
 - **Core-owned trigger classes** `heartbeat`, `deadline` and `resume` (after a reconnect) exist beside the adapter's classes; they rank below all (`heartbeat`, `resume`) or above all (`deadline`).
 - **`--stale-after` defaults to decision deadline + 2 s** (8 s), not 2 s: the live smoke (game 26) dropped nearly every order as stale at 2 s because model latency alone is 2.3-2.9 s.
 - **Stale/ended drops** both record `dropped:stale`; a call that returns after `done` is recorded with `skipped:ended` and nothing is sent.
@@ -226,7 +227,8 @@ Exit: `pace` row for game 12; `replay` reproduces every game-12 packet byte for 
 Status 2026-09-12 (details in `HANDOFF.md`, per-game numbers in `notes/ashfall/games.md`):
 - Done: instrumentation (`layers`, `pace --row`); packet ablation (fields cadence, folded fields, fields on demand, compact buildings: 720 → ~430 real tokens, decision quality restored per the bench); output length (no `note`: 121 → 89 tokens; thinking off rejected); order size (label resolution on the packet's state, harvester selectors, attack-target description).
 - Measurement gates added: `bin/discipline.mjs` (rule adherence of live runs), `bin/bench.mjs` + `test/games/ashfall/bench/` (fixed states with the prompt's expected order, repeats, compare, rescore), `bin/snapshot.mjs` (fixtures from runs), `bin/trajectory.mjs` (open-loop replay of a recorded game under one arm, rule rates against the recording). Run files carry prompt text, schema and raw responses from game 24 on.
-- Next, in order: output command language with short ids; layer-sensitivity bench; tick on event arrival; overlapping calls; streaming per-cmd dispatch; then ≥ 20 games on the final config for win rate.
+- Done since (2026-09-14): order language, layer sensitivity, event tick, overlap 2, streaming dispatch, campaign runner, the game38 prompt rewrite with `--ashfall-guide`; then M8 (the scripted policy) closed the question the campaigns could not: the plan and the packet are sufficient, the model's departures are the residue. See `HANDOFF.md`.
+- Was next, in order: output command language with short ids; layer-sensitivity bench; tick on event arrival; overlapping calls; streaming per-cmd dispatch; then ≥ 20 games on the final config for win rate.
 
 Hub-side asks to file with `ashfall` once needed: `train{count}`, bank-threshold wake, event-only mode, `seq` scope.
 

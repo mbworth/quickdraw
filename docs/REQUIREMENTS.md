@@ -102,6 +102,7 @@ The module exports `createAdapter(env, opts) → Adapter`. Two seats in one proc
 - M6. Cost: the four usage fields priced per model from `config/prices.json` (input, cache write ×1.25, cache read ×0.1, output) and accumulated per run. `--max-usd` and `--max-decisions` stop deciding and record `budget-stop`; the game is left running. Concede is only ever `--concede-on budget|never` (default never).
 - M7. The schema is a frozen literal; its sha256 and the prompt's are in the run's config line. A schema byte change is a deliberate act (strict schemas compile server-side; the first call after a change is slower).
 - M8. Streaming with per-cmd dispatch as each cmd's JSON closes (`eager_input_streaming`) is an experiment (§12), not the baseline.
+- M9. Scripted policy (2026-09-14): `--model script:<name>` loads `src/games/<game>/policy/<name>.mjs` (`decide(packetText) → {o, why}`) behind the same `callModel` seam (`scriptModel`); `o` is decoded by the game's order language, `why` rides in `note`, usage and cost are zero, a packet the script cannot read is `stop:'error:read'`. The policy reads the packet **text** only (`src/games/ashfall/read.mjs`), never the state, so it is the packet-sufficiency test: what the script can play from, the packet carries. Every tool that takes `callModel` (pilot, bench, trajectory, sensitivity, rehearse) accepts it.
 
 ## 8. Recording, replay, measurement
 
@@ -168,6 +169,7 @@ Protocol facts from the Ashfall dev (ask-dev, 2026-09-12; source `README.md` §P
 - X3. Prompts are `prompts/<game>/gameNN-<model>.md`; the run records the prompt and schema shas; changing either between compared games is itself a variable.
 - X4. Stop shrinking the packet when orders-kept share or no-op share moves over three games; keep the last size that held.
 - X5. A second game is the proof of generality: added with zero changes under `src/core/`.
+- X6. Three-way split (2026-09-14): a live loss is attributed, never guessed. The scripted policy (M9) is the reference: it passes the bench (packet sufficiency), plays live at $0 (the strategy's win rate at the harness floor), and `trajectory --model script:<name> --diff` scores the model's decisions against it per line (`buyAgreeW`/`armyAgreeW`, windowed because the script re-issues standing orders every packet). Model departures become bench cases (snapshot the state); a harness change is gated on the bench against the script's line, then one live game; the campaign runner (`bin/campaign.mjs`) gives win rates per arm with a Wilson interval, the script arm free.
 
 ## 13. Non-goals (this round)
 
@@ -180,5 +182,6 @@ Protocol facts from the Ashfall dev (ask-dev, 2026-09-12; source `README.md` §P
 
 - Event `seq` scope across rejoin (ask `ashfall`).
 - Streaming per-cmd dispatch: how validate runs on a partial order list.
-- Whether slim packets (P3) hold decision quality; deferred until after the first live game.
+- ~~Whether slim packets (P3) hold decision quality~~: yes (bench 92% on the working config, every layer read; HANDOFF).
 - Second game candidate, so the adapter contract gets a real test early.
+- How far the packet may carry the plan's compound conditions (`--ashfall-guide`, `--ashfall-plan-marks`) before the model is copying a verdict rather than deciding; the script shows the plan needs no model at all, so the model's value is only in departures that win more than the plan.
