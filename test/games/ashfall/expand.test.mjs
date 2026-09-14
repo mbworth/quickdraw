@@ -74,3 +74,10 @@ test('labels resolve against the packet state first; idle means idle harvesters 
   assert.deepEqual(expand([{ cmd: 'attack', units: ['army'], target: 90 }], mem).cmds[0].cmd, 'attack', 'a visible target stays an attack');
   assert.deepEqual(expand([{ cmd: 'move', units: ['all army'], x: 0, z: 0, attackMove: true }], S).cmds[0].units, ['all', 'army']);
 });
+
+test('prior (--stream): cmds an earlier chunk of the same decision sent count as repeats', () => {
+  const b = { cmd: 'build', workers: [2], type: 'depot', x: 1, z: 2 };
+  const first = expand([b], S);   // prior holds what was sent: the expanded form
+  const r = expand([{ ...b }], S, { prior: first.cmds });
+  assert.deepEqual(r.cmds, []); assert.deepEqual(r.dropped.map(d => d.reason), ['repeat']);
+});

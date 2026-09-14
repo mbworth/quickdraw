@@ -73,3 +73,23 @@ test('ashfall rules apply on the bench fixtures that embody them and pass on the
   assert.ok(R.noChase.when(s('wave'), [], []) && R.noChase.pass([{ cmd: 'stop', units: ['army'] }], [], s('wave')));
   assert.ok(R.depot.when(s('capped'), [], []) && R.depot.pass([{ cmd: 'build', type: 'depot' }], [], s('capped')));
 });
+
+test('--drop-layer removes one layer from the packet and skips cases where the control packet would not carry it', async () => {
+  const clock = virtualClock(0);
+  const adapter = createAdapter({}, { clock, open: true, host: 'ws://127.0.0.1:1', foldFields: true, fieldsOnDemand: true, compactBuildings: true, keepRemembered: true, lang: true });
+  const packets = [];
+  const callModel = async ({ packet }) => { packets.push(packet); return { act: false, orders: [], note: null, usage: { output_tokens: 3, input_tokens: 1, cache_read_input_tokens: 1, cache_creation_input_tokens: 0 }, stop: 'tool_use', latencyMs: 1, cost: 0.001 }; };
+  const picked = cases.filter(c => ['push', 'dry', 'remembered'].includes(c.id));
+  const flags = { slim: true, packetMax: 1000 };
+  const army = await runBench({ adapter, callModel, cases: picked, repeats: 1, toTrigger, flags: { ...flags, dropLayer: 'army' }, divisor, clock });
+  assert.equal(army.filter(r => r.skipped).length, 0);
+  assert.ok(packets.every(p => !/^A\b/m.test(p)), 'no A layer in any packet');
+  packets.length = 0;
+  const rem = await runBench({ adapter, callModel, cases: picked, repeats: 1, toTrigger, flags: { ...flags, dropLayer: 'remembered' }, divisor, clock });
+  assert.deepEqual(rem.filter(r => r.skipped).map(r => r.id), ['push'], 'M none: skipped');
+  assert.equal(packets.length, 2);
+  const fields = await runBench({ adapter, callModel, cases: picked, repeats: 1, toTrigger, flags: { ...flags, dropLayer: 'fields' }, divisor, clock });
+  assert.ok(fields.find(r => r.id === 'push').skipped && !fields.find(r => r.id === 'dry').skipped, 'fields are on the slim cadence except on demand');
+  const s = summarize(rem);
+  assert.equal(s.calls, 2); assert.equal(s.cases.push.n, 0);
+});

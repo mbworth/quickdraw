@@ -54,7 +54,7 @@ export function parseOne(text) {
 
 // decode(input) → {act, orders, note}: the model.mjs seam; input is the tool_use input.
 export function decode(input) {
-  const o = (typeof input?.o === 'string' ? input.o : '').replace(/<\/?[a-z][^>]*>/gi, '').trim();   // game 25: the model leaks its tool-call closing tag into the string on ~5% of calls; not an order
+  const o = (typeof input?.o === 'string' ? input.o : '').replace(/<\/?[a-z][^>]*>/gi, '').replace(/`+\w*/g, '').trim();   // game 25: the model leaks its tool-call closing tag into the string on ~5% of calls; not an order. Backticks/fences: a text reply (--reply text) may wrap the line
   const parts = o.split(';').map(s => s.trim()).filter(s => s && !/^(-|none|no-?op)$/i.test(s));
   const orders = parts.map(parseOne).filter(Boolean);
   return { act: orders.length > 0, orders, note: null };

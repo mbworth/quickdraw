@@ -5,6 +5,7 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readRun } from '../src/core/record.mjs';
+import { answered } from '../src/core/model.mjs';
 import { pctl } from './pace.mjs';
 
 const r1 = x => (x == null ? null : Math.round(x * 10) / 10);
@@ -43,7 +44,7 @@ export function discipline(rows) {
   const workers = s => (s.mine || []).filter(e => e.type === 'worker');
   const idleShare = after1.map(s => { const w = workers(s.native); return w.length ? w.filter(e => e.state === 'idle').length / w.length : 0; });
   const at = min => { const s = states.find(x => x.native.time >= min * 60); return s ? workers(s.native).length : null; };
-  const returned = [...calls.values()].filter(c => !c.skipped && c.stop === 'tool_use');
+  const returned = [...calls.values()].filter(c => !c.skipped && answered(c.stop));
   const byN = new Map(decisions.map(d => [d.n, d]));
   return {
     gameId: cfg.gameId, promptSha: cfg.promptSha256?.slice(0, 8), fullEvery: cfg.fullEvery || 0, gameOpts: Object.keys(cfg.gameOpts || {}).filter(k => k !== 'concedeStale' && cfg.gameOpts[k]).join(','), thinking: cfg.thinking,

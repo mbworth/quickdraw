@@ -2,6 +2,7 @@
 import fs from 'node:fs';
 import { createTriggers, isCore } from './triggers.mjs';
 import { assemble } from './packet.mjs';
+import { answered } from './model.mjs';
 
 const wait = (clock, ms) => new Promise(r => (ms > 0 ? clock.setTimeout(r, ms) : r()));
 
@@ -13,9 +14,9 @@ export function exitCodeOf(done) {
 }
 
 // expand → cap → validate → stale check. The pilot and the rehearsal play this same pipeline.
-export function applyOrders({ adapter, orders, state, decidedOn = state, staleAfterMs = Infinity, clock }) {
-  const t0 = clock.now(), dropped = [], cap = adapter.meta.orderCap;
-  let { cmds, dropped: d1 } = adapter.expand(orders, state, decidedOn); dropped.push(...d1);   // decidedOn: the state the packet came from, for pasted labels
+export function applyOrders({ adapter, orders, state, decidedOn = state, staleAfterMs = Infinity, clock, prior = [] }) {   // prior: cmds this decision already sent (--stream); the cap and the repeat check count them
+  const t0 = clock.now(), dropped = [], cap = Math.max(0, adapter.meta.orderCap - prior.length);
+  let { cmds, dropped: d1 } = adapter.expand(orders, state, decidedOn, prior); dropped.push(...d1);   // decidedOn: the state the packet came from, for pasted labels
   if (cmds.length > cap) { for (const c of cmds.slice(cap)) dropped.push({ cmd: c, reason: 'cap' }); cmds = cmds.slice(0, cap); }
   const expandMs = clock.now() - t0;
   let { keep, dropped: d2 } = adapter.validate(cmds, state); dropped.push(...d2);
@@ -30,7 +31,7 @@ export const lastOrdersOf = (keep, results, dropped) =>
 export async function runPilot({ adapter, callModel, clock, record = null, opts = {}, log = () => {}, stop = null }) {
   const o = {
     heartbeatMs: 3000, deadlineMarginMs: 1000, packetMax: 600, divisor: 3.5, fullEvery: 0, staleAfterMs: 8000,
-    maxUsd: Infinity, maxDecisions: Infinity, concedeOn: 'never', stopFile: null, stopPollMs: 500, leaveTimeoutMs: 2000, maxInFlight: 1, eventTick: false, ...opts,
+    maxUsd: Infinity, maxDecisions: Infinity, concedeOn: 'never', stopFile: null, stopPollMs: 500, leaveTimeoutMs: 2000, maxInFlight: 1, eventTick: false, stream: false, ...opts,
   };
   const meta = adapter.meta;
   const rec = record || { writeNow: () => -1, writeState: () => null, ensureState: () => null, flushAndClose() {} };
@@ -139,9 +140,24 @@ export async function runPilot({ adapter, callModel, clock, record = null, opts 
         const pkt = assemble(layers, { maxTokens: o.packetMax, divisor: o.divisor, fullEvery: o.fullEvery, n });
         T.encodeMs = clock.now() - t0; t0 = clock.now();
         const ac = new AbortController(); aborts.add(ac);
-        const res = await callModel({ packet: pkt.text, signal: ac.signal });
+        // --stream: each command is expanded, validated and sent as its text closes, while the rest of the answer is still arriving.
+        // Chunks queue in order; the cap and the repeat check see what earlier chunks sent; the last send closes the decision's recent entry.
+        const chunks = [];
+        let sentSoFar = [], dispatchQ = Promise.resolve(), firstSendT = null, expandAcc = 0, validateAcc = 0, sendAcc = 0;
+        const dispatch = async orders => {
+          if (finished) return;
+          const r = applyOrders({ adapter, orders, state: latest, decidedOn: snap, staleAfterMs: o.staleAfterMs, clock, prior: sentSoFar });
+          expandAcc += r.expandMs; validateAcc += r.validateMs;
+          let results = []; const ts = clock.now();
+          if (r.keep.length) { try { results = await adapter.send(r.keep, { partial: true }); } catch (e) { results = r.keep.map(() => ({ ok: false, error: `transport: ${e.message}` })); } if (firstSendT === null) firstSendT = clock.now(); }
+          sendAcc += clock.now() - ts;
+          sentSoFar = sentSoFar.concat(r.keep); chunks.push({ ...r, results });
+        };
+        const onOrders = o.stream ? orders => { dispatchQ = dispatchQ.then(() => dispatch(orders)); } : null;
+        const res = await callModel({ packet: pkt.text, signal: ac.signal, onOrders });
         aborts.delete(ac);
         T.apiMs = clock.now() - t0; t0 = clock.now();
+        if (o.stream) await dispatchQ;
         usd += res.cost || 0;
         const callBase = {
           n, stateRef, prevDecisionRef: prevRef, triggerRefs: [...new Set(set.map(tr => tr.ref).filter(x => x >= 0))],
@@ -151,24 +167,44 @@ export async function runPilot({ adapter, callModel, clock, record = null, opts 
           usage: res.usage, stop: res.stop, error: res.error, note: res.note, raw: res.raw, eventArrivalT, anchor,
         };
         if (finished) { rec.writeNow('call', { ...callBase, latency: { ...T, totalMs: clock.now() - eventArrivalT }, skipped: 'ended' }); break; }
-        const failed = res.stop !== 'tool_use';
+        const failed = !answered(res.stop);
+        if (failed && chunks.some(c => c.keep.length)) {   // --stream: orders already went out before the call died; that is a decision, not a retry
+          try { await adapter.send([], { partial: false }); } catch {}
+          const keep = chunks.flatMap(c => c.keep), dropped = chunks.flatMap(c => c.dropped), results = chunks.flatMap(c => c.results);
+          T.expandMs = expandAcc; T.validateMs = validateAcc; T.sendMs = sendAcc; T.firstSendMs = firstSendT - eventArrivalT; T.totalMs = clock.now() - eventArrivalT;
+          lastOrders = lastOrdersOf(keep, results, dropped);
+          const callRef = rec.writeNow('call', { ...callBase, latency: T, partial: true });
+          rec.writeNow('decision', { n, callRef, act: true, orders: keep, sent: keep, dropped });
+          rec.writeNow('result', { n, results });
+          decisions++; pendingSets.delete(n);
+          break;
+        }
         if (failed) {
           const dirty = trig.takeDirty();
           const canRetry = !retried && res.stop !== 'refusal' && res.stop !== 'max_tokens';
           const skipped = res.stop === 'max_tokens' ? 'truncated' : res.stop === 'refusal' ? 'refusal' : dirty ? 'dirty' : canRetry ? 're-encode' : 'failed';
           rec.writeNow('call', { ...callBase, latency: { ...T, totalMs: clock.now() - eventArrivalT }, skipped });
           decisions++;
+          pendingSets.delete(n);   // game 29: a retry takes a new n; the failed one stayed listed as in flight (6 "pending" calls with a cap of 3)
           if (dirty) { set = await reofferOrNull(dirty); if (!set) break; retried = false; continue; }
           if (canRetry) { retried = true; continue; }
           break;
         }
         retried = false;
+        let keep, dropped, results;
         const orders = res.act ? res.orders : [];
-        const { keep, dropped, expandMs, validateMs } = applyOrders({ adapter, orders, state: latest, decidedOn: snap, staleAfterMs: o.staleAfterMs, clock });
-        T.expandMs = expandMs; T.validateMs = validateMs; t0 = clock.now();
-        let results = [];
-        if (keep.length) { try { results = await adapter.send(keep); } catch (e) { results = keep.map(() => ({ ok: false, error: `transport: ${e.message}` })); } }
-        T.sendMs = clock.now() - t0;
+        if (o.stream) {
+          try { await adapter.send([], { partial: false }); } catch {}   // closes the decision's recent entry
+          keep = chunks.flatMap(c => c.keep); dropped = chunks.flatMap(c => c.dropped); results = chunks.flatMap(c => c.results);
+          T.expandMs = expandAcc; T.validateMs = validateAcc; T.sendMs = sendAcc;
+          if (firstSendT !== null) T.firstSendMs = firstSendT - eventArrivalT;
+        } else {
+          const r = applyOrders({ adapter, orders, state: latest, decidedOn: snap, staleAfterMs: o.staleAfterMs, clock });
+          keep = r.keep; dropped = r.dropped; T.expandMs = r.expandMs; T.validateMs = r.validateMs; t0 = clock.now();
+          results = [];
+          if (keep.length) { try { results = await adapter.send(keep); } catch (e) { results = keep.map(() => ({ ok: false, error: `transport: ${e.message}` })); } }
+          T.sendMs = clock.now() - t0;
+        }
         T.totalMs = clock.now() - eventArrivalT;
         lastOrders = lastOrdersOf(keep, results, dropped);
         const callRef = rec.writeNow('call', { ...callBase, latency: T });

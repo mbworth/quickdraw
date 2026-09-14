@@ -16,10 +16,11 @@ import { loadAdapterModule, parseArgs } from '../src/core/args.mjs';
 import { realClock } from '../src/core/clock.mjs';
 import { assemble } from '../src/core/packet.mjs';
 import { applyOrders } from '../src/core/pilot.mjs';
+import { answered } from '../src/core/model.mjs';
 import { readRun } from '../src/core/record.mjs';
 import { pctl } from './pace.mjs';
 
-const BOOL = ['dry', 'slim'];
+const BOOL = ['dry', 'slim', 'stream'];
 const snapOf = (rows, ref) => { const r = rows[ref - 1]; if (!r || r.kind !== 'state') throw new Error(`ref ${ref} is not a state line`); return { header: r.header, native: r.native, t: r.st, idx: r.idx }; };
 const kinds = cmds => cmds.map(c => c.cmd).sort().join(',');
 
@@ -31,7 +32,7 @@ export async function loadRules(game) {
 // scoreRules(rows, stateOf, rules) → {arm:{id:{applies, pass}}, recorded:{…}}; stateOf(n) is the decision's native state.
 export function scoreRules(rows, stateOf, rules) {
   const tally = pick => { const out = {}; for (const r of rules) out[r.id] = { applies: 0, pass: 0 }; for (const row of rows) { const s = stateOf(row.n); if (!s) continue; const { sent, dropped } = pick(row); for (const r of rules) if (r.when(s, sent, dropped)) { out[r.id].applies++; if (r.pass(sent, dropped, s)) out[r.id].pass++; } } return out; };
-  return { arm: tally(r => ({ sent: r.stop === 'tool_use' ? r.sent : [], dropped: r.dropped })), recorded: tally(r => ({ sent: r.recorded, dropped: r.recordedDropped || [] })) };
+  return { arm: tally(r => ({ sent: answered(r.stop) ? r.sent : [], dropped: r.dropped })), recorded: tally(r => ({ sent: r.recorded, dropped: r.recordedDropped || [] })) };
 }
 export const stateOfRun = rows => { const calls = new Map(rows.filter(r => r.kind === 'call').map(c => [c.n, c])); return n => { const c = calls.get(n); const s = c && rows[c.stateRef - 1]; return s?.kind === 'state' ? s.native : null; }; };
 
@@ -58,7 +59,7 @@ export async function replayTrajectory({ rows, adapter, callModel, flags = {}, d
 // Game-agnostic scores over one arm's rows. Per-game rule checks live in the bench; here: agreement with the recording,
 // orders per decision, no-ops, drops, tokens, latency.
 export function summarize(rows) {
-  const ok = rows.filter(r => r.stop === 'tool_use');
+  const ok = rows.filter(r => answered(r.stop));
   const drops = {}; for (const r of rows) for (const d of r.dropped) drops[d.reason] = (drops[d.reason] || 0) + 1;
   return {
     decisions: rows.length, failed: rows.length - ok.length,
@@ -120,7 +121,7 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.a
   const adapter = mod.createAdapter(process.env, { ...opts, clock, open: true, host: 'ws://127.0.0.1:1' });
   const callModel = flags.dry
     ? async () => ({ act: false, orders: [], note: null, usage: null, stop: 'dry', latencyMs: 0, cost: 0 })
-    : await modelFor({ adapter, model, system, thinking: flags.thinking ?? cfg.thinking, effort: flags.effort ?? cfg.effort, decisionDeadlineMs: flags.decisionDeadline ?? 20000, clock });
+    : await modelFor({ adapter, model, system, thinking: flags.thinking ?? cfg.thinking, effort: flags.effort ?? cfg.effort, reply: flags.reply ?? cfg.reply, stream: flags.stream ?? cfg.stream, decisionDeadlineMs: flags.decisionDeadline ?? 20000, clock });
   const arm = { run: path.basename(file), runPath: path.resolve(file), model, prompt: sha(system).slice(0, 12), schema: sha(JSON.stringify(adapter.tool)).slice(0, 12), flags: redact(flags), gameOpts: redact(opts) };
   console.error(`trajectory ${arm.run} every ${flags.every ?? 1}, prompt ${arm.prompt} schema ${arm.schema} ${flags.slim ? 'slim' : `full-every ${flags.fullEvery ?? cfg.fullEvery ?? 0}`} ${Object.keys(opts).join(',')}`);
   const out = await replayTrajectory({ rows, adapter, callModel, flags, divisor: mod.divisor ?? cfg.divisor ?? 3.5, clock, every: flags.every ?? 1, from: flags.from ?? 1, to: flags.to ?? Infinity, log: m => console.error(m) });

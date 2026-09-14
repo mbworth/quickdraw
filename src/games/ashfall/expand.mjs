@@ -28,7 +28,7 @@ export function clusterIds(label, state, r = 8) {
 }
 
 // expand(cmds, state, {recent, decidedOn}) → {cmds, dropped}; recent = signatures of sticky cmds sent in the last 2 decisions.
-export function expand(cmds, state, { recent = new Set(), decidedOn = null } = {}) {
+export function expand(cmds, state, { recent = new Set(), decidedOn = null, prior = [] } = {}) {   // prior: cmds already sent by this decision (--stream), for the repeat check
   const idleWorkers = () => (state?.native?.mine || []).filter(e => e.type === 'worker' && e.state === 'idle').map(e => e.id);
   // "a harvester" when none is idle: the one nearest the job (repair target, or the field that holds the gather node)
   const nearestWorker = c => {
@@ -39,7 +39,7 @@ export function expand(cmds, state, { recent = new Set(), decidedOn = null } = {
     if (!at) return ws[0].id;
     return ws.reduce((a, b) => (dist(b, at) < dist(a, at) ? b : a)).id;
   };
-  const out = [], dropped = [], seen = new Set();
+  const out = [], dropped = [], seen = new Set(prior.map(sig));
   const queued = new Map();   // provisional queue length per building this decision
   const byId = new Map((state?.native?.mine || []).map(e => [e.id, e]));
   for (const raw of cmds || []) {

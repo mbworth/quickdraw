@@ -95,3 +95,17 @@ test('game25 prompt: strategy sections byte-identical to game15, only the format
   assert.equal(a.slice(0, a.indexOf('## The packet')), b.slice(0, b.indexOf('## The packet')));
   assert.ok(b.includes('`t <building> <type> [n]`') && !b.includes('"12"'));
 });
+
+test('game29 prompt (--reply text): strategy and packet sections byte-identical to game25, only the answer format differs', () => {
+  const read = f => fs.readFileSync(path.join(ROOT, 'prompts/ashfall', f), 'utf8');
+  const from = (s, h) => s.slice(s.indexOf(h));
+  const a = read('game25-sonnet.md'), b = read('game29-sonnet.md');
+  assert.equal(from(a, '## Play'), from(b, '## Play'));
+  assert.equal(a.slice(a.indexOf('## The packet'), a.indexOf('## The tool')), b.slice(b.indexOf('## The packet'), b.indexOf('## Your answer')));
+  assert.ok(b.includes('`-` alone when nothing is worth ordering') && !b.includes('tool call'));
+});
+
+test('decode strips a code fence or backticks around a text reply', () => {
+  assert.deepEqual(decode({ o: '```\nt 12 tr 3\n```' }).orders, [{ cmd: 'train', building: 12, type: 'trooper', count: 3 }]);
+  assert.deepEqual(decode({ o: '`-`' }), { act: false, orders: [], note: null });
+});

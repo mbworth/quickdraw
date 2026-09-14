@@ -39,6 +39,7 @@ export function createAdapter(env, opts = {}) {
   const em = new EventEmitter();
   let gameId = null, team = null, seat = null, doneEmitted = false, why = null;
   const recent = [];   // last 2 decisions' sticky cmd signatures
+  let open = false;   // the last recent entry belongs to a decision still sending (--stream)
 
   // --event-tick: triggers go out the moment the hub delivers the event (the core ticks on them at once); otherwise they ride the
   // next 500 ms state push, collapsed and capped by the transport's buffer.
@@ -87,12 +88,14 @@ export function createAdapter(env, opts = {}) {
     deadline: () => null,
     derive,
     encode: input => encode(input, { foldFields: !!opts.foldFields, fullBuildings: !!opts.fullBuildings, fieldsOnDemand: !!opts.fieldsOnDemand, keepAnchor: !!opts.keepAnchor, keepRemembered: !!opts.keepRemembered, compactBuildings: !!opts.compactBuildings }),
-    expand: (cmds, state, decidedOn) => expandCmds(cmds, state, { recent: new Set(recent.flat()), decidedOn }),
+    expand: (cmds, state, decidedOn, prior = []) => expandCmds(cmds, state, { recent: new Set(recent.flat()), decidedOn, prior }),
     validate,
-    async send(cmds) {
+    async send(cmds, { partial = false } = {}) {   // partial: more of the same decision follows (--stream); its sticky cmds join this decision's recent entry
       const settled = await Promise.allSettled(cmds.map(c => { const { cmd, ...args } = c; return ctl.cmd(cmd, args); }));   // per cmd: a dropped socket mid-batch must not unsay the ones the hub ran
       const results = settled.map(s => (s.status === 'fulfilled' ? s.value : { ok: false, error: `transport: ${s.reason?.message || s.reason}` }));
-      recent.push(cmds.filter((c, i) => results[i].ok && STICKY.has(c.cmd)).map(sig));
+      const sigs = cmds.filter((c, i) => results[i].ok && STICKY.has(c.cmd)).map(sig);
+      if (open) recent[recent.length - 1].push(...sigs); else recent.push(sigs);
+      open = partial;
       while (recent.length > 2) recent.shift();
       return results.map(r => (r.ok ? { ok: true, result: typeof r.result === 'string' ? r.result : undefined } : { ok: false, error: r.error }));
     },

@@ -12,9 +12,9 @@ import { assemble } from '../src/core/packet.mjs';
 import { applyOrders, lastOrdersOf } from '../src/core/pilot.mjs';
 import { rankAndCollapse } from '../src/core/digest.mjs';
 
-const pre = await boot(process.argv.slice(2), { booleans: ['dry', 'slim'] });
+const pre = await boot(process.argv.slice(2), { booleans: ['dry', 'slim', 'stream'] });
 const game = pre.flags.game || 'ashfall';
-const { flags, gameOpts } = parseArgs(process.argv.slice(2), { booleans: ['dry', 'slim'], game });
+const { flags, gameOpts } = parseArgs(process.argv.slice(2), { booleans: ['dry', 'slim', 'stream'], game });
 const model = flags.model || process.env.QUICKDRAW_MODEL || 'claude-sonnet-5';
 const promptFile = flags.prompt || path.join(ROOT, `prompts/${game}/game12-sonnet.md`);
 const fixDir = flags.fixtures || path.join(ROOT, `test/games/${game}/fixtures`);
@@ -30,7 +30,7 @@ const short = s => sha(s).slice(0, 12);
 console.error(`model ${model} prompt ${short(system)} schema ${short(JSON.stringify(adapter.tool))} fixtures ${picks.length}`);
 const callModel = flags.dry
   ? async () => ({ act: false, orders: [], note: null, usage: null, stop: 'dry', latencyMs: 0, cost: 0 })
-  : await modelFor({ adapter, model, system, thinking: flags.thinking, effort: flags.effort, decisionDeadlineMs: flags.decisionDeadline ?? 20000, clock });   // cold every call: no cache warm-up here
+  : await modelFor({ adapter, model, system, thinking: flags.thinking, effort: flags.effort, reply: flags.reply, stream: flags.stream, decisionDeadlineMs: flags.decisionDeadline ?? 20000, clock });   // cold every call: no cache warm-up here
 const snap = (fx, idx) => ({ header: { lifecycle: 'active', phaseNative: 'running', clocks: { game: fx.state.time }, gameId: '1', seat: 'team0' }, native: fx.state, t: 0, idx });
 const { toTrigger } = await import(`../src/games/${game}/events.mjs`);
 let total = 0, lastOrders = [];

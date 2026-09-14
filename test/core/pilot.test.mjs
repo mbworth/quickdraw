@@ -253,3 +253,69 @@ test('eventTick: an event fires a decision at once on the latest state instead o
   assert.equal(off.latency.waitMs, 50, 'waited for the next push');
   assert.equal(on.stateRef > 0 && on.anchor, 'event');
 });
+
+test('maxInFlight 2: a timed-out call is not listed as pending after its retry takes a new n (game 29: 6 pending with a cap of 3)', async () => {
+  const clock = virtualClock(1000);
+  let k = 0;
+  const callModel = async () => {
+    const mine = ++k;
+    await new Promise(r => clock.setTimeout(r, 1200));
+    if (mine === 1) return { act: false, orders: [], note: null, usage: null, stop: 'timeout', latencyMs: 1200, cost: 0 };
+    return { act: true, orders: [{ cmd: 'move', id: 1, to: 5 }], note: null, usage: { input_tokens: 10, cache_creation_input_tokens: 0, cache_read_input_tokens: 100, output_tokens: 5 }, stop: 'tool_use', latencyMs: 1200, cost: 0.001 };
+  };
+  const record = memRecorder();
+  const adapter = createAdapter({}, { clock, seed: 1, turns: 4 });
+  await adapter.connect(); await adapter.seat({});
+  const p = runPilot({ adapter, callModel, clock, record, opts: { heartbeatMs: 100000, deadlineMarginMs: 100, maxInFlight: 2, staleAfterMs: 5000 } });
+  await clock.advance(8000);
+  await p;
+  const c = calls(record.lines);
+  const failed = c.find(x => x.stop === 'timeout');
+  assert.ok(failed && ['re-encode', 'dirty'].includes(failed.skipped), 'the first call timed out and the decision went on with a new n');
+  assert.ok(c.length >= 4);
+  assert.ok(c.every(x => (x.overlap || 0) <= 1), `no packet lists more calls in flight than the cap allows: ${c.map(x => x.overlap || 0).join(',')}`);
+  assert.ok(c.filter(x => x.n > failed.n + 1).every(x => !(x.pending || []).some(set => set.some(t => t.key === 't1'))), 'the failed call’s trigger set is gone from pending');
+});
+
+test('--stream: each chunk is sent as it arrives, before the call returns; the cap and the record cover the whole decision', async () => {
+  const clock = virtualClock(1000);
+  const record = memRecorder();
+  const adapter = createAdapter({}, { clock, seed: 1, turns: 2 });
+  await adapter.connect(); await adapter.seat({});
+  const sends = []; const realSend = adapter.send; adapter.send = async (cmds, o) => { sends.push({ t: clock.now(), n: cmds.length, partial: o?.partial }); return realSend(cmds, o); };
+  const callModel = async ({ onOrders }) => {
+    clock.setTimeout(() => onOrders([{ cmd: 'move', id: 1, to: 5 }]), 300);
+    clock.setTimeout(() => onOrders([{ cmd: 'move', id: 1, to: 6 }]), 600);
+    await new Promise(r => clock.setTimeout(r, 1200));
+    return { act: true, orders: [{ cmd: 'move', id: 1, to: 5 }, { cmd: 'move', id: 1, to: 6 }], note: null, usage: { input_tokens: 10, cache_creation_input_tokens: 0, cache_read_input_tokens: 100, output_tokens: 5 }, stop: 'tool_use', latencyMs: 1200, cost: 0.001, streamed: 2 };
+  };
+  const p = runPilot({ adapter, callModel, clock, record, opts: { heartbeatMs: 100000, deadlineMarginMs: 100, stream: true, staleAfterMs: 5000 } });
+  await clock.advance(4000); await p;
+  const c = calls(record.lines)[0], d = record.lines.find(l => l.kind === 'decision');
+  assert.equal(sends[0].t, 1300, 'the first order went out 300 ms into a 1200 ms call'); assert.equal(sends[0].partial, true);
+  assert.equal(c.latency.firstSendMs, 300); assert.ok(c.latency.totalMs >= 1200);
+  assert.deepEqual(d.sent, [{ cmd: 'move', id: 1, to: 5 }], 'mock cap is 1: the second chunk was dropped');
+  assert.deepEqual(d.dropped.map(x => x.reason), ['cap']);
+  assert.ok(sends.some(s => s.n === 0 && s.partial === false), 'the decision closed its recent entry');
+});
+
+test('--stream: a call that dies after orders went out is a decision, not a retry', async () => {
+  const clock = virtualClock(1000);
+  const record = memRecorder();
+  const adapter = createAdapter({}, { clock, seed: 1, turns: 2 });
+  await adapter.connect(); await adapter.seat({});
+  let k = 0;
+  const callModel = async ({ onOrders }) => {
+    k++;
+    clock.setTimeout(() => onOrders([{ cmd: 'move', id: 1, to: 5 }]), 200);
+    await new Promise(r => clock.setTimeout(r, 900));
+    return { act: false, orders: [], note: null, usage: null, stop: 'timeout', latencyMs: 900, cost: 0, streamed: 1 };
+  };
+  const p = runPilot({ adapter, callModel, clock, record, opts: { heartbeatMs: 100000, deadlineMarginMs: 100, stream: true, staleAfterMs: 5000 } });
+  await clock.advance(3000); await p;
+  const c = calls(record.lines).filter(x => x.n === 1);
+  assert.equal(c.length, 1); assert.equal(c[0].stop, 'timeout'); assert.equal(c[0].partial, true); assert.equal(c[0].skipped, undefined);
+  const d = record.lines.find(l => l.kind === 'decision' && l.n === 1);
+  assert.deepEqual(d.sent, [{ cmd: 'move', id: 1, to: 5 }]);
+  assert.equal(adapter.sent.filter(x => x.to === 5).length >= 1, true);
+});

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import Anthropic from '@anthropic-ai/sdk';
-import { createModel, buildRequest, cost } from '../../src/core/model.mjs';
+import { createModel, buildRequest, cost, extractO, completeCmds } from '../../src/core/model.mjs';
 import { virtualClock } from '../../src/core/clock.mjs';
 
 const tool = { type: 'object', properties: { act: { type: 'boolean' }, cmds: { type: 'array' } }, required: ['act', 'cmds'], additionalProperties: false };
@@ -108,4 +108,51 @@ test('cost prices the four usage fields; warns on a cold cache after call 2', as
   for (let i = 0; i < 3; i++) await callModel({ packet: 'P' });
   assert.equal(warnings.length, 1);
   assert.equal((await callModel({ packet: 'P' })).cost, cost(cold, prices['claude-sonnet-5']));
+});
+
+test('--reply text: no tool in the request, the text blocks decode as {o}, stop is text', async () => {
+  const base = { system: 'S', tool, toolName: 'orders', toolDescription: 'd', packet: 'P' };
+  const t = buildRequest({ ...base, model: 'claude-sonnet-5', reply: 'text' });
+  assert.equal(t.tools, undefined); assert.equal(t.tool_choice, undefined); assert.equal(t.max_tokens, 400);
+  assert.deepEqual(t.thinking, { type: 'adaptive' });
+  const decode = input => ({ act: input.o !== '-', orders: input.o === '-' ? [] : [{ cmd: input.o }], note: null });
+  const text = (s, stop_reason = 'end_turn') => ({ stop_reason, usage, content: [{ type: 'text', text: s }] });
+  const { callModel } = mk(fake(async () => text('t 12 tr 3')), { reply: 'text', decode });
+  const r = await callModel({ packet: 'P' });
+  assert.equal(r.stop, 'text'); assert.equal(r.act, true); assert.deepEqual(r.orders, [{ cmd: 't 12 tr 3' }]);
+  assert.deepEqual(r.raw.content, [{ type: 'text', text: 't 12 tr 3' }]);
+  const { callModel: noop } = mk(fake(async () => text('-')), { reply: 'text', decode });
+  assert.equal((await noop({ packet: 'P' })).act, false);
+  const { callModel: cut } = mk(fake(async () => text('t 12', 'max_tokens')), { reply: 'text', decode });
+  assert.equal((await cut({ packet: 'P' })).stop, 'max_tokens');
+  assert.throws(() => mk(fake(async () => text('x')), { reply: 'text' }), /needs a game decode/);
+});
+
+test('extractO reads the "o" string out of partial tool-input JSON, escapes decoded, closed on the closing quote', () => {
+  assert.deepEqual(extractO('{"o'), { text: '', closed: false });
+  assert.deepEqual(extractO('{"o": "t 12 tr 3; am ar'), { text: 't 12 tr 3; am ar', closed: false });
+  assert.deepEqual(extractO('{"o": "a \\"b\\" c\\'), { text: 'a "b" c', closed: false }, 'an escape cut mid-way waits');
+  assert.deepEqual(extractO('{"o": "x\\u00e9y; z"}'), { text: 'xéy; z', closed: true });
+  assert.deepEqual(completeCmds('t 12 tr 3; am ar', false), ['t 12 tr 3']);
+  assert.deepEqual(completeCmds('t 12 tr 3; am army 65,25', true), ['t 12 tr 3', 'am army 65,25']);
+  assert.deepEqual(completeCmds(' ; ', true), []);
+});
+
+test('--stream: eager tool input, each command handed to onOrders as it closes, the tail exactly once after the final message', async () => {
+  const decode = input => ({ act: input.o !== '', orders: input.o ? input.o.split(';').map(x => x.trim()).filter(Boolean).map(cmd => ({ cmd })) : [], note: null });
+  const deltas = ['{"o": "t 12', ' tr 3; am ar', 'my 65,25; g idle', '"}'];
+  const final = { stop_reason: 'tool_use', usage, content: [{ type: 'tool_use', name: 'orders', input: { o: 't 12 tr 3; am army 65,25; g idle' } }] };
+  let seenReq;
+  const client = { messages: { stream: (req, opts) => { seenReq = { req, opts }; const handlers = {}; return {
+    on(name, fn) { handlers[name] = fn; },
+    async finalMessage() { for (const d of deltas) handlers.streamEvent({ type: 'content_block_delta', delta: { type: 'input_json_delta', partial_json: d } }); return final; },
+  }; } } };
+  const got = [];
+  const { callModel } = mk(client, { stream: true, decode });
+  const r = await callModel({ packet: 'P', onOrders: orders => got.push(orders.map(o => o.cmd).join('|')) });
+  assert.equal(seenReq.req.tools[0].eager_input_streaming, true);
+  assert.equal(seenReq.opts.maxRetries, 0);
+  assert.deepEqual(got, ['t 12 tr 3', 'am army 65,25', 'g idle']);
+  assert.equal(r.streamed, 3); assert.equal(r.stop, 'tool_use'); assert.equal(r.orders.length, 3);
+  assert.throws(() => mk(fake(async () => reply({ act: true, cmds: [] })), { stream: true }), /needs the order language/);
 });

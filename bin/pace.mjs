@@ -4,6 +4,7 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readRun } from '../src/core/record.mjs';
+import { answered } from '../src/core/model.mjs';
 
 export const pctl = (xs, p) => { if (!xs.length) return null; const s = [...xs].sort((a, b) => a - b); return s[Math.min(s.length - 1, Math.floor(p * (s.length - 1) + 0.5))]; };
 const r1 = x => (x == null ? null : Math.round(x * 10) / 10);
@@ -15,7 +16,7 @@ const p50 = xs => r1(pctl(xs, 0.5));
 export function summarize(rows) {
   const cfg = rows[0]?.kind === 'config' ? rows[0] : {};
   const calls = rows.filter(r => r.kind === 'call');
-  const returned = calls.filter(c => !c.skipped && c.stop === 'tool_use');
+  const returned = calls.filter(c => !c.skipped && answered(c.stop));
   const later = returned.filter(c => c.n > 1);
   const byN = new Map(rows.filter(r => r.kind === 'decision').map(d => [d.n, d]));
   const decisions = [...byN.values()];
@@ -40,6 +41,7 @@ export function summarize(rows) {
     game: cfg.game, gameId: cfg.gameId, model: cfg.model, promptSha: cfg.promptSha256?.slice(0, 8), schemaSha: cfg.schemaSha256?.slice(0, 8),
     decisions: returned.length, noop: returned.filter(c => byN.get(c.n) && !byN.get(c.n).act).length, timeouts: calls.filter(c => c.stop === 'timeout').length,
     reactionP50: p50(withOrders.map(c => c.latency.totalMs)), reactionP90: r1(pctl(withOrders.map(c => c.latency.totalMs), 0.9)), reactionSamples: withOrders.length,
+    firstP50: p50(withOrders.map(c => c.latency.firstSendMs).filter(x => x != null)),   // --stream: event to the first order on the wire
     waitP50: p50(L('waitMs')), queueP50: p50(L('queueMs')), apiP50: p50(L('apiMs')), sendP50: p50(L('sendMs')), outputP50: pctl(later.map(c => c.usage?.output_tokens).filter(x => x != null), 0.5),
     perMinute: minutes ? r1(returned.length / minutes) : null, minutes: r1(minutes),
     packetP50: pctl(tokens, 0.5), packetSamples: tokens.length, estP50: pctl(later.map(c => c.packetMeta?.estTokens).filter(x => x != null), 0.5),
@@ -59,7 +61,7 @@ export function row(s, game = '?') {
   const result = s.outcome == null ? 'stopped' : s.outcome.won ? '**win**' : 'loss';
   const notes = [
     `${s.decisions} decisions (${s.perMinute}/min)`,
-    `reaction p50 ${sec(s.reactionP50)} / p90 ${sec(s.reactionP90)}${s.waitP50 != null ? ` (wait ${sec(s.waitP50)})` : ''}`,
+    `reaction p50 ${sec(s.reactionP50)} / p90 ${sec(s.reactionP90)}${s.waitP50 != null ? ` (wait ${sec(s.waitP50)})` : ''}${s.firstP50 != null ? `, first order p50 ${sec(s.firstP50)}` : ''}`,
     `model p50 ${sec(s.apiP50)}`, `${s.outputP50} out tokens`, `packet ${s.packetP50} real`,
     `${s.timeouts} timeouts`, ...(s.overlapped ? [`${s.overlapped} overlapped`] : []), `kept ${s.keptShare}%`, `${s.ordersRejected} rejected`, `cache ${s.cacheHitRate}%`, `$${s.usd}`,
   ];
