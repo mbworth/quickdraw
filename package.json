@@ -11,6 +11,7 @@
   "scripts": {
     "test": "node --test test/",
     "test:ashfall": "node --test test/games/ashfall/",
+    "test:microrts": "node --test test/games/microrts/",
     "pilot": "node bin/pilot.mjs",
     "record": "node bin/record.mjs",
     "rehearse": "node bin/rehearse.mjs",
@@ -23,7 +24,8 @@
     "trajectory": "node bin/trajectory.mjs",
     "campaign": "node bin/campaign.mjs",
     "classes": "node bin/classes.mjs",
-    "sensitivity": "node bin/sensitivity.mjs"
+    "sensitivity": "node bin/sensitivity.mjs",
+    "oracle": "node bin/oracle.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.125.0",

@@ -30,12 +30,17 @@ export async function loadEnv(path = '.env') {
   return true;
 }
 
-export async function loadAdapterModule(name) {
+export const loadAdapterModule = name => loadGameModule(name, 'index.mjs');
+
+// loadGameModule(game, 'read.mjs' | 'policy/game38.mjs'): a game's own modules by convention, so a core tool can load
+// one without naming a game. Nothing here knows what is inside.
+export async function loadGameModule(name, file = 'index.mjs') {
   if (!/^[a-z0-9-]+$/.test(name)) throw new Error(`bad game name "${name}"`);
-  const url = new URL(`../games/${name}/index.mjs`, import.meta.url);
+  if (!/^[a-z0-9-]+(\/[a-z0-9_-]+)?\.mjs$/i.test(file)) throw new Error(`bad module "${file}"`);
+  const url = new URL(`../games/${name}/${file}`, import.meta.url);
   try { return await import(url.href); }
   catch (err) {
-    if (err.code === 'ERR_MODULE_NOT_FOUND' && (err.url === url.href || err.url === url.pathname)) throw new Error(`no such game "${name}"`);
+    if (err.code === 'ERR_MODULE_NOT_FOUND' && (err.url === url.href || err.url === url.pathname)) throw new Error(file === 'index.mjs' ? `no such game "${name}"` : `no such module "${name}/${file}"`);
     throw err;
   }
 }

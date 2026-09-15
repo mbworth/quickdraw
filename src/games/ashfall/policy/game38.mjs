@@ -12,8 +12,11 @@ const P = p => `${p.x},${p.z}`;
 const dist = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
 const sum = xs => xs.reduce((n, c) => n + c.n, 0);
 
-export function decide(text) {
-  const k = read(text);
+// decide(text) reads the packet; decideFacts(k) is the body, so the same policy runs on facts built straight from the
+// state (src/games/ashfall/facts.mjs) — that pair is the fidelity oracle (bin/oracle.mjs).
+export const decide = text => decideFacts(read(text));
+
+export function decideFacts(k) {
   const { h, t, d, p, e, a, b, x, m, f, l } = k;
   const why = [], orders = [];
   const finding = s => why.push(`finding:${s}`);

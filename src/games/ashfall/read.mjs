@@ -31,7 +31,7 @@ function header(text) {
 }
 
 // D: `+tr#12 -wk#4 done ba#3 ba#3 hp50 E+tr x7@-9,-1 E-tr x1 M+ba#12@22,49 M-ba#12 o+120 c-20`
-function delta(text) {
+export function delta(text) {
   const d = { items: [], enemyGone: false, lost: [], gained: [] };
   if (text === 'none') return d;
   const toks = text.split(' ');
@@ -49,7 +49,7 @@ function delta(text) {
 }
 
 // T: `; `-separated events, classified by first word; `x3` = repeated
-function triggers(text) {
+export function triggers(text) {
   const t = { items: [], kill: false, supCap: false, idleWk: [], none: text === 'none' };
   if (t.none) return t;
   for (const raw of text.split('; ')) {
@@ -143,7 +143,7 @@ function fieldLine(line, f) {
 }
 
 // L: `train tr #13 ok; build dp 70,-12 nospot; pending: seen tr@45,22`
-function last(text) {
+export function last(text) {
   const l = { items: [], nospot: [], pending: null, raw: text };
   if (text === 'none') return l;
   for (const item of text.split('; ')) {

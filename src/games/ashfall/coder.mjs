@@ -124,6 +124,9 @@ const isAnchor = b => b.type === 'core' || b.type === 'turret';
 // compact: `co#1@70,4 ba#13 dp#22 tu#30@50,-3 hp58 ba#40 bld40` — what exists, where the anchor is, what is hurt or unfinished
 export const compactBuildings = (s, { guide = false, planMarks = false } = {}) => bldsOf(s).map(b => `${ref(b)}${isAnchor(b) ? '@' + pos(b) : ''}${!done(b) ? ` bld${pct(b.progress, 1)}` : pct(b.hp, b.max) < 100 ? ` hp${pct(b.hp, b.max)}` : ''}${guide && b.type === 'core' && s.myBase ? ` post@${pos(post(s))} yard@${pos(yard(s))}` : ''}`).join(' ').concat(guide && bldsOf(s).length && !bldsOf(s).some(b => b.type === 'turret') ? ' (no tu)' : '').concat(guide && planMarks && secondBarracksDue(s) ? ' (2nd ba)' : '') || 'none';
 
+// facts.mjs computes the same quantities from the state without the text; these are the one source for each.
+export { ty, pct, unitsOf, bldsOf, done as isDone, out as isOut, combat, troopers, isAnchor };
+
 export function enemy(s) {
   const blds = bldsOf(s), units = unitsOf(s).filter(u => u.type !== 'worker');
   return cluster(s.enemyVisible || [], { r: 8, stateOf: e => (e.entrenched ? 'dug' : undefined) }).map(c => {
