@@ -1,0 +1,24 @@
+H t804 r3 u6/6
+D +li#50 +wk#51 E+wk#52 r-2
+T done li#50; done wk#51
+P ba#20 wk 31; br#47 li 56
+E
+rs#16@0,0 o19 d4
+rs#17@0,1 o10 d3
+rs#18@15,14 o9 d25
+rs#19@15,15 o25 d26
+A
+wk x1@1,1 m #27
+wk x2@4,2 m #40,#51
+wk x1@1,4 m #42
+wk x1@4,4 m #44
+li x1@0,5 m #50
+B ba#20@2,2 hp7 br#47@0,2 hp4
+X
+ba x1@13,13 d22/18 #21
+wk x2@14,14 d24/20 #23,#52
+wk x1@3,4 d3/1 #45
+wk x1@5,7 d8/4 #46
+wk x1@6,11 d13/9 #48
+wk x1@10,12 d18/14 #49
+L t 20 wk ok; h #22 #16 busy; a #22 13,13 dropped:stale

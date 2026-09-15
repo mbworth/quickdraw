@@ -1,0 +1,16 @@
+H t0 r5 u1/1
+D none
+T started
+P ba#20 IDLE
+E
+rs#16@0,0 o25 d4
+rs#17@0,1 o25 d3
+rs#18@15,14 o25 d25
+rs#19@15,15 o25 d26
+A
+wk x1@1,1 i #22
+B ba#20@2,2 hp10
+X
+ba x1@13,13 d22/24 #21
+wk x1@14,14 d24/26 #23
+L none

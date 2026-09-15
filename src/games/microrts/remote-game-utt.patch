@@ -1,0 +1,17 @@
+diff --git a/src/rts/RemoteGame.java b/src/rts/RemoteGame.java
+index b3e4d9d..9c67056 100644
+--- a/src/rts/RemoteGame.java
++++ b/src/rts/RemoteGame.java
+@@ -35,7 +35,11 @@ class RemoteGame implements Runnable {
+                 .getConstructor(UnitTypeTable.class);
+             AI player_two = (AI) cons2.newInstance(unitTypeTable);
+ 
+-            Game game = new Game(gameSettings, player_one, player_two);
++            // one unit type table for the board and both AIs: Game(GameSettings, AI, AI) built a second one, and
++            // UnitAction.equals / PlayerAction.fromJSON compare unit types by identity, so no produce ever took
++            Game game = new Game(unitTypeTable, gameSettings.getMapLocation(), gameSettings.isHeadless(),
++                gameSettings.isPartiallyObservable(), gameSettings.getMaxCycles(), gameSettings.getUpdateInterval(),
++                player_one, player_two);
+             game.start();
+         } catch (Exception e) {
+             e.printStackTrace();

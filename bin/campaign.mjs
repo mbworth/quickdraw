@@ -78,7 +78,7 @@ export function report(state) {
 }
 
 // A game counts only when the hub decided it; a stopped or crashed one is rerun on resume.
-export const finished = g => typeof g?.summary?.outcome?.won === 'boolean';
+export const finished = g => typeof g?.summary?.outcome?.won === 'boolean' || g?.summary?.outcome?.draw === true;   // a decided game: won, lost, or a draw (MicroRTS at max_cycles)
 
 const save = (file, state) => { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, JSON.stringify(state, null, 1)); };
 

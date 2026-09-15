@@ -1,0 +1,21 @@
+H t384 r7 u5/5
+D E+wk#35 +wk#36 -wk#25
+T lost wk#25; done wk#36
+P ba#20 wk 46
+E
+rs#16@0,0 o22 d4
+rs#17@0,1 o18 d3
+rs#18@15,14 o17 d25
+rs#19@15,15 o25 d26
+A
+wk x3@3,1 m #22,#27,#36
+wk x1@4,4 m #31
+wk x1@1,1 h #33
+B ba#20@2,2 hp10
+X
+ba x1@13,13 d22/18 #21
+wk x1@14,13 d23/19 #23
+wk x2@5,9 d10/6 #30,#32
+wk x1@6,13 d15/11 #34
+wk x1@12,12 d20/16 #35
+L t 20 wk ok; h #22 #16 busy; a #22 13,13 dropped:stale
