@@ -1,6 +1,8 @@
-// facts.mjs is the state side of the fidelity oracle: the same facts read.mjs returns, built from the state with no packet.
-// The invariant: when the packet is not budgeted, the two readers agree layer for layer. What the packet drops is the gap
-// bin/oracle.mjs measures, and the last test here proves it measures something (cut X and the push loses its target).
+// facts.mjs is the state side of the fidelity oracle: the full state view, built from the state with no packet.
+// The invariant: against the unbudgeted full-layer encoder config (`full: true`) the two readers agree layer for layer.
+// What the packet's shaping folds away and what its budget drops are the gaps bin/oracle.mjs measures; the last two tests
+// prove it measures something (cut X and the push loses its target; fold a harvester and a walker into one cluster and the
+// packet tops up neither).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -11,11 +13,12 @@ import { read, ReadError } from '../../../src/games/microrts/read.mjs';
 import { decideFacts, decide } from '../../../src/games/microrts/policy/rush.mjs';
 import { assemble } from '../../../src/core/packet.mjs';
 import { loadCases } from '../../../bin/bench.mjs';
-import { HERE, fixtureFiles, loadFixture, snap, triggersOf, SAMPLE_LAST } from './helpers.mjs';
+import { HERE, fixtureFiles, loadFixture, snap, tinySnap, triggersOf, SAMPLE_LAST } from './helpers.mjs';
 
 const KEYS = ['h', 'd', 't', 'p', 'e', 'a', 'b', 'x', 'l', 'layers'];
 const HB = [{ cls: 'heartbeat', key: 'hb', t: 0 }];
-const unbudgeted = inputs => assemble(encode(inputs), { maxTokens: 1e6, divisor: 3.5, fullEvery: 0, n: 2 });
+const unbudgeted = (inputs, opts = {}) => assemble(encode(inputs, { ...opts, full: true }), { maxTokens: 1e6, divisor: 3.5, fullEvery: 0, n: 2 });
+const working = inputs => assemble(encode(inputs), { maxTokens: 1e6, divisor: 3.5, fullEvery: 0, n: 2 });
 
 function allInputs() {
   const files = fixtureFiles();
@@ -30,7 +33,7 @@ test('unbudgeted, the packet reader and the state reader agree on every layer of
   const inputs = [...allInputs(), ...cases.map(c => [c.id, { state: snap(c.fx, 1), prevDecisionState: null, triggers: HB, lastOrders: [], pending: [] }])];
   assert.ok(inputs.length > 20);
   for (const [id, inp] of inputs) {
-    const k = read(unbudgeted(inp).text), s = factsOf(inp);
+    const k = read(unbudgeted(inp, {}).text), s = factsOf(inp, {});
     for (const key of KEYS) assert.deepStrictEqual(s[key], k[key], `${id}: ${key}`);
     assert.deepEqual(decideFacts(s), decideFacts(k), `${id}: decision`);
   }
@@ -75,6 +78,9 @@ test('the oracle runs over a recording and reports its shape', { skip: !fs.exist
   assert.deepEqual([s.errors.packet, s.errors.state], [0, 0], s.errors.firstPacket || s.errors.firstState || '');
   assert.ok(s.samePct >= s.exactPct && s.samePct <= 100);
   for (const k of Object.keys(s.layerDiff)) assert.ok(KEYS.includes(k));
+  // v3 sanity gate: --arm re-encodes the packet; with no overrides it must reproduce the recorded packet byte for byte,
+  // so the summary is identical. Every ablation is read against this anchor.
+  assert.deepStrictEqual((await oracleRun(file, { every: 10, policy: 'rush', arm: [] })).summary, s);
 });
 
 test('the gap is real: cut X to the budget and the push has nowhere to go', async () => {
@@ -83,4 +89,55 @@ test('the gap is real: cut X to the budget and the push has nowhere to go', asyn
   const slim = { ...full, x: [] };                       // X is over half the packet: it is what a tight budget takes
   assert.ok(full.x.length, 'the fixture must carry enemies for this to mean anything');
   assert.notDeepStrictEqual(decideFacts(slim).why, decideFacts(full).why);
+});
+
+// v1 could not see this: A's clusters carry one state, so a cluster of one harvester and one walker reads as two
+// harvesters and the packet tops up neither (notes/microrts/games.md, the `harvesters` rule). The full view keeps each.
+test('one cluster, two states: the packet reads two harvesters where the state has one', () => {
+  const W = (id, x, y, st) => ({ id, type: 'Worker', player: 0, x, y, hp: 1, carry: 0, busy: st !== 'idle', st, eta: 0, idleFor: 0 });
+  const inp = { state: tinySnap({ units: [
+    { id: 1, type: 'Resource', player: -1, x: 0, y: 0, hp: 1, carry: 25, busy: false, st: 'idle', eta: 0, idleFor: 0 },
+    { id: 2, type: 'Base', player: 0, x: 1, y: 1, hp: 10, carry: 0, busy: false, st: 'idle', eta: 0, idleFor: 0 },
+    W(3, 0, 1, 'harvest'), W(5, 1, 0, 'move'),
+    { id: 4, type: 'Worker', player: 1, x: 3, y: 3, hp: 1, carry: 0, busy: false, st: 'idle', eta: 0, idleFor: 0 },
+  ] }), prevDecisionState: null, triggers: [], lastOrders: [], pending: [] };
+  const k = read(working(inp).text), s = factsOf(inp, {});
+  assert.deepEqual(k.a.map(c => [c.n, c.state]), [[2, 'h']]);              // one line, one state, both units
+  assert.deepEqual(s.a.map(c => [c.ids[0], c.n, c.state]), [[3, 1, 'h'], [5, 1, 'm']]);
+  assert.ok(!decideFacts(k).o.startsWith('h '), decideFacts(k).o);         // the packet already has its two harvesters
+  assert.match(decideFacts(s).o, /^h #5 1;/);                              // the state knows #5 is walking, and tops up
+  assert.notEqual(decideFacts(k).o, decideFacts(s).o);
+});
+
+test('splitStates: the packet matches the full state view for the same mixed-state cluster', () => {
+  const W = (id, x, y, st) => ({ id, type: 'Worker', player: 0, x, y, hp: 1, carry: 0, busy: st !== 'idle', st, eta: 0, idleFor: 0 });
+  const inp = { state: tinySnap({ units: [
+    { id: 1, type: 'Resource', player: -1, x: 0, y: 0, hp: 1, carry: 25, busy: false, st: 'idle', eta: 0, idleFor: 0 },
+    { id: 2, type: 'Base', player: 0, x: 1, y: 1, hp: 10, carry: 0, busy: false, st: 'idle', eta: 0, idleFor: 0 },
+    W(3, 0, 1, 'harvest'), W(5, 1, 0, 'move'),
+    { id: 4, type: 'Worker', player: 1, x: 3, y: 3, hp: 1, carry: 0, busy: false, st: 'idle', eta: 0, idleFor: 0 },
+  ] }), prevDecisionState: null, triggers: [], lastOrders: [], pending: [] };
+  const text = assemble(encode(inp, { splitStates: true }), { maxTokens: 400, divisor: 3.5 }).text;
+  const k = read(text), s = factsOf(inp, {});
+  assert.deepEqual(k.a.map(c => [c.n, c.state]), [[1, 'h'], [1, 'm']]);
+  assert.deepEqual(decideFacts(k).o, decideFacts(s).o);
+});
+
+// The unbudgeted invariant (facts.mjs vs the packet reader) still holds when splitStates rides in opts: at full:true,
+// r is FULL_R (-1, never merges) regardless, so splitting states first changes nothing there — only the budgeted view.
+test('unbudgeted invariant holds with splitStates in opts', () => {
+  for (const [id, inp] of allInputs()) {
+    const k = read(unbudgeted(inp, { splitStates: true }).text), s = factsOf(inp, {});
+    for (const key of KEYS) assert.deepStrictEqual(s[key], k[key], `${id}: ${key}`);
+  }
+});
+
+// Same invariant with goalState in opts: facts.mjs now threads opts through to armyClusters(n, {...opts, r: FULL_R}),
+// so a recorded `goal` on the state (none of these fixtures predate it, so this exercises the null-goal fallthrough)
+// renders identically on both sides.
+test('unbudgeted invariant holds with goalState in opts', () => {
+  for (const [id, inp] of allInputs()) {
+    const k = read(unbudgeted(inp, { goalState: true }).text), s = factsOf(inp, { goalState: true });
+    for (const key of KEYS) assert.deepStrictEqual(s[key], k[key], `${id}: ${key}`);
+  }
 });

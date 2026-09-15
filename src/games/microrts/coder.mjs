@@ -18,6 +18,8 @@ export const nodes = n => n.units.filter(u => n.tt[u.type]?.res);
 export const army = n => mine(n).filter(u => n.tt[u.type]?.move);
 export const blds = n => mine(n).filter(u => isBld(n, u));
 export const home = n => blds(n).find(u => n.tt[u.type]?.pile) || blds(n)[0] || army(n)[0] || null;
+// r: -1 never merges, so each unit is its own A entry — the full state view facts.mjs reads and encode's full option renders (oracle v2).
+export const CLUSTER_R = 2, FULL_R = -1;
 const dTo = (p, list) => { const b = list.reduce((a, u) => Math.min(a, manhattan(p, u)), Infinity); return Number.isFinite(b) ? b : null; };
 
 // Each layer has one source: a *Facts function that computes it, and a renderer that prints those facts. facts.mjs calls
@@ -65,30 +67,46 @@ export const production = n => productionFacts(n).map(b => `${b.type}#${b.id} ${
 export const economyFacts = n => { const h = home(n); return nodes(n).map(r => ({ type: ty(r.type), id: r.id, x: r.x, y: r.y, o: r.carry, d: h ? manhattan(h, r) : null })); };
 export const economy = n => economyFacts(n).map(r => `${r.type}#${r.id}@${r.x},${r.y} o${r.o}${r.d != null ? ` d${r.d}` : ''}`);
 
-export const armyClusters = n => cluster(army(n).map(flat), { r: 2, stateOf: u => u.st })
-  .map(c => ({ type: ty(c.type), n: c.n, x: c.x, y: c.z, state: STATE[c.state] || '?', ids: c.ids, label: `${ty(c.type)} x${c.n}@${c.x},${c.z}` }));   // A always lists ids: on a 16x16 board they cost a few characters and they are the only way an order can name one unit
-export const armyLines = n => armyClusters(n).map(c => `${c.label} ${c.state}${c.ids.length ? ' #' + c.ids.join(',#') : ''}`);
+// goalState: render the standing order, not the mid-step engine action, so a harvester walking to its node still
+// reads 'h' instead of 'm' — the goal survives until it completes, the engine action flips step to step. Goal kinds
+// (harvest, move, attack) are already STATE's own letters; train never lands on a mobile unit so it never applies here.
+const effSt = (u, goalState) => (goalState && u.goal) ? u.goal : u.st;
+// splitStates: fold state into cluster()'s type key, so a mixed-state cluster (one harvester + one walker) never
+// merges onto one dominant state; one cluster() pass, original unit order preserved (one type key strips it back off).
+const stKey = (u, goalState) => `${u.type}\0${effSt(u, goalState)}`;
+export const armyClusters = (n, { r = CLUSTER_R, splitStates = false, goalState = false } = {}) => {
+  const units = army(n).map(flat);
+  const keyed = splitStates ? units.map(u => ({ ...u, type: stKey(u, goalState) })) : units;
+  return cluster(keyed, { r, stateOf: u => effSt(u, goalState) }).map(c => {
+    const type = ty(splitStates ? c.type.split('\0')[0] : c.type);
+    return { type, n: c.n, x: c.x, y: c.z, state: STATE[c.state] || '?', ids: c.ids, label: `${type} x${c.n}@${c.x},${c.z}` };   // A always lists ids: on a 16x16 board they cost a few characters and they are the only way an order can name one unit
+  });
+};
+export const armyLines = (n, o) => armyClusters(n, o).map(c => `${c.label} ${c.state}${c.ids.length ? ' #' + c.ids.join(',#') : ''}`);
 
 export const buildingFacts = n => blds(n).map(b => ({ type: ty(b.type), id: b.id, x: b.x, y: b.y, hp: b.hp }));
 export const buildings = n => buildingFacts(n).map(b => `${b.type}#${b.id}@${b.x},${b.y} hp${b.hp}`).join(' ') || 'none';
 
 // X: enemies clustered, with steps to my base and to my nearest unit — the two numbers every order reads.
-export function enemyFacts(n) {
+// r: FULL_R (oracle v3) never merges, so X unfolds like A — one line per enemy, its own cell, its own id, its own dB/dA.
+export function enemyFacts(n, { r = CLUSTER_R } = {}) {
   const h = home(n), my = army(n);
-  return cluster(foes(n).map(flat), { r: 2, stateOf: u => u.st }).map(c => ({
+  return cluster(foes(n).map(flat), { r, stateOf: u => u.st }).map(c => ({
     type: ty(c.type), n: c.n, x: c.x, y: c.z, dB: h ? manhattan(h, { x: c.x, y: c.z }) : null, dA: dTo({ x: c.x, y: c.z }, my),
     ids: c.n <= 2 ? c.ids : [], label: `${ty(c.type)} x${c.n}@${c.x},${c.z}`,
   }));
 }
-export const enemy = n => enemyFacts(n).map(c => `${c.label} d${c.dB ?? '-'}/${c.dA ?? '-'}${c.ids.length ? ' #' + c.ids.join(',#') : ''}`);
+export const enemy = (n, o) => enemyFacts(n, o).map(c => `${c.label} d${c.dB ?? '-'}/${c.dA ?? '-'}${c.ids.length ? ' #' + c.ids.join(',#') : ''}`);
 
 export const lastOrders = list => (!list?.length ? 'none' : list.map(o => `${encodeOrder(o.cmd || {})} ${o.ok ? 'ok' : errCode(o.error)}`).join('; '));
 
 const layer = (name, priority, text, extra = {}) => ({ name, priority, text: `${TAG[name]} ${text}`, ...extra });
 const lineLayer = (name, priority, items, extra = {}) => (items.length ? { name, priority, text: TAG[name], lines: items.map(text => ({ text, priority })), ...extra } : { name, priority, text: `${TAG[name]} none`, ...extra });
 
-// encode({state, prevDecisionState, triggers, lastOrders}) → Layer[]
-export function encode({ state, prevDecisionState, triggers = [], lastOrders: lo = [], pending = [] }) {
+// encode({state, prevDecisionState, triggers, lastOrders}, opts) → Layer[]
+// opts.full: the unbudgeted full state view — A one line per unit and X one line per enemy (v3), facts.mjs's shape, for the
+// fidelity oracle's invariant test.
+export function encode({ state, prevDecisionState, triggers = [], lastOrders: lo = [], pending = [] }, { full = false, splitStates = false, goalState = false } = {}) {
   const n = state.native, prev = prevDecisionState?.native || null;
   return [
     layer('header', 0, header(n)),
@@ -96,9 +114,9 @@ export function encode({ state, prevDecisionState, triggers = [], lastOrders: lo
     layer('triggers', 1, triggers.slice(0, 6).map(renderTrigger).join('; ') || 'none'),
     layer('production', 0, production(n)),
     lineLayer('economy', 1, economy(n)),
-    lineLayer('army', 2, armyLines(n)),
+    lineLayer('army', 2, armyLines(n, { r: full ? FULL_R : CLUSTER_R, splitStates, goalState })),
     layer('buildings', 2, buildings(n)),
-    lineLayer('enemy', 1, enemy(n)),
+    lineLayer('enemy', 1, enemy(n, { r: full ? FULL_R : CLUSTER_R })),
     layer('last', 0, lastOrders(lo) + (pending.length ? `; ${pending.map(s => s.slice(0, 4).map(renderTrigger).join(', ')).join(' | ')}` : '')),
   ];
 }

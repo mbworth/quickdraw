@@ -8,6 +8,7 @@
 // ai.abstraction.*Rush opponent can ever train a unit. The patch hands Game the AIs' own table.
 
 import path from 'node:path';
+import fs from 'node:fs';
 import { EventEmitter } from 'node:events';
 import { createProto } from './proto.mjs';
 import { createBuffer } from './orders.mjs';
@@ -20,7 +21,8 @@ import { tool } from './tool.mjs';
 import { decode } from './lang.mjs';
 import { ABBR_TEXT } from './abbr.mjs';
 
-export const divisor = 3.5;   // not yet calibrated against countTokens for this game
+// Divisor: chars per token, calibrated by test/games/microrts/calibration.test.mjs (countTokens over the fixtures).
+export const divisor = (() => { try { return JSON.parse(fs.readFileSync(new URL('./calibration.json', import.meta.url), 'utf8')).divisor || 3.5; } catch { return 3.5; } })();
 const GRAMMAR = 'Verbs: t <bldId> <unit> [n] produce; h <units> [nodeId] harvest and keep returning; m <units> <x>,<y> walk; a <units> <x>,<y>|<unitId> attack-move or hunt. Units are ids (#22), selectors (all idle wk li hv rg), or one cluster label pasted from A. An order STANDS until it finishes, so repeating it is free and costs nothing.';
 export const meta = Object.freeze({
   name: 'microrts', classes: CLASSES, cooldownMs: COOLDOWN_MS, orderCap: 10, actionMode: 'batch', toolName: 'orders',
@@ -56,6 +58,10 @@ export function createAdapter(env = {}, opts = {}) {
     const acting = new Map((gs.actions || []).map(a => [a.ID, a]));
     const res = [];
     for (const p of pgs.players || []) res[p.ID] = p.resources;
+    // goalOf: subject id → the standing order's verb, from the buffer (not the engine's per-cycle action). A harvester
+    // walking to its node still reads engine state `move`; `goal` carries `harvest` alongside it, recorded unconditionally
+    // so it rides on every state for --microrts-goal-state to render from (coder.mjs) and future recordings to replay.
+    const goalOf = new Map(buf.goals().map(g => [g.kind === 'train' ? g.building : g.unit, g.kind]));
     const units = (pgs.units || []).map(u => {
       const a = acting.get(u.ID), act = a?.action || null;
       // `busy` means the engine will not let me redirect this unit. A TYPE_NONE does not count: PlayerAction.fillWithNones
@@ -66,7 +72,7 @@ export function createAdapter(env = {}, opts = {}) {
       const o = {
         id: u.ID, type: u.type, player: u.player, x: u.x, y: u.y, hp: u.hitpoints, carry: u.resources,
         busy: !!real, st: real ? stateOf(act) : 'idle', eta: real ? Math.max(0, real.time + etaOf(tt, u.type, act) - cycle) : 0,
-        idleFor: real ? 0 : cycle - idleSince.get(u.ID),
+        idleFor: real ? 0 : cycle - idleSince.get(u.ID), goal: goalOf.get(u.ID) || null,
       };
       if (real && act.unitType) o.make = act.unitType;
       // The cell an in-flight move or produce will occupy. GameState.issue treats a second unit heading for the same cell
@@ -132,7 +138,7 @@ export function createAdapter(env = {}, opts = {}) {
     canAct: s => s.header.lifecycle === 'active',
     deadline: () => null,
     derive,
-    encode,
+    encode: input => encode(input, { full: !!opts.full, splitStates: !!opts.splitStates, goalState: !!opts.goalState }),   // --microrts-full true: the unbudgeted full state view (oracle v2); --microrts-split-states true: never mix states within an A cluster; --microrts-goal-state true: render the standing goal, not the mid-step engine action
     expand: (cmds, state, decidedOn) => expandCmds(cmds, state, { decidedOn }),
     validate,
     send: cmds => Promise.all(buf.push(cmds)),

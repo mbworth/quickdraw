@@ -1,23 +1,22 @@
-# Handoff — 2026-09-14
+# Handoff — 2026-09-15
 
 Where Quickdraw stands and what to do next. History lives in `notes/ashfall/games.md` (every game, one row, and what it taught), `docs/reviews/` (the four reviews and what they fixed) and `git log`. Nothing here repeats those.
 
 ## State
 
-M0–M11 built; Ashfall 55 live games (hub games 1–76), MicroRTS 5 scripted games (5/5 vs `ai.abstraction.WorkerRush`); `npm test` 231 tests, 228 pass, 3 skipped with `MICRORTS_LOCAL` set (5 without), 16 s. The harness levers inside a call are spent: reaction p50 5.6 s (game 24) → 2.2 s (game 30) by the order language, two calls in flight, the event tick and streaming dispatch; output 101 → 38 tokens, of which 29 are the forced tool call's framing; every packet layer is read (sensitivity); a third slot and a reserved slot sit inside one game's noise. Win rate on the game38 prompt (2026-09-14 evening campaigns): **the script 10 of 11** (games 39–49, 4.5–7.1 min, $0), **the model 4 of 5** (games 50–54, 5.4–14.6 min, $6.90); game 38 was the model's earlier loss on a quiet-packet commit.
+M0–M11 built; Ashfall 55 live games (hub games 1–76), MicroRTS 5 scripted games (5/5 vs `ai.abstraction.WorkerRush`); `npm test` 235 tests, 229 pass, 6 skipped without a key or `MICRORTS_LOCAL`, 7 s. The harness levers inside a call are spent: reaction p50 5.6 s (game 24) → 2.2 s (game 30) by the order language, two calls in flight, the event tick and streaming dispatch; output 101 → 38 tokens, of which 29 are the forced tool call's framing; every packet layer is read (sensitivity); a third slot and a reserved slot sit inside one game's noise. Win rate on the game38 prompt (2026-09-14 evening campaigns): **the script 10 of 11** (games 39–49, 4.5–7.1 min, $0), **the model 4 of 5** (games 50–54, 5.4–14.6 min, $6.90); game 38 was the model's earlier loss on a quiet-packet commit.
 
 **2026-09-14, late: the three-way split.** Every loss was ambiguous between the packet, the strategy and the model. Now `src/games/ashfall/policy/game38.mjs` plays the game38 prompt as code from the packet text alone (`src/games/ashfall/read.mjs` reads the packet back into facts, strict on the structured layers), through the same `callModel` seam as the API (`--model script:game38`, `scriptModel` in `src/core/model.mjs`, no key, $0). What it answers:
 - **Is the packet sufficient?** The script passes the bench 13/13 on the working config and reads every packet of every recording (6,561). Anything it cannot read throws (`stop: error:read`), never a silent `-`.
 - **Does the strategy win?** The script plays live at zero API cost: its win rate is the strategy's, at the harness's own speed. Campaign `script-game38` (games 39–49): 10 of 11, every game 4.5–7.1 min, barracks at 9 s, first commit 15–20 riflemen at 3:20–4:50, 1–4 pushes, ore p50 35–45. The loss (game 47): the commit at 3:46 with 16 met the enemy's home army and died. Reaction p50 0 s at 50–60 decisions a minute is the harness floor. Plan and packet are sufficient.
 - **What is the model's share?** Campaign `model-game38` (games 50–54, Sonnet, same prompt and packet): 4 of 5, but 5.4–14.6 min (three games over 11 min), 14–71 pushes a game against the script's 1–4, first pushes of 7–8 riflemen in two games (Army 7 says 15), ore p50 45–95 with up to 44% of samples over 120 banked. `trajectory --model script:game38` on those runs: purchases agree 52–69%, army 58–86%, both 31–45% (game 38: 51 / 95). The model wins about as often on this sample but takes twice as long and dribbles; that is the model's share, and it is the strategy's slack that absorbs it. Wilson intervals at 5 and 11 games overlap (38–96 vs 60–98), so the win rates do not separate; the minutes and pushes do.
 
-**Fidelity (2026-09-14, `bin/oracle.mjs`, free).** The script decides twice on every recorded decision — once from the packet the model saw, once from facts built straight from that packet's state (`src/games/ashfall/facts.mjs`, same gameOpts, nothing budgeted away) — so the packet's losses are measured without a model. Over the 18 runs whose packets the script can read (58–74, 76): **5,958 decisions, 100% identical orders, every run 100%, zero read errors on either side**. The 31 runs before game 58 predate `--ashfall-guide` and error on both sides (6,302 decisions, `no post/yard`), as they must. The packet does lose information — `F` differs on 4,047 of 5,958 decisions (68%), the `--full-every 5` cadence — but never a decision, because `--ashfall-fields-on-demand` puts `F` back exactly when the gather rule reads it; drop that flag and the same states answer `g idle` without a node id (`test/games/ashfall/facts.test.mjs`). No other layer differs at all, so at the working config the packet is a lossless carrier of this plan.
+**Fidelity (2026-09-14, `bin/oracle.mjs`, free).** The script decides twice on every recorded decision — once from the packet the model saw, once from facts built straight from that packet's state (`src/games/ashfall/facts.mjs`, same gameOpts, nothing budgeted away) — so the packet's losses are measured without a model. Over the 18 runs whose packets the script can read (58–74, 76): **5,958 decisions, 100% identical orders, every run 100%, zero read errors on either side**. The 31 runs before game 58 predate `--ashfall-guide` and error on both sides (6,302 decisions, `no post/yard`), as they must. The packet does lose information — `F` differs on 4,047 of 5,958 decisions (68%), the `--full-every 5` cadence — but never a decision, because `--ashfall-fields-on-demand` puts `F` back exactly when the gather rule reads it; drop that flag and the same states answer `g idle` without a node id (`test/games/ashfall/facts.test.mjs`). No other layer differs at all, so at the working config the packet is a lossless carrier of this plan — under v1, whose state side mirrored the encoder's shaping; v2 (below) reads 93%.
 
 **Game two (2026-09-15): MicroRTS.** `src/games/microrts/` is the adapter, added with **`git diff src/core` empty** —
 X5 is met. The engine dials into a TCP server the adapter opens and blocks on every reply, so the adapter owns the game's
 clock; an order is a standing goal the buffer steps one engine action per cycle. Four numbers: **fidelity 100% exact over
-716 decisions across 5 runs, 0 read errors** (`bin/oracle.mjs --policy rush`), **~120 est tokens a packet** (target was
-400), **reaction p50 0.4–0.5 s**, one `refreshMs` — the floor for a 500 ms state cadence — at 55–60 decisions a minute,
+716 decisions across 5 runs, 0 read errors** under oracle v1 (36% under v2, below; `bin/oracle.mjs --policy rush`), **298 tokens a packet** (countTokens-calibrated 2026-09-15, divisor 1.28 in `src/games/microrts/calibration.json`; the 3.5 placeholder had said ~120; target was 400), **reaction p50 0.4–0.5 s**, one `refreshMs` — the floor for a 500 ms state cadence — at 55–60 decisions a minute,
 and **5 of 5 against `ai.abstraction.WorkerRush`** at $0 (`notes/microrts/games.md`). `bin/oracle.mjs`, `bin/bench.mjs`
 and `bin/trajectory.mjs` all run on `--game microrts` with no change of their own; `bin/record.mjs`, `bin/snapshot.mjs`
 and `bin/discipline.mjs` are Ashfall-only; `bin/campaign.mjs` counted a draw as undecided until 2026-09-15 (fixed:
@@ -29,7 +28,36 @@ scripted opponent could ever produce a unit**; `fillWithNones` makes every idle 
 nine cycles in ten; the engine cancels two units heading for the same cell, even across cycles; and an attack-move at an
 occupied cell can never arrive, so a push at their base stood outside it for a thousand cycles. Next for MicroRTS: a
 model game on `prompts/microrts/game01-sonnet.md` (never played — the key is Sonnet-only and this was all $0), the
-divisor calibration (still the 3.5 placeholder, needs `countTokens`), and the other scripted opponents.
+other scripted opponents, and the harvester rule in `policy/rush.mjs` reading standing orders rather than engine action
+state. working config is now `--microrts-split-states true --microrts-goal-state true` (campaign 3, 5/5, 1.5–1.9 min).
+
+**Oracle v2 (2026-09-15).** The state side is now the full state view, not the encoder's shaping: every unit its own
+A entry with its own state, every building its position, F unfolded (`facts.mjs` both games; `encode(input, {full: true})`
+/ `--<game>-full true` renders the same view so the invariant test still holds; every shipping config replays byte for
+byte). `same` is decision equivalence — both order strings decoded and expanded against the recorded state, effective
+command sets compared — not text; layer facts compare order-insensitively. Ashfall 93% over 5,958 (A and compact B on
+all 410 lost decisions, F cadence on 294); MicroRTS 36% same / 31% exact over 716, the whole loss A's one-state-per-cluster
+fold (`notes/microrts/games.md` for the two `--diff` cases).
+
+**Oracle v3 (2026-09-15, later).** `bin/oracle.mjs --arm <--<game>-* flags>` re-encodes the packet side from the recorded
+inputs under overlaid gameOpts with the recorded budget (replay's exact assemble call; an empty arm reproduces the
+non-arm numbers, asserted in tests), so a packet flag is scored offline against existing recordings before any live game.
+X is unfolded on the state side too (per-entity cell, id, dB/dA; `full` renders the same). Numbers: Ashfall 92% over
+5,958; per-layer ablation against the unshaped view: A 415, X 108, B 0, F 0, budget/cadence 0 — compact B was
+co-attributed on every lost decision and causal on none, and `--ashfall-fields-on-demand` puts F back exactly where the
+gather rule reads it. Of the 67 decisions X's unfold costs Ashfall, 39 are a target moving from centroid to cell, 20 are
+Army 1 reading a cluster's `n` (a rule written against the fold, now inexpressible — fix the rule to count within r), 8
+are a raider the fold had hidden. MicroRTS 34% same / 28% exact (A 456, X 71); **`--microrts-split-states true`
+(A clusters by type and state) reads 58% / 51% at +9 tokens a packet**, the remainder positional (which idle worker a
+centroid sorts nearest). **Its live gate failed: campaign 2 went 2 of 5** (games 6–10) — first Light 474 vs 434 in
+every game, harvester node swaps 49–84 vs 12–32. The fold had been stabilizing the policy's harvester rule by accident
+(a walking harvester reads `m`; two walkers on one centroid sort by id). Fidelity is not quality: the oracle's reference
+side churns the same way, and per-decision equivalence cannot see a standing order across decisions. The fix is
+`--microrts-goal-state` (the unit's standing order from the buffer as its A state, `goal` recorded on every unit).
+**Campaign 3 with both flags: 5 of 5 in 1.5–1.9 min** (games 11–15; campaign 1 was 2:24–2:36), harvest orders 6–13 a
+game against 165–206, node swaps 1 against 12–32; fidelity on those recordings 89% same / 64% exact over 471 (64% with
+`--arm --microrts-goal-state false`). Both flags are MicroRTS's working config (`notes/microrts/README.md`). Pre-existing and unrelated: `runs/ashfall-43..57` do not replay byte for byte (`L` carries
+`dropped:noore` entries replay does not reproduce, shifting F/M under the budget); 58 on hold. The replay gate is 58+.
 
 ## Working config
 
@@ -90,7 +118,7 @@ Timing levers (overlap, event tick, stream) cannot be measured offline; one live
 2. **Longer campaigns only when a change needs them**: 10 games an arm gives ±26 points; the script arm is free, the model arm ~$1.40 a game (its games run long). Note the model's games grew through the evening (5.4 → 14.6 min, reaction p50 2.1 → 2.5 s) while the hub was stuttering (`ashfall_sector/requests/2026-09-14-live-hub-stutter.md`): rerun one model game after the hub fix before reading the minutes as the model's.
 3. **Deterministic sensitivity**: `sensitivity.mjs --model script:game38`; then instrument `read.mjs` to log which fields the policy touched per decision and drop what it never reads.
 4. **The harness's own scoreboard, per game**: fidelity (`oracle`, decision equivalence of script(packet) vs script(state)), tokens per packet at that fidelity (`layers`), the reaction floor with the script in the seat (`pace` on a script game), and the core diff on a second game (X5, zero). A packet change is gated on the oracle staying at 100% before the bench. The second game is the open item; model campaigns on Ashfall are done unless a harness change needs one.
-5. **Oracle v2, the state side unbudgeted**: `facts.mjs` mirrors the encoder's shaping (compact B, folded F, one dominant state per A cluster), so the oracle measures budget and cadence losses only. MicroRTS showed a loss it cannot see: a cluster of one harvester and one walker reads as two harvesters (`harvesters` rule 20/27). Make facts the full state view (every unit its own state, every building its position), keep the invariant test on the unbudgeted full-layer encoder config, and read the per-layer column as compression loss and the decision column as its cost.
+5. ~~Oracle v2, the state side unbudgeted~~ shipped 2026-09-15; v3 (`--arm`, X unfolded, per-layer ablation) the same day (State above). Open from it: Ashfall's A loss is 415 decisions, mostly the centroid-to-cell target and Army 1's cluster-`n` test — fix the rule, or give equivalence a same-entity target tolerance; an Ashfall A split-states arm can now be scored offline with `--arm` before a live game; the 43–57 replay divergence.
 6. Small, open: the `L` layer still prints the old wording, not the order language; short per-game ids; the `search` second step untested live; `T placed ba#N` can arrive before `B` lists it (event tick on an older state; game 38 n=2), so a per-packet script re-issues the build and the repeat check drops it.
 
 ## Environment

@@ -1,0 +1,8 @@
+{
+ "divisor": 1.28,
+ "model": "claude-sonnet-5",
+ "samples": 24,
+ "chars": 9146,
+ "tokens": 7153,
+ "date": "2026-09-15"
+}

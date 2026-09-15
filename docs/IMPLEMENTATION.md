@@ -252,7 +252,7 @@ Hub-side asks to file with `ashfall` once needed: `train{count}`, bank-threshold
 
 ## Cut until after game 12
 
-Per-class `pace` table and streaming dispatch (still open); `--row` shipped in M7. Next: oracle v2, the state side unbudgeted (HANDOFF item 5 — `facts.mjs` mirrors the encoder's shaping so the oracle measures only budget and cadence loss); other MicroRTS opponents (`LightRush`, `HeavyRush`, `RangedRush`, `ai.coac.CoacAI` — only `WorkerRush` is tested); a model game on `prompts/microrts/game01-sonnet.md` (never played — the key is Sonnet-only and MicroRTS so far has run at $0).
+Per-class `pace` table and streaming dispatch (still open); `--row` shipped in M7. Oracle v2 (the state side unbudgeted *and* unshaped) shipped 2026-09-15: Ashfall 93% over 5,958 decisions, MicroRTS 36% over 716, both 100% under v1 (X7). Next: other MicroRTS opponents (`LightRush`, `HeavyRush`, `RangedRush`, `ai.coac.CoacAI` — only `WorkerRush` is tested); a model game on `prompts/microrts/game01-sonnet.md` (never played — the key is Sonnet-only and MicroRTS so far has run at $0).
 
 ## Review 2026-09-12
 

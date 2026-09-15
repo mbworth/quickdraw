@@ -5,7 +5,7 @@ import path from 'node:path';
 import { assemble } from '../../../src/core/packet.mjs';
 import { VOCAB } from '../../../src/games/microrts/abbr.mjs';
 import { divisor } from '../../../src/games/microrts/index.mjs';
-import { HERE, fixtureFiles, loadFixture, layersAt, snap, triggersOf, SAMPLE_LAST } from './helpers.mjs';
+import { HERE, fixtureFiles, loadFixture, layersAt, snap, triggersOf, SAMPLE_LAST, tiny, tinySnap } from './helpers.mjs';
 import { encode } from '../../../src/games/microrts/coder.mjs';
 
 const files = fixtureFiles();
@@ -62,4 +62,14 @@ test('delta reports losses, new units and the resource swing; triggers render', 
 test('header and priority-0 layers survive any budget', { skip: !files.length }, () => {
   const p = assemble(layersAt(files.length - 1), { maxTokens: 1, divisor });
   for (const n of ['header', 'delta', 'production', 'last']) assert.ok(p.kept.some(k => k.name === n), `${n} dropped`);
+});
+
+test('splitStates: a mixed-state cluster splits into one line per state; off by default', () => {
+  const W = (id, x, y, st) => ({ id, type: 'Worker', player: 0, x, y, hp: 1, carry: 0, busy: st !== 'idle', st, eta: 0, idleFor: 0 });
+  const units = [tiny().units[0], tiny().units[1], W(5, 1, 1, 'harvest'), W(6, 1, 2, 'move')];
+  const inp = { state: tinySnap({ units }), prevDecisionState: null, triggers: [], lastOrders: [], pending: [] };
+  const armyOf = layers => layers.find(l => l.name === 'army').lines.map(l => l.text);
+
+  assert.deepEqual(armyOf(encode(inp)), ['wk x2@1,2 h #5,#6']);                              // default: one dominant-state line
+  assert.deepEqual(armyOf(encode(inp, { splitStates: true })), ['wk x1@1,1 h #5', 'wk x1@1,2 m #6']);
 });

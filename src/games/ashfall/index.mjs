@@ -89,7 +89,7 @@ export function createAdapter(env, opts = {}) {
     canAct: s => s.header.lifecycle === 'active',
     deadline: () => null,
     derive,
-    encode: input => encode(input, { foldFields: !!opts.foldFields, fullBuildings: !!opts.fullBuildings, fieldsOnDemand: !!opts.fieldsOnDemand, keepAnchor: !!opts.keepAnchor, keepRemembered: !!opts.keepRemembered, compactBuildings: !!opts.compactBuildings, searchFields: !!opts.searchFields, guide: !!opts.guide, planMarks: !!opts.planMarks }),
+    encode: input => encode(input, { foldFields: !!opts.foldFields, fullBuildings: !!opts.fullBuildings, fieldsOnDemand: !!opts.fieldsOnDemand, keepAnchor: !!opts.keepAnchor, keepRemembered: !!opts.keepRemembered, compactBuildings: !!opts.compactBuildings, searchFields: !!opts.searchFields, guide: !!opts.guide, planMarks: !!opts.planMarks, full: !!opts.full }),   // --ashfall-full true: the unbudgeted full state view (oracle v2)
     expand: (cmds, state, decidedOn, prior = []) => expandCmds(cmds, state, { recent: new Set(recent.flat()), decidedOn, prior }),
     validate,
     async send(cmds, { partial = false, n = null } = {}) {   // partial: more of decision n follows (--stream); its sticky cmds join that decision's recent entry

@@ -63,8 +63,16 @@ Current: `prompts/ashfall/game55-sonnet.md` (`--ashfall-guide --ashfall-plan-mar
 
 ## Scoreboard (2026-09-15)
 
-Fidelity 100% (5,958 decisions, 18 runs, `bin/oracle.mjs`); tokens/packet ~430–460; reaction floor with the script
-0 s p50; win rate script 10/11, Sonnet 4/5; core diff n/a (game one — see MicroRTS, X5).
+Fidelity (oracle v3, the state side unshaped and X unfolded) 92% decision-equivalent, 5,958 decisions over 18 runs
+(`bin/oracle.mjs`; v2, X still clustered, read 93%/410 lost; v1, whose state side mirrored the encoder's shaping, read 100%).
+**The 477 lost decisions are A's, not B's.** The per-layer column is co-attribution — A, B and F differ on almost every
+lost decision — so the split comes from ablation: `--arm --ashfall-compact-buildings false` (B unshaped, on every packet)
+leaves the TOTAL at 92%, 477 lost, with `b` gone from both columns, and folding one layer at a time back onto the state
+side prices A's clustering at 415 of the 477, X's at 108 (46 lost to both), and compact B, F, P and E at **0 each**.
+The recorded packet loses exactly what the unbudgeted shaped packet loses (477 = 477), so at `--packet-max 1000` the
+budget and the `--full-every 5` cadence cost nothing: `--ashfall-fields-on-demand` is putting F back where the gather rule
+reads it. Layer facts compare order-insensitively, so a fold that only reorders is not loss; tokens/packet ~430–460;
+reaction floor with the script 0 s p50; win rate script 10/11, Sonnet 4/5; core diff n/a (game one — see MicroRTS, X5).
 
 ## Known quirks / open
 

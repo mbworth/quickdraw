@@ -2,6 +2,7 @@ import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { createAdapter, meta, toHeader } from '../../../src/games/microrts/index.mjs';
 import { derive } from '../../../src/games/microrts/events.mjs';
+import { encode } from '../../../src/games/microrts/coder.mjs';
 import { virtualClock } from '../../../src/core/clock.mjs';
 import { fakeEngine, settle, rawState, RAW_UTT, tinySnap, tiny } from './helpers.mjs';
 
@@ -139,6 +140,29 @@ test('send goes through the buffer and lands on the next cycle', async () => {
   const line = await eng.next();
   assert.deepEqual(await p, [{ ok: true }]);
   assert.deepEqual(JSON.parse(line), [{ unitID: 3, unitAction: { type: 2, parameter: 0 } }]);
+  await a.leave(); eng.close();
+});
+
+test('goal rides on the state even when the engine action is mid-step; --microrts-goal-state renders it', async () => {
+  const { a, eng, seen, clock } = await seated();
+  eng.send('getAction 0', JSON.stringify(rawState(0)));
+  await eng.next();
+  const p = a.send([{ cmd: 'harvest', units: [3], node: 1 }]);
+  eng.send('getAction 0', JSON.stringify(rawState(1)));
+  await eng.next();
+  await p;
+  // The harvest goal stands in the buffer; the engine reports this cycle's actual action as a move (mid-walk).
+  // 'state' events only fire on activation or the refresh tick, so advance the clock to pick up this cycle's snapshot.
+  eng.send('getAction 0', JSON.stringify(rawState(2, null, [{ ID: 3, time: 2, action: { type: 1, parameter: 0 } }])));
+  await eng.next();
+  await clock.advance(600);
+  const state = seen.states.at(-1);
+  const u = state.native.units.find(x => x.id === 3);
+  assert.equal(u.st, 'move');
+  assert.equal(u.goal, 'harvest');
+  const armyText = layers => layers.find(l => l.name === 'army').lines[0].text;
+  assert.match(armyText(encode({ state, prevDecisionState: null }, {})), /\bm\b/, 'default: engine action');
+  assert.match(armyText(encode({ state, prevDecisionState: null }, { goalState: true })), /\bh\b/, 'goalState: the standing goal');
   await a.leave(); eng.close();
 });
 

@@ -110,26 +110,40 @@ export function economy(s) {
   return parts.join('; ') || 'none';
 }
 
-export function army(s, { guide = false } = {}) {
+// full (oracle v2): r -1 never merges, so every unit is its own line with its own state — facts.mjs's full state view.
+export const CLUSTER_R = 8, FULL_R = -1;
+export function army(s, { guide = false, full = false } = {}) {
   const units = unitsOf(s);
-  const cl = cluster(units, { r: 8 });
+  const cl = cluster(units, { r: full ? FULL_R : CLUSTER_R });
   return cl.map(c => `${ty(c.type)} x${c.n}@${c.x},${c.z} ${STATE[c.state] || c.state || '?'}${c.n <= 2 ? ' #' + c.ids.join(',#') : ''}${guide && c.type !== 'worker' && out(s, c) ? ' out' : ''}`);
 }
 
 export const bldLine = b => `${ref(b)}@${pos(b)} ${done(b) ? `hp${pct(b.hp, b.max)}` : `bld ${pct(b.progress, 1)}`}`;
-export function buildings(s, { only = null } = {}) {
-  return bldsOf(s).filter(b => !only || only(b)).map(bldLine);
+// The guide marks ride every B shape, not only the compact line: post/yard on the core, `(no tu)`/`(2nd ba)` on the last
+// line written. They are state-derived facts, not budget, so an unshaped B is still a packet the prompt (and read.mjs) can
+// read — which is what lets the oracle ablate compact B on its own (v3 arm b). With guide off the bytes are unchanged.
+export function buildings(s, { only = null, guide = false, planMarks = false } = {}) {
+  const blds = bldsOf(s);
+  const lines = blds.filter(b => !only || only(b)).map(b => `${bldLine(b)}${guide && b.type === 'core' && s.myBase ? ` post@${pos(post(s))} yard@${pos(yard(s))}` : ''}`);
+  const marks = `${guide && blds.length && !blds.some(b => b.type === 'turret') ? ' (no tu)' : ''}${guide && planMarks && secondBarracksDue(s) ? ' (2nd ba)' : ''}`;
+  if (marks && lines.length) lines[lines.length - 1] += marks;
+  return lines;
 }
 const isAnchor = b => b.type === 'core' || b.type === 'turret';
 // compact: `co#1@70,4 ba#13 dp#22 tu#30@50,-3 hp58 ba#40 bld40` — what exists, where the anchor is, what is hurt or unfinished
 export const compactBuildings = (s, { guide = false, planMarks = false } = {}) => bldsOf(s).map(b => `${ref(b)}${isAnchor(b) ? '@' + pos(b) : ''}${!done(b) ? ` bld${pct(b.progress, 1)}` : pct(b.hp, b.max) < 100 ? ` hp${pct(b.hp, b.max)}` : ''}${guide && b.type === 'core' && s.myBase ? ` post@${pos(post(s))} yard@${pos(yard(s))}` : ''}`).join(' ').concat(guide && bldsOf(s).length && !bldsOf(s).some(b => b.type === 'turret') ? ' (no tu)' : '').concat(guide && planMarks && secondBarracksDue(s) ? ' (2nd ba)' : '') || 'none';
 
+// full B (oracle v2): every building with its position, plus the marks — now just `buildings` with no filter.
+export const fullBuildings = (s, o = {}) => buildings(s, o);
+
 // facts.mjs computes the same quantities from the state without the text; these are the one source for each.
 export { ty, pct, unitsOf, bldsOf, done as isDone, out as isOut, combat, troopers, isAnchor };
 
-export function enemy(s) {
+// full (oracle v3): X unfolds like A — r -1 never merges, so every enemy entity is its own line with its own cell, its own
+// dug flag, its own id and its own dB/dA. The packet's X is the clustered fold of this.
+export function enemy(s, { full = false } = {}) {
   const blds = bldsOf(s), units = unitsOf(s).filter(u => u.type !== 'worker');
-  return cluster(s.enemyVisible || [], { r: 8, stateOf: e => (e.entrenched ? 'dug' : undefined) }).map(c => {
+  return cluster(s.enemyVisible || [], { r: full ? FULL_R : CLUSTER_R, stateOf: e => (e.entrenched ? 'dug' : undefined) }).map(c => {
     const db = nearest(c, blds).d, da = nearest(c, units).d;
     return `${ty(c.type)} x${c.n}@${c.x},${c.z} d${Number.isFinite(db) ? R(db) : '-'}/${Number.isFinite(da) ? R(da) : '-'}${c.state === 'dug' ? ' dug' : ''}${c.n <= 2 ? ' #' + c.ids.join(',#') : ''}`;
   });
@@ -204,7 +218,9 @@ const lineLayer = (name, priority, items, prio = () => priority, extra = {}) => 
 // of my core) and the folded `f?` line runs in that order; the game32 prompt's search rule sends the ball there instead of to a guessed coordinate.
 // opts.keepAnchor (with fullBuildings): core and turret lines stay on every packet; the prompt's turret and mirror rules read them.
 // opts.guide (game38 prompt): counts on H, post/yard on the compact B line, the search waypoint mirror-first (see `post` above).
-export function encode({ state, prevDecisionState, triggers = [], lastOrders: lo = [], pending = [] }, { foldFields = false, fullBuildings = false, fieldsOnDemand = false, keepAnchor = false, keepRemembered = false, compactBuildings: compactB = false, searchFields = false, guide = false, planMarks = false } = {}) {
+// opts.full (oracle v2/v3): the unbudgeted full state view — A one line per unit, B every building with its position and the
+// guide marks, F unfolded, X one line per enemy entity (v3). Every other shaping option is ignored; nothing else changes.
+export function encode({ state, prevDecisionState, triggers = [], lastOrders: lo = [], pending = [] }, { foldFields = false, fullBuildings: fullB = false, fieldsOnDemand = false, keepAnchor = false, keepRemembered = false, compactBuildings: compactB = false, searchFields = false, guide = false, planMarks = false, full = false } = {}) {
   const s = state.native, prev = prevDecisionState?.native || null;
   const fieldsFull = !(fieldsOnDemand && fieldsNeeded(s));
   return [
@@ -213,15 +229,16 @@ export function encode({ state, prevDecisionState, triggers = [], lastOrders: lo
     layer('triggers', 1, triggers.filter(tr => !(guide && tr.cls === 'heartbeat')).slice(0, 6).map(renderTrigger).join('; ') || 'none'),   // guide: a heartbeat is not an event; `T hb` made the model answer `-` 7/7 on a bank of 135 with no turret, `T none` buys
     layer('production', 0, production(s, { guide, planMarks })),
     layer('economy', 1, economy(s)),
-    lineLayer('army', 2, army(s, { guide })),
-    ...(compactB ? [layer('buildings', 2, compactBuildings(s, { guide, planMarks }))] : fullBuildings && keepAnchor
-      ? [lineLayer('buildings', 2, buildings(s, { only: isAnchor })), { name: 'buildings-rest', priority: 2, text: '', lines: buildings(s, { only: b => !isAnchor(b) }).map(text => ({ text, priority: 2 })), full: true }]
-      : [lineLayer('buildings', 2, buildings(s), () => 2, fullBuildings ? { full: true } : {})]),
-    lineLayer('enemy', 1, enemy(s)),
+    lineLayer('army', 2, army(s, { guide, full })),
+    ...(full ? [lineLayer('buildings', 2, fullBuildings(s, { guide, planMarks }))]
+      : compactB ? [layer('buildings', 2, compactBuildings(s, { guide, planMarks }))] : fullB && keepAnchor
+      ? [lineLayer('buildings', 2, buildings(s, { only: isAnchor, guide, planMarks })), { name: 'buildings-rest', priority: 2, text: '', lines: buildings(s, { only: b => !isAnchor(b) }).map(text => ({ text, priority: 2 })), full: true }]   // the marks ride the anchor group: it is on every packet
+      : [lineLayer('buildings', 2, buildings(s, { guide, planMarks }), () => 2, fullB ? { full: true } : {})]),
+    lineLayer('enemy', 1, enemy(s, { full })),
     // keepRemembered: on every packet at army priority. At 3 it tied with fields and the assembler drops the first tie, so in game 25 the one
     // line holding the enemy base position reached the model on 1 packet of 118 and the ball went to the prompt's example coordinates 14 times.
     lineLayer('remembered', keepRemembered ? 2 : 3, remembered(s, { searchFields, guide }), () => (keepRemembered ? 2 : 3), keepRemembered ? {} : { full: true }),
-    lineLayer('fields', 3, fields(s, { fold: foldFields, searchFields }), () => 3, fieldsFull ? { full: true } : {}),
+    lineLayer('fields', 3, fields(s, { fold: full ? false : foldFields, searchFields }), () => 3, fieldsFull ? { full: true } : {}),
     layer('last', 0, lastOrders(lo) + (pending.length ? `; pending: ${pending.map(set => set.slice(0, 4).map(renderTrigger).join(', ')).join(' | ')}` : '')),   // --overlap: calls already in flight, by their triggers
   ];
 }
