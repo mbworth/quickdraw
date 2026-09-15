@@ -2,9 +2,9 @@
 
 Turns `REQUIREMENTS.md` into milestones. Each names its files, the interfaces it fixes, its tests, and the requirement ids it closes. A milestone is done when its tests pass and its exit line is true. Revised 2026-09-12 after `reviews/2026-09-12-implementation-plan.md`.
 
-Order: M0 scaffold → M1 core against the mock game → M2 Ashfall transport → M3 Ashfall coder → M4 offline rehearsal → M5 first live game → M6 measurement → M7 iterate. M2 can start alongside M1. M3 needs fixtures, which M2's `bin/record.mjs` captures from the local hub or live.
+Order: M0 scaffold → M1 core against the mock game → M2 Ashfall transport → M3 Ashfall coder → M4 offline rehearsal → M5 first live game → M6 measurement → M7 iterate → M8 scripted policy → M9 three-way split → M10 fidelity oracle → M11 game two. M2 can start alongside M1. M3 needs fixtures, which M2's `bin/record.mjs` captures from the local hub or live.
 
-## Status (2026-09-14)
+## Status (2026-09-15)
 
 | milestone | state |
 |---|---|
@@ -17,6 +17,8 @@ Order: M0 scaffold → M1 core against the mock game → M2 Ashfall transport �
 | M6 measurement | done: `pace` row for game 12 in `notes/ashfall/games.md`; `replay` reproduces all 77 game-12 packets byte for byte |
 | M7 iterate | in progress (games 13-31, 2026-09-14): packet ablation, decision bench, trajectory replay, layer-sensitivity and trigger-class tools built; order language, overlapping calls (`--overlap 2`), event tick and streaming dispatch (`--stream`) adopted: reaction p50 5.6 → 2.3 s, first order 2.2 s, output 101 → 38 tokens; output floor (tool framing), a third slot and a reserved slot measured and left off; next is the win-rate campaign; see `HANDOFF.md` |
 | M8 scripted policy | done (2026-09-14): `src/games/ashfall/read.mjs` (packet text → facts, strict), `src/games/ashfall/policy/game38.mjs` (the game38 plan as code), `scriptModel` + `--model script:<name>` in every tool, windowed plan agreement and `--diff` in `bin/trajectory.mjs`. Bench 16/16; live 10 of 11 at $0 (games 39–49) against Sonnet 4 of 5 (games 50–54); three bench cases from the model's departures; `--ashfall-plan-marks` + `game55-sonnet.md` lift two of them offline, game 55 won 4:54 |
+| M10 fidelity oracle | done (2026-09-14): `src/games/ashfall/facts.mjs` (state-side facts, unbudgeted, sharing coder's `*Facts`), the `decide`/`decideFacts` split in `policy/game38.mjs`, `bin/oracle.mjs` (packet-decision vs state-decision agreement, free). Closes X7. Over the 18 runs whose packets postdate `--ashfall-guide` (58–74, 76): 5,958 decisions, 100% identical orders, every run 100%, zero read errors either side; `F` differs on 68% of decisions (the `--full-every 5` cadence) but never a decision, because `--ashfall-fields-on-demand` restores it exactly when the gather rule needs a node id (`test/games/ashfall/facts.test.mjs`) |
+| M11 game two: MicroRTS | done (2026-09-15): `src/games/microrts/` (`index, proto, coder, events, expand, validate, tool, lang, orders, rules, read, facts, abbr, policy/rush`) plus `remote-game-utt.patch` (stock CLIENT mode builds two `UnitTypeTable`s and compares unit types by identity, so no socket client or scripted opponent could ever produce a unit; the patch hands `Game` the AIs' own table). `git diff src/core` empty — X5 met. Four scoreboard numbers (`notes/microrts/games.md`): fidelity 100% exact over 716 decisions/5 runs, 0 read errors; ~120 est tokens a packet (target was 400); reaction p50 0.4–0.5 s, one `refreshMs` at 55–60 decisions/min; 5 of 5 against `ai.abstraction.WorkerRush` at $0. Found `bin/record.mjs`, `bin/snapshot.mjs`, `bin/discipline.mjs` Ashfall-only (hard-coded imports, left unchanged); fixed `bin/campaign.mjs` to count a draw as a decided game (`finished` now accepts `outcome.draw === true`, not just `outcome.won` boolean) |
 
 Deviations from the plan as written, and why:
 - **Recorder** uses one ordered in-memory queue flushed with `fs.writeSync` (immediately for `call`/`decision`/`result`/`done`, every 250 ms or 64 KB for `state`) instead of a `createWriteStream`: a stream cannot be flushed synchronously from `uncaughtException`, and two writers on one fd would reorder lines and break refs. Writes loop on the byte count so a short write cannot truncate a line.
@@ -250,7 +252,7 @@ Hub-side asks to file with `ashfall` once needed: `train{count}`, bank-threshold
 
 ## Cut until after game 12
 
-Per-class `pace` table and streaming dispatch (still open); `--row` shipped in M7. The second game adapter is the next plan.
+Per-class `pace` table and streaming dispatch (still open); `--row` shipped in M7. Next: oracle v2, the state side unbudgeted (HANDOFF item 5 — `facts.mjs` mirrors the encoder's shaping so the oracle measures only budget and cadence loss); other MicroRTS opponents (`LightRush`, `HeavyRush`, `RangedRush`, `ai.coac.CoacAI` — only `WorkerRush` is tested); a model game on `prompts/microrts/game01-sonnet.md` (never played — the key is Sonnet-only and MicroRTS so far has run at $0).
 
 ## Review 2026-09-12
 

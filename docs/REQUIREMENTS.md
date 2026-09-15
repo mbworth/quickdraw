@@ -113,6 +113,8 @@ The module exports `createAdapter(env, opts) → Adapter`. Two seats in one proc
 
 ## 9. Ashfall Sector adapter — `src/games/ashfall/`
 
+Run commands, flags, packet, orders, scripted policy and scoreboard: `notes/ashfall/README.md`.
+
 Protocol facts from the Ashfall dev (ask-dev, 2026-09-12; source `README.md` §Protocol, `docs/ARCHITECTURE.md` §Hub, `server/hub.mjs`, `shared/sim.mjs`). Re-ask before relying on anything not listed. Open with the dev: is event `seq` per game or per socket.
 
 **Fair play (Ashfall's rule).** `ctlView` is fog-limited and is the whole channel. Management QoL is allowed; foresight is not. Hub-side asks go through ask-dev to `ashfall`.
@@ -149,6 +151,93 @@ Protocol facts from the Ashfall dev (ask-dev, 2026-09-12; source `README.md` §P
 
 **Hub-side asks to file with `ashfall`.** `train{count}` on the wire; a bank-threshold wake event; an event-only mode with state on request; `seq` scope.
 
+## 9b. MicroRTS adapter — `src/games/microrts/`
+
+Run commands, flags, packet, orders, scripted policy and scoreboard: `notes/microrts/README.md`.
+
+Protocol facts verified against the clone's source and the running engine, 2026-09-14/15 (`src/ai/socket/SocketAI.java`,
+`src/rts/{RemoteGame,Game,GameState,PlayerAction,UnitAction,PhysicalGameState}.java`, `src/rts/units/UnitTypeTable.java`).
+Game two, and the proof of X5.
+
+**Fair play (MicroRTS's rule).** `basesWorkers16x16` has no fog, so the whole board is what a human at the screen sees;
+the adapter reads the state the engine hands it and nothing else. It never touches the engine's objects, only the socket.
+
+**Engine patch (required).** `src/games/microrts/remote-game-utt.patch`. In stock `launch_mode=CLIENT`, `RemoteGame.run()`
+builds one `UnitTypeTable` for the AIs and `Game(GameSettings, AI, AI)` a second for the board. `UnitAction.equals`
+compares a `TYPE_PRODUCE`'s `unitType` by object identity and `PlayerAction.fromJSON` resolves ours against the AI table,
+so `GameState.issueSafe` downgrades every produce — ours and any `ai.abstraction.*Rush`'s — to a `TYPE_NONE` of the same
+duration. Measured: the base idle for exactly `produceTime` after each produce; WorkerRush and `ai.coac.CoacAI` frozen at
+two units over 1500 cycles while `ai.RandomBiasedAI`, which reads the live state, reached 23. The patch hands `Game` the
+AIs' own table. `MICRORTS_LOCAL` must point at a clone with it applied.
+
+**Transport.** The engine dials OUT to a TCP server the adapter opens; newline-delimited JSON, `serialization_type=2`.
+`budget T I` → `ack`; `utt` + the type table → `ack` (sent twice, on reset and at start); `preGameAnalysis ms` + state →
+`ack`; `getAction <player>` + the full state → one PlayerAction line; `gameOver <winner>` → `ack`, winner `-1` = draw.
+`SocketAI` sets no socket timeout, so **the reply delay is the game's clock**: the adapter holds each answer until
+`--microrts-cycle-ms` (default 100) has passed since the last, and 3000 cycles is five minutes of real time. `connect()`
+listens and spawns the java child from a temp properties file (`--microrts-spawn false` waits for an external one);
+classpath `lib/*:lib/bots/*:bin` — `lib/*` alone misses the tournament bots. `seat()` resolves `{gameId, seat: 0}` once
+the socket and the type table have arrived; AI1 is always the socket AI in CLIENT mode, AI2 is `--microrts-opponent`.
+
+**State.** Materialized every `refreshMs` (500) from the last `getAction`: `{cycle, width, height, terrain, me, res[],
+tt, units[]}`, unit `{id, type, player, x, y, hp, carry, busy, st, eta, idleFor, make?, dest?}`. `tt` is the slice of the
+engine's type table the packet and the rules read, carried on every snapshot so `encode`/`expand`/`validate` stay pure
+over a recorded state and `bin/replay.mjs` needs no engine. **`busy` excludes `TYPE_NONE`**: `PlayerAction.fillWithNones`
+hands every unmentioned unit a 10-cycle idle and `GameState.issue` overwrites one freely, so reading those as busy hid
+every producer nine cycles in ten. `dest` is the cell an in-flight move or produce will take; the engine cancels a second
+unit heading for the same cell, so the buffer routes around them. Header `{lifecycle, phaseNative, clocks:{cycle}}`;
+`canAct` is `lifecycle === 'active'`; `deadline` is null.
+
+**Classes** (`meta.classes`, highest first): `danger contact loss idle done economy info`; cooldowns `danger` 2000,
+`contact` 1000, `idle` 1000. Cycle-to-cycle diffs (`digest.diffById`) give `loss` (my unit gone), `done` (my unit new),
+`danger` (my hp dropped, buildings above units by urgency), `info` (their unit died, started, gameover). `derive`
+predicates: an enemy within 6 of anything of mine → `contact` keyed on a 4×4 grid cell; my mobile unit idle ≥ 10 cycles →
+`idle`; a building that can produce and is free, or the bank crossing a purchase line → `economy`; a building under 60% →
+`danger`.
+
+**Encode layers**, priority in brackets: H [0] cycle, bank, my mobile units / theirs; D [0] diff since the previous
+decision; T [1] the core's ranked triggers, top 6; P [0] each of my buildings, what it is making and cycles left, or
+`IDLE`; E [1] resource nodes with what is left and the steps from my base; A [2] my mobile units clustered r=2 via
+`lib/cluster`, with **every id** (on a 16×16 board they cost a few characters and are the only way an order names one
+unit); B [2] my buildings; X [1] their units clustered, with steps to my base and to my nearest unit; L [0] my last
+orders with results. Each layer has one `*Facts` function and one renderer that prints those facts, so `read.mjs` and
+`facts.mjs` cannot drift. Fixed order, integers only, vocabulary from `abbr.mjs`. ~120 est tokens on 16×16.
+
+**Standing orders.** The engine takes one single-step action per unit per cycle; a decision arrives every 500 ms. So an
+order is a **goal** parked in `orders.mjs`, keyed by the unit it commands, and every cycle `step()` issues the next step
+toward it: BFS one cell, harvest or return when adjacent, attack what is in range. A new order for a unit replaces its
+goal, so repeating a standing order is free. An attack at a cell **holds** that cell rather than completing, and stops one
+step short when the cell is occupied (their base is a unit). A goal leaves the buffer when it completes, when its unit
+dies, or after `dropAfter` (20) cycles it could not be stepped. `send()` resolves on the first `step()` after the push —
+`ok` if a step went out or the subject is busy, `wait` if the goal stands but could not step, `dead`/`stuck` otherwise —
+so it is bounded by one cycle rather than the life of the goal.
+
+**Tool.** `meta.toolName` `orders`, `actionMode` `batch`, `orderCap` 10, one string (`tool.mjs`), decoded by `lang.mjs`:
+`t <id> <unit> [n]` produce (the id may be a Worker: a Worker produces Base and Barracks), `h <units> [nodeId]` harvest,
+`m <units> <x>,<y>` move, `a <units> <x>,<y>|<unitId>` attack-move or hunt, `-` nothing. There is no JSON mode and no
+`--microrts-lang` flag. `<units>` is ids, a selector (`all idle wk li hv rg`) or a cluster label pasted from A.
+
+**Expand.** Selectors and labels become ids (labels resolve against `decidedOn` first); ids are coerced; duplicates
+collapse; `train count` does **not** fan out, because MicroRTS has no queue — the count stays on the goal and the buffer
+produces one at a time, which is what keeps a producer busy between decisions.
+
+**Validate.** Mirrors `Unit.getUnitActions` + `issueSafe`, which silently replaces an illegal action with an idle of the
+same duration, so a bad order costs the unit its whole action. Drops: a producer that is not mine or cannot make the type;
+**a producer with an in-flight produce** (issuing over it cancels it and burns the resources — a producer merely walking
+keeps the order, the buffer holds it); an unaffordable produce, threading the bank through the list; a producer boxed in
+on all four sides; orders whose units are all dead or cannot do the job; a move or attack-move at a wall or off the map;
+an attack whose target is not a live enemy. Mobile units are never dropped for being busy: they are busy 8–20 cycles in
+every 10 and the buffer exists to wait for them.
+
+**Phase B.** `read.mjs` (packet text → facts, strict on H P E A B X, classifying on D T L, `ReadError` otherwise),
+`facts.mjs` (the same facts from the state, sharing coder's `*Facts`), `policy/rush.mjs` (`decide(text)` and
+`decideFacts(k)`), `test/games/microrts/bench/{cases,rules}.mjs`. `bin/oracle.mjs`, `bin/bench.mjs` and
+`bin/trajectory.mjs` all run with `--game microrts` and no change of their own.
+
+**Env.** `MICRORTS_LOCAL` (or `--microrts-local`), plus `--microrts-map --microrts-opponent --microrts-cycle-ms
+--microrts-max-cycles --microrts-port --microrts-spawn --microrts-order-cap`. The estimate divisor is the 3.5 placeholder:
+calibrating it needs `messages.countTokens` and a key (P2).
+
 ## 10. Tests
 
 - Q1. Core unit, no network, virtual time (`clock.mjs` injected everywhere a timer exists): trigger batching, cooldown and key-break, heartbeat from start, canAct/deadline, dirty re-entry with floor, suspend/resume on disconnect, edge detection; packet trimming; expand/cap/validate ordering; model request shape per model, stop-reason handling, deadline and no-stale-resend; recorder immediate vs buffered lines and signal flush; full loop against the mock adapter with a stub `callModel` passed through the injection point.
@@ -168,8 +257,16 @@ Protocol facts from the Ashfall dev (ask-dev, 2026-09-12; source `README.md` §P
 - X2. One variable per game, in this order: output length (thinking off vs low effort, order cap, drop `note`), then decision deadline, then heartbeat, then packet budget 600 → 400 → 300, then `--full-every`, then model, then prompt. Streaming per-cmd dispatch after that.
 - X3. Prompts are `prompts/<game>/gameNN-<model>.md`; the run records the prompt and schema shas; changing either between compared games is itself a variable.
 - X4. Stop shrinking the packet when orders-kept share or no-op share moves over three games; keep the last size that held.
-- X5. A second game is the proof of generality: added with zero changes under `src/core/`.
+- X5. A second game is the proof of generality: added with zero changes under `src/core/`. **Met 2026-09-15**: the
+  MicroRTS adapter (§9b) is 13 files under `src/games/microrts/` with `git diff src/core` empty. Three `bin/` tools turned
+  out Ashfall-only and were not changed: `bin/record.mjs` (hard `if (game !== 'ashfall')` plus direct `ashfall/ctl|auth|
+  scrub|opening` imports — fixtures were written from run rows instead), `bin/snapshot.mjs` (imports `ashfall/scrub.mjs`)
+  and `bin/discipline.mjs` (scores Ashfall's prompt rules). `bin/campaign.mjs` is game-generic but counted a draw as an
+  undecided game and stopped the campaign (MicroRTS ends at `max_cycles` in a draw); fixed 2026-09-15, `finished` now
+  takes `outcome.draw` too. The five games had run from a plain loop. `bin/bench.mjs` asks every game's `events.mjs` for
+  `toTrigger`, which MicroRTS therefore exports.
 - X6. Three-way split (2026-09-14): a live loss is attributed, never guessed. The scripted policy (M9) is the reference: it passes the bench (packet sufficiency), plays live at $0 (the strategy's win rate at the harness floor), and `trajectory --model script:<name> --diff` scores the model's decisions against it per line (`buyAgreeW`/`armyAgreeW`, windowed because the script re-issues standing orders every packet). Model departures become bench cases (snapshot the state); a harness change is gated on the bench against the script's line, then one live game; the campaign runner (`bin/campaign.mjs`) gives win rates per arm with a Wilson interval, the script arm free.
+- X7. Fidelity is the harness's own number, agent-independent and free: the scripted policy decides twice on every recorded decision, once from the packet the model saw (`read`) and once from facts built straight from the state it was encoded from (`src/games/<game>/facts.mjs`, same gameOpts, nothing budgeted away), and `bin/oracle.mjs` reports the decision-equivalence rate, the per-layer facts differences and the layer each disagreement came from. A packet change that costs fidelity is paying for its tokens with decisions.
 
 ## 13. Non-goals (this round)
 
@@ -183,5 +280,5 @@ Protocol facts from the Ashfall dev (ask-dev, 2026-09-12; source `README.md` §P
 - Event `seq` scope across rejoin (ask `ashfall`).
 - Streaming per-cmd dispatch: how validate runs on a partial order list.
 - ~~Whether slim packets (P3) hold decision quality~~: yes (bench 92% on the working config, every layer read; HANDOFF).
-- Second game candidate, so the adapter contract gets a real test early.
+- ~~Second game candidate, so the adapter contract gets a real test early~~: MicroRTS (§9b), added 2026-09-15 with `git diff src/core` empty — X5 met.
 - How far the packet may carry the plan's compound conditions (`--ashfall-guide`, `--ashfall-plan-marks`) before the model is copying a verdict rather than deciding; the script shows the plan needs no model at all, so the model's value is only in departures that win more than the plan.

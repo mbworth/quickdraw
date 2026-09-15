@@ -35,3 +35,4 @@ The measure is **seconds per decision** at equal or better win rate. Baseline: a
 - ~~Whether the delta alone suffices mid-game~~: no; every layer is read (sensitivity, 2026-09-14), the slim cadence keeps fields and remembered on one packet in five.
 - Where the model earns its call (2026-09-14): a scripted policy plays the plan from the packet at $0 and wins 10 of 11; the model wins about as often, slower, with more pushes. The harness's next lever is what the packet pre-computes (`--ashfall-guide`, `--ashfall-plan-marks`) and the open question is how much of that is still the model deciding.
 - Multi-seat (two pilots, one game) for self-play once a single pilot beats the scripted AI reliably.
+- Game two (MicroRTS, 2026-09-15) was added with zero changes under `src/core/` (X5): the plan's decisions — transport, loop, packet, cadence — held without a rewrite.
