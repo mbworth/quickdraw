@@ -31,6 +31,35 @@ model game on `prompts/microrts/game01-sonnet.md` (never played — the key is S
 other scripted opponents, and the harvester rule in `policy/rush.mjs` reading standing orders rather than engine action
 state. working config is now `--microrts-split-states true --microrts-goal-state true` (campaign 3, 5/5, 1.5–1.9 min).
 
+**MicroRTS model games (2026-09-15, games 16–20, Sonnet on `game01-sonnet.md`): 1 of 5, $0.04–0.30 a game.** At the real
+clock (100 ms a cycle) 0 of 4: reaction p50 2.2–3.1 s is 22–31 cycles a decision, the first worker starts at 44–76
+(script 0), the barracks lands at 364–404 or never (script 249), the rush at ~320 ends it in 0:41–0:49. API time is
+2.0–2.2 s on every config (`--thinking off` no change, `--effort low` −0.9 s reaction, overlap/event-tick no change).
+At `--microrts-cycle-ms 300` the same prompt **wins in 6:06** (barracks 280, first Light 452 — the script's numbers):
+plan and packet carry the model when its latency is not the clock. Model's share: 3–6 harvesters not two, the builder
+re-tasked mid-build twice, one raid ignored. Next: a scripted opening for the first ~250 cycles (Ashfall has
+`opening.mjs`), a sticky build in the buffer, then a game02 prompt; the parser now takes `a all wk 2,4` and a multi-id hunt.
+
+**Memory (2026-09-16, core M12): `--memory <chars>` feeds the model's own `n` note back as layer `N`.** Games 21–23 with it,
+1 of 3, against 1 of 3 without (18, 24–25), all at 300 ms a cycle, $0.11–0.35 a game. Order churn fell (harvest orders
+69/24/14 → 38/12/13, the builder never re-tasked mid-build) at +60 output tokens and +0.3–0.5 s a call, because the model
+rewrites the note every call instead of answering `null`. The win rate did not move: every loss is raiders at d ≤ 6 on
+`X` while the model keeps ordering workers, then no bank for a Light. That is a rule the decision does not apply, not a
+fact it forgot — memory is not the bottleneck against WorkerRush; the script's opening is. `replay`, `oracle` and
+`trajectory` reproduce `N` from the call row's `memory`. Open: make the model answer `null` when the note is unchanged
+(prompt or a cheaper schema), and the commander split — script reflexes at 0 ms, the model adjusting the plan's
+parameters with its note on a slower clock (`notes/microrts/games.md`).
+
+**History (2026-09-16, core M13): `--journal N` (last N decisions → `R`) and `--log N` (last N game triggers → `G`), harness-kept;
+`--microrts-foe-events` puts their production in `G`; prompt game03 asks the note for plan/why/doing/expect.** Games 26–28: 0 of 3
+at 300 ms, $0.20–0.22. The model keeps the form and tracks its builder, then loses exactly as 22–25: raiders at d ≤ 6 from ~t220
+while it orders workers, no Light. Six memory/history games say the loss is rule application inside the decision, not state
+across decisions. Probes (games.md, "Why memory did not help"): the model describes N/G/R correctly and, asked in text,
+applies rule 5; as the forced tool call it re-judges the raid from its priors ("lone worker, not a push", "d6 borderline")
+and inherits the verdict written in its own `why` (`no threats near`), patching the number. Memory must hold facts and intent,
+not conclusions. Next, in order: the commander split (script reflexes: harvesters, defence, build; the model sets plan
+parameters + note on a slow clock), then script campaigns vs LightRush/HeavyRush/CoacAI to find where the plan itself breaks.
+
 **Oracle v2 (2026-09-15).** The state side is now the full state view, not the encoder's shaping: every unit its own
 A entry with its own state, every building its position, F unfolded (`facts.mjs` both games; `encode(input, {full: true})`
 / `--<game>-full true` renders the same view so the invariant test still holds; every shipping config replays byte for
@@ -75,6 +104,9 @@ The script plays the same line with `--model script:game38` and no `--prompt`/`-
 | `--ashfall-fold-fields` | unexplored fields on one `f?` line, positions kept | game 17 |
 | `--ashfall-fields-on-demand` | `F` on every packet while a harvester is idle or a field is dry (gather needs a node id) | game 20: blind gathers 24 → 0 |
 | `--ashfall-no-note` | schema without `note`; output 121 → 89 | game 23 |
+| `--memory <chars>` (core) | the model's `n` note fed back as layer `N` on the next packet; M12 | MicroRTS games 21+ |
+| `--journal N` `--log N` (core) | harness-kept history: last N decisions as `R`, last N game triggers as `G`; M13 | MicroRTS games 26+ |
+| `--microrts-foe-events` | a new enemy unit is an info event, so `G` carries their production | games 26+ |
 | `--ashfall-compact-buildings` | one always-on `B` line: ids, types, anchor positions, hp/bld only when hurt or unfinished | bench: equals the full packet at 39% of its tokens |
 | `--ashfall-keep-remembered` | `M` on every packet at army priority (game 25: the enemy base reached the model on 1 packet of 118) | trajectory: pushTarget 22/25 vs 1/14 |
 | `--ashfall-lang` | one string out, decoded by `lang.mjs`; output 88 → 46, reaction 5.6 → 3.7 s | bench 98%, game 25 |

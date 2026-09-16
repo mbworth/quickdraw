@@ -181,3 +181,10 @@ test('toHeader maps lifecycle to a native phase name', () => {
   assert.equal(toHeader({ cycle: 3 }, 'active', 'g', 0).phaseNative, 'running');
   assert.equal(toHeader({ cycle: 3 }, 'ended', 'g', 0).phaseNative, 'over');
 });
+
+test('foe events: a new enemy unit is an info event only with {foe: true}', async () => {
+  const { detect } = await import('../../../src/games/microrts/events.mjs');
+  const prev = tiny(), next = tiny({ units: [...tiny().units, { id: 9, type: 'Light', player: 1, x: 3, y: 2, hp: 4, carry: 0, busy: false, st: 'idle', eta: 0, idleFor: 0 }] });
+  assert.deepEqual(detect(prev, next), []);
+  assert.deepEqual(detect(prev, next, { foe: true }), [{ cls: 'info', key: 'e9', native: { kind: 'foe', id: 9, type: 'Light', x: 3, y: 2 }, gt: 0 }]);
+});

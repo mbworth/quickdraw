@@ -13,7 +13,7 @@ import { headerFacts, productionFacts, economyFacts, armyClusters, buildingFacts
   delta as renderDelta, renderTrigger, lastOrders as renderLast } from './coder.mjs';
 import { delta as readDelta, triggers as readTriggers, last as readLast } from './read.mjs';
 
-const ALL = Object.values(TAG);
+const ALL = Object.values(TAG).filter(t => t !== 'G' && t !== 'R');   // G/R (--log/--journal) are history, not state: never on the state side
 
 // factsOf(encode's inputs, encode's gameOpts) → read()'s shape, unbudgeted and unshaped: layers is all nine tags.
 export function factsOf({ state, prevDecisionState = null, triggers = [], lastOrders: lo = [], pending = [] }, opts = {}) {

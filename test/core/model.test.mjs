@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import Anthropic from '@anthropic-ai/sdk';
-import { createModel, buildRequest, cost, extractO, completeCmds } from '../../src/core/model.mjs';
+import { createModel, buildRequest, cost, extractO, completeCmds, withMemory } from '../../src/core/model.mjs';
 import { virtualClock } from '../../src/core/clock.mjs';
 
 const tool = { type: 'object', properties: { act: { type: 'boolean' }, cmds: { type: 'array' } }, required: ['act', 'cmds'], additionalProperties: false };
@@ -155,4 +155,20 @@ test('--stream: eager tool input, each command handed to onOrders as it closes, 
   assert.deepEqual(got, ['t 12 tr 3', 'am army 65,25', 'g idle']);
   assert.equal(r.streamed, 3); assert.equal(r.stop, 'tool_use'); assert.equal(r.orders.length, 3);
   assert.throws(() => mk(fake(async () => reply({ act: true, cmds: [] })), { stream: true }), /needs the order language/);
+});
+
+test('--memory: the tool gains a required n (string|null); a string n becomes the note, null leaves it to the game decode', async () => {
+  const t = withMemory(tool, 120);
+  assert.deepEqual(t.required, ['act', 'cmds', 'n']);
+  assert.deepEqual(t.properties.n.type, ['string', 'null']);
+  assert.ok(/120/.test(t.properties.n.description));
+  assert.equal(tool.properties.n, undefined, 'the game schema is untouched');
+  let seen;
+  const { callModel } = mk(fake(async req => { seen = req; return reply({ act: true, cmds: [], note: 'ignored', n: 'plan: hold' }); }), { memory: 120 });
+  const r = await callModel({ packet: 'P' });
+  assert.deepEqual(seen.tools[0].input_schema.required, ['act', 'cmds', 'n']);
+  assert.equal(r.note, 'plan: hold');
+  const { callModel: cm2 } = mk(fake(async () => reply({ act: true, cmds: [], note: 'from decode', n: null })), { memory: 120 });
+  assert.equal((await cm2({ packet: 'P' })).note, 'from decode');
+  assert.throws(() => mk(fake(async () => reply({})), { memory: 120, reply: 'text', decode: () => ({ act: false, orders: [], note: null }) }), /--memory needs the tool/);
 });

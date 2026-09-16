@@ -23,7 +23,7 @@ import path from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { loadGameModule, loadAdapterModule, parseArgs } from '../src/core/args.mjs';
-import { assemble } from '../src/core/packet.mjs';
+import { assemble, memoryLayer } from '../src/core/packet.mjs';
 import { realClock } from '../src/core/clock.mjs';
 import { readRun } from '../src/core/record.mjs';
 
@@ -67,7 +67,7 @@ export async function oracleRun(file, { every = 1, from = 1, to = Infinity, poli
   let packetOf = call => call.packet;
   if (over) {
     const adapter = (await loadAdapterModule(cfg.game)).createAdapter({}, { ...opts, clock: realClock() });
-    packetOf = (call, inputs) => assemble(adapter.encode(inputs), { maxTokens: cfg.packetMax, divisor: cfg.divisor, fullEvery: cfg.fullEvery || 0, n: call.n }).text;
+    packetOf = (call, inputs) => assemble([...adapter.encode(inputs), ...memoryLayer(call.memory ?? null)], { maxTokens: cfg.packetMax, divisor: cfg.divisor, fullEvery: cfg.fullEvery || 0, n: call.n }).text;
   }
   const calls = rows.filter(r => r.kind === 'call' && r.packet != null && r.n >= from && r.n <= to && (r.n - from) % every === 0);
   const out = [], errors = { packet: 0, state: 0, firstPacket: null, firstState: null };
@@ -75,7 +75,7 @@ export async function oracleRun(file, { every = 1, from = 1, to = Infinity, poli
   let exact = 0, same = 0;
   for (const call of calls) {
     const inputs = { state: snapOf(rows, call.stateRef), prevDecisionState: call.prevDecisionRef ? snapOf(rows, call.prevDecisionRef) : null,
-      triggers: call.triggers || [], lastOrders: call.lastOrders || [], pending: call.pending || [] };
+      triggers: call.triggers || [], lastOrders: call.lastOrders || [], pending: call.pending || [], journal: call.journal, log: call.log };
     let A, B, fa, fb;   // each side is tried and counted on its own: an error on one never hides the other
     const e = {};
     try { fa = read(packetOf(call, inputs)); A = decideFacts(fa); } catch (err) { e.packet = err.message; errors.packet++; errors.firstPacket ??= `n=${call.n}: ${err.message}`; }

@@ -41,6 +41,10 @@ export function classifyError(err) {
 // The default reading of the tool input: {act, cmds, note}. A game may pass its own decode (an order language, --ashfall-lang).
 export const decodeCmds = input => ({ act: input.act !== false, orders: Array.isArray(input.cmds) ? input.cmds : [], note: typeof input.note === 'string' ? input.note : null });
 
+// withMemory(tool, max) → the tool with a required `n` (string|null): the model's note to itself for the next decision (--memory).
+// Strict-compatible the way the game schemas are: required, null for "keep the current note".
+export const withMemory = (tool, max) => ({ ...tool, properties: { ...tool.properties, n: { type: ['string', 'null'], description: `note to yourself for your next decision, at most ${max} characters; null keeps the current N unchanged` } }, required: [...(tool.required || []), 'n'] });
+
 export const answered = stop => stop === 'tool_use' || stop === 'text';   // the model returned something decodable
 
 // extractO(partialJson) → {text, closed}: the value of the tool input's "o" string as far as the partial JSON goes, JSON escapes
@@ -68,8 +72,9 @@ export const completeCmds = (text, closed) => { const parts = text.split(';'); i
 // stream: true streams the call and hands each complete command's decoded orders to onOrders as it closes; `streamed` counts the commands handed on.
 // Cold calls write the cache and compile the strict schema: game 12's calls 1 and 2 timed out at 6 s, so every call
 // before the first cache hit gets firstCallDeadlineMs.
-export function createModel({ client, model, system, tool, toolName, toolDescription, thinking, effort, reply = 'tool', stream = false, decisionDeadlineMs = 6000, firstCallDeadlineMs = decisionDeadlineMs * 3, prices = {}, clock, warn = m => console.warn(m), decode = decodeCmds }) {
+export function createModel({ client, model, system, tool, toolName, toolDescription, thinking, effort, reply = 'tool', stream = false, memory = 0, decisionDeadlineMs = 6000, firstCallDeadlineMs = decisionDeadlineMs * 3, prices = {}, clock, warn = m => console.warn(m), decode = decodeCmds }) {
   let calls = 0, warm = false;
+  if (memory > 0) { if (reply === 'text') throw new Error('--memory needs the tool (--reply tool): the note rides in its `n` field'); tool = withMemory(tool, memory); }
   const price = prices[model];
   if (reply === 'text' && decode === decodeCmds) throw new Error('--reply text needs a game decode for the text (--ashfall-lang true)');
   if (stream && (decode === decodeCmds || reply === 'text')) throw new Error('--stream needs the order language under the tool (--ashfall-lang true, --reply tool)');
@@ -103,7 +108,7 @@ export function createModel({ client, model, system, tool, toolName, toolDescrip
       } else if (res.stop_reason === 'tool_use' && tu && tu.input && typeof tu.input === 'object') {
         out.stop = 'tool_use';
         const d = decode(tu.input);
-        out.act = d.act; out.orders = d.orders; out.note = d.note;
+        out.act = d.act; out.orders = d.orders; out.note = memory > 0 && typeof tu.input.n === 'string' ? tu.input.n : d.note;
         if (stream && typeof tu.input.o === 'string') feed(tu.input.o, true);   // anything the partial scan did not hand on (exactly once per command)
       } else if (res.stop_reason === 'max_tokens') out.stop = 'max_tokens';
       else if (res.stop_reason === 'refusal') out.stop = 'refusal';

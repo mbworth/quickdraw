@@ -27,6 +27,7 @@ export function expand(cmds, state, { decidedOn = null } = {}) {
   const select = v => {
     if (v === 'all') return mobile(n).map(u => u.id);
     if (v === 'idle') return mobile(n).filter(u => !u.busy).map(u => u.id);
+    if (v.startsWith('idle:')) { const t = NAME[v.slice(5)]; return t ? mobile(n).filter(u => !u.busy && u.type === t).map(u => u.id) : []; }   // `idle wk` from lang.mjs
     const type = NAME[v];
     return type ? mobile(n).filter(u => u.type === type).map(u => u.id) : [];
   };
@@ -37,7 +38,7 @@ export function expand(cmds, state, { decidedOn = null } = {}) {
     if (c.units) {
       const ids = [];
       for (const v of Array.isArray(c.units) ? c.units : [c.units]) {
-        if (typeof v === 'string' && SELECTORS.has(v)) { ids.push(...(n ? select(v) : [])); continue; }
+        if (typeof v === 'string' && (SELECTORS.has(v) || v.startsWith('idle:'))) { ids.push(...(n ? select(v) : [])); continue; }
         const cl = typeof v === 'string' ? (decidedOn && clusterIds(v, decidedOn)) || clusterIds(v, state) : null;
         if (cl) { ids.push(...cl); continue; }
         const id = coerceId(v); if (id === null) bad = true; else ids.push(id);

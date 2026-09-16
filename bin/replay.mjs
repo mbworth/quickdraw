@@ -4,7 +4,7 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadAdapterModule } from '../src/core/args.mjs';
-import { assemble } from '../src/core/packet.mjs';
+import { assemble, memoryLayer } from '../src/core/packet.mjs';
 import { readRun } from '../src/core/record.mjs';
 import { realClock } from '../src/core/clock.mjs';
 
@@ -16,7 +16,7 @@ export function replayDecision(rows, n, adapter, cfg) {
   if (!call) throw new Error(`no call line for decision ${n}`);
   const state = snapOf(rows, call.stateRef);
   const prevDecisionState = call.prevDecisionRef ? snapOf(rows, call.prevDecisionRef) : null;
-  const layers = adapter.encode({ state, prevDecisionState, triggers: call.triggers, lastOrders: call.lastOrders, pending: call.pending || [] });
+  const layers = [...adapter.encode({ state, prevDecisionState, triggers: call.triggers, lastOrders: call.lastOrders, pending: call.pending || [], journal: call.journal, log: call.log }), ...memoryLayer(call.memory ?? null)];
   const pkt = assemble(layers, { maxTokens: cfg.packetMax, divisor: cfg.divisor, fullEvery: cfg.fullEvery || 0, n });
   return { recorded: call.packet, replayed: pkt.text, same: pkt.text === call.packet, layers, kept: pkt.kept.map(k => k.name) };
 }

@@ -21,7 +21,7 @@ export async function boot(argv, opts = {}) {
 
 export const isScript = model => /^script:/.test(String(model || ''));
 // --model script:<name>: src/games/<game>/policy/<name>.mjs plays instead of the API (no key, no prompt, $0); needs the order language decode.
-export async function modelFor({ adapter, game, model, system, thinking = 'adaptive', effort = 'low', reply = 'tool', stream = false, decisionDeadlineMs, clock }) {
+export async function modelFor({ adapter, game, model, system, thinking = 'adaptive', effort = 'low', reply = 'tool', stream = false, memory = 0, decisionDeadlineMs, clock }) {
   if (isScript(model)) {
     const name = String(model).slice(7);
     if (!/^[a-z0-9_-]+$/i.test(name)) throw new Error(`bad policy name ${name}`);
@@ -32,5 +32,5 @@ export async function modelFor({ adapter, game, model, system, thinking = 'adapt
     return scriptModel({ decide, decode: adapter.decode, clock });
   }
   const { default: Anthropic } = await import('@anthropic-ai/sdk');
-  return createModel({ client: new Anthropic(), model, system, tool: adapter.tool, toolName: adapter.meta.toolName, toolDescription: adapter.meta.toolDescription, decode: adapter.decode, thinking: String(thinking), effort, reply: String(reply), stream: !!stream, decisionDeadlineMs, prices: prices(), clock });
+  return createModel({ client: new Anthropic(), model, system, tool: adapter.tool, toolName: adapter.meta.toolName, toolDescription: adapter.meta.toolDescription, decode: adapter.decode, thinking: String(thinking), effort, reply: String(reply), stream: !!stream, memory: Number(memory) || 0, decisionDeadlineMs, prices: prices(), clock });
 }

@@ -14,8 +14,9 @@ const theirs = n => n.units.filter(u => u.player >= 0 && u.player !== n.me);
 const isBuilding = (n, u) => !(n.tt[u.type]?.move);
 export const isNode = (n, u) => !!n.tt[u.type]?.res;
 
-// detect(prev, next) → [{cls, key, native, gt}] for one engine cycle. Buildings rank above units via urgency.
-export function detect(prev, next) {
+// detect(prev, next, {foe}) → [{cls, key, native, gt}] for one engine cycle. Buildings rank above units via urgency.
+// foe (--microrts-foe-events): a new enemy unit is an info event too, so the game log (G) carries what the opponent built and when.
+export function detect(prev, next, { foe = false } = {}) {
   if (!prev) return [{ cls: 'info', key: 'started', native: { kind: 'started' }, gt: next.cycle }];
   const d = diffById(prev, next, { lists: [{ name: 'u', path: 'units', fields: ['hp'] }] }).u;
   const out = [], gt = next.cycle;
@@ -24,7 +25,10 @@ export function detect(prev, next) {
     if (u.player === next.me) out.push({ cls: 'loss', key: String(u.id), native: { kind: 'lost', id: u.id, type: u.type }, gt });
     else if (u.player >= 0) out.push({ cls: 'info', key: String(u.id), native: { kind: 'kill', id: u.id, type: u.type }, gt });
   }
-  for (const u of d.added) if (u.player === next.me) out.push({ cls: 'done', key: String(u.id), native: { kind: 'done', id: u.id, type: u.type }, gt });
+  for (const u of d.added) {
+    if (u.player === next.me) out.push({ cls: 'done', key: String(u.id), native: { kind: 'done', id: u.id, type: u.type }, gt });
+    else if (foe && u.player >= 0 && !isNode(next, u)) out.push({ cls: 'info', key: `e${u.id}`, native: { kind: 'foe', id: u.id, type: u.type, x: u.x, y: u.y }, gt });
+  }
   for (const c of d.changed) {
     const u = c.next;
     if (u.player !== next.me || u.hp >= c.prev.hp) continue;

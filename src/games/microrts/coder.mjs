@@ -49,7 +49,7 @@ export function renderTrigger(tr) {
     case 'idle': return `idle #${tr.key.replace(/^u/, '')}`;
     case 'done': return `done ${who}${x}`;
     case 'economy': return tr.key.startsWith('b') ? `IDLE #${tr.key.slice(1)}` : `r ${ty(tr.key.slice(1))}`;
-    case 'info': return v.kind === 'kill' ? `kill ${who}${x}` : v.kind || tr.key;
+    case 'info': return v.kind === 'kill' ? `kill ${who}${x}` : v.kind === 'foe' ? `foe ${who}@${v.x},${v.y}` : v.kind || tr.key;
     case 'heartbeat': return 'hb';
     case 'resume': return 'resync';
     default: return `${tr.cls} ${tr.key}`;
@@ -69,8 +69,10 @@ export const economy = n => economyFacts(n).map(r => `${r.type}#${r.id}@${r.x},$
 
 // goalState: render the standing order, not the mid-step engine action, so a harvester walking to its node still
 // reads 'h' instead of 'm' — the goal survives until it completes, the engine action flips step to step. Goal kinds
-// (harvest, move, attack) are already STATE's own letters; train never lands on a mobile unit so it never applies here.
-const effSt = (u, goalState) => (goalState && u.goal) ? u.goal : u.st;
+// (harvest, move, attack) are already STATE's own letters; a `train` goal on a worker is a barracks going up, so it reads
+// `p` (game 18: the builder showed `?` for 100 cycles and the model re-tasked it four times).
+const GOAL_ST = { train: 'produce' };
+const effSt = (u, goalState) => (goalState && u.goal) ? (GOAL_ST[u.goal] || u.goal) : u.st;
 // splitStates: fold state into cluster()'s type key, so a mixed-state cluster (one harvester + one walker) never
 // merges onto one dominant state; one cluster() pass, original unit order preserved (one type key strips it back off).
 const stKey = (u, goalState) => `${u.type}\0${effSt(u, goalState)}`;
@@ -100,13 +102,29 @@ export const enemy = (n, o) => enemyFacts(n, o).map(c => `${c.label} d${c.dB ?? 
 
 export const lastOrders = list => (!list?.length ? 'none' : list.map(o => `${encodeOrder(o.cmd || {})} ${o.ok ? 'ok' : errCode(o.error)}`).join('; '));
 
+// G: the game so far, from the triggers that woke every decision (--log): one line per 50-cycle bucket, noise classes out,
+// repeats within a bucket counted. R: the last decisions (--journal), one line each: cycle, what woke it | orders and results.
+const LOGGED = new Set(['danger', 'contact', 'loss', 'done', 'info']);
+const BUCKET = 50;
+export function logLines(log) {
+  const by = new Map();
+  for (const tr of log) {
+    if (!LOGGED.has(tr.cls) || tr.gt == null) continue;
+    const b = Math.floor(tr.gt / BUCKET) * BUCKET, text = renderTrigger({ ...tr, count: 1 });
+    const m = by.get(b) || new Map(); by.set(b, m); m.set(text, (m.get(text) || 0) + (tr.count || 1));
+  }
+  return [...by.entries()].map(([b, m]) => `t${b} ${[...m.entries()].map(([t, c]) => (c > 1 ? `${t} x${c}` : t)).join('; ')}`);
+}
+export const journalLines = journal => journal.map(j => `t${j.clocks?.cycle ?? '-'} ${j.triggers.filter(tr => LOGGED.has(tr.cls)).slice(0, 4).map(renderTrigger).join('; ') || '-'} | ${lastOrders(j.orders)}`);
+
 const layer = (name, priority, text, extra = {}) => ({ name, priority, text: `${TAG[name]} ${text}`, ...extra });
-const lineLayer = (name, priority, items, extra = {}) => (items.length ? { name, priority, text: TAG[name], lines: items.map(text => ({ text, priority })), ...extra } : { name, priority, text: `${TAG[name]} none`, ...extra });
+const lineLayer = (name, priority, items, extra = {}, prio = () => priority) => (items.length ? { name, priority, text: TAG[name], lines: items.map((text, i) => ({ text, priority: prio(i, items.length) })), ...extra } : { name, priority, text: `${TAG[name]} none`, ...extra });
+const oldestFirst = (i, len) => 1 + (len - 1 - i);   // G/R under budget: the oldest line goes first, the newest last
 
 // encode({state, prevDecisionState, triggers, lastOrders}, opts) → Layer[]
 // opts.full: the unbudgeted full state view — A one line per unit and X one line per enemy (v3), facts.mjs's shape, for the
 // fidelity oracle's invariant test.
-export function encode({ state, prevDecisionState, triggers = [], lastOrders: lo = [], pending = [] }, { full = false, splitStates = false, goalState = false } = {}) {
+export function encode({ state, prevDecisionState, triggers = [], lastOrders: lo = [], pending = [], journal, log }, { full = false, splitStates = false, goalState = false } = {}) {
   const n = state.native, prev = prevDecisionState?.native || null;
   return [
     layer('header', 0, header(n)),
@@ -117,6 +135,8 @@ export function encode({ state, prevDecisionState, triggers = [], lastOrders: lo
     lineLayer('army', 2, armyLines(n, { r: full ? FULL_R : CLUSTER_R, splitStates, goalState })),
     layer('buildings', 2, buildings(n)),
     lineLayer('enemy', 1, enemy(n, { r: full ? FULL_R : CLUSTER_R })),
+    ...(log ? [lineLayer('log', 1, logLines(log), {}, oldestFirst)] : []),
+    ...(journal ? [lineLayer('recent', 1, journalLines(journal), {}, oldestFirst)] : []),
     layer('last', 0, lastOrders(lo) + (pending.length ? `; ${pending.map(s => s.slice(0, 4).map(renderTrigger).join(', ')).join(' | ')}` : '')),
   ];
 }

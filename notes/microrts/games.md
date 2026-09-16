@@ -21,6 +21,19 @@ Local engine, `maps/16x16/basesWorkers16x16.xml` against `ai.abstraction.WorkerR
 | 13 | basesWorkers16x16-WorkerRush-mu35bh6d | script:rush, quickdraw | **win** | 1:30 | campaign 3/5: 87 decisions (56.2/min), reaction p50 0.5 s / p90 0.5 s (wait 0 s), model p50 0 s, 0 out tokens, packet null real, 0 timeouts, kept 53.9%, 19 rejected, cache null%, $0 |
 | 14 | basesWorkers16x16-WorkerRush-mu35dkxf | script:rush, quickdraw | **win** | 2:00 | campaign 4/5: 108 decisions (55.4/min), reaction p50 0.5 s / p90 0.5 s (wait 0 s), model p50 0 s, 0 out tokens, packet null real, 0 timeouts, kept 54.2%, 30 rejected, cache null%, $0 |
 | 15 | basesWorkers16x16-WorkerRush-mu35g7bd | script:rush, quickdraw | **win** | 1:36 | campaign 5/5: 89 decisions (54.2/min), reaction p50 0.5 s / p90 0.5 s (wait 0 s), model p50 0 s, 0 out tokens, packet null real, 0 timeouts, kept 52.7%, 22 rejected, cache null%, $0 |
+| 16 | basesWorkers16x16-WorkerRush-mu35s4kh | claude-sonnet-5, quickdraw | loss | 0:42 | model 1: plain: 17 decisions (22.9/min), reaction p50 3.1 s / p90 5.6 s (wait 0.8 s), model p50 2.1 s, 47 out tokens, packet 490 real, 0 timeouts, kept 39.4%, 4 rejected, cache 100% (2821 written), $0.0403 |
+| 17 | basesWorkers16x16-WorkerRush-mu35upxg | claude-sonnet-5, quickdraw | loss | 0:42 | model 2: --overlap 2 --event-tick: 25 decisions (34.8/min), reaction p50 3.1 s / p90 4.6 s (wait 0.2 s), model p50 2.1 s, 46 out tokens, packet 480 real, 1 timeouts, 21 overlapped, kept 30.4%, 9 rejected, cache 100%, $0.0494 |
+| 18 | basesWorkers16x16-WorkerRush-mu35uul3 | claude-sonnet-5, quickdraw | **win** | 6:06 | model 3: --microrts-cycle-ms 300 (latency-free diagnostic): 135 decisions (22.1/min), reaction p50 3.9 s / p90 5.4 s (wait 0.7 s), model p50 2.2 s, 54 out tokens, packet 545 real, 2 timeouts, kept 41.1%, 71 rejected, cache 100%, $0.2998 |
+| 19 | basesWorkers16x16-WorkerRush-mu363izf | claude-sonnet-5, quickdraw | loss | 0:42 | model 4: --thinking off --overlap 2 --event-tick: 24 decisions (35.1/min), reaction p50 3.1 s / p90 4.4 s (wait 0 s), model p50 2.2 s, 50 out tokens, packet 495 real, 0 timeouts, 20 overlapped, kept 42.6%, 6 rejected, cache 95.7% (5642 written), $0.0616 |
+| 20 | basesWorkers16x16-WorkerRush-mu363mff | claude-sonnet-5, quickdraw | loss | 0:48 | model 5: --effort low --overlap 2 --event-tick: 32 decisions (38.7/min), reaction p50 2.2 s / p90 3.3 s (wait 0 s), model p50 2 s, 48 out tokens, packet 505 real, 1 timeouts, 29 overlapped, kept 37.3%, 15 rejected, cache 100%, $0.0649 |
+| 21 | basesWorkers16x16-WorkerRush-mu4a1wcj | claude-sonnet-5, quickdraw | **win** | 6:30 | campaign 1/3: 116 decisions (17.7/min), reaction p50 5.4 s / p90 7.5 s (wait 1.6 s), model p50 2.8 s, 122 out tokens, packet 585 real, 0 timeouts, kept 39.3%, 81 rejected, cache 100%, $0.3503 |
+| 22 | basesWorkers16x16-WorkerRush-mu4aaf6x | claude-sonnet-5, quickdraw | loss | 2:12 | campaign 2/3: 42 decisions (19.1/min), reaction p50 4.8 s / p90 6.3 s (wait 0.2 s), model p50 2.4 s, 104 out tokens, packet 510 real, 0 timeouts, kept 38.6%, 12 rejected, cache 100%, $0.1122 |
+| 23 | basesWorkers16x16-WorkerRush-mu4add1e | claude-sonnet-5, quickdraw | loss | 3:00 | campaign 3/3: 54 decisions (18/min), reaction p50 4.8 s / p90 6 s (wait 0.6 s), model p50 2.5 s, 104 out tokens, packet 529 real, 0 timeouts, kept 41.5%, 12 rejected, cache 100%, $0.1476 |
+| 24 | basesWorkers16x16-WorkerRush-mu4ah87z | claude-sonnet-5, quickdraw | loss | 2:42 | campaign 1/2: 53 decisions (19.8/min), reaction p50 5.1 s / p90 6 s (wait 0.1 s), model p50 2.3 s, 44 out tokens, packet 460 real, 0 timeouts, kept 45.6%, 7 rejected, cache 100% (2821 written), $0.11 |
+| 25 | basesWorkers16x16-WorkerRush-mu4aks2u | claude-sonnet-5, quickdraw | loss | 2:00 | campaign 2/2: 40 decisions (20/min), reaction p50 3.9 s / p90 4.5 s (wait 0 s), model p50 2.1 s, 46 out tokens, packet 468 real, 0 timeouts, kept 40.6%, 10 rejected, cache 100%, $0.0777 |
+| 26 | basesWorkers16x16-WorkerRush-mu4fki7q | claude-sonnet-5, quickdraw | loss | 2:42 | campaign 1/3: 54 decisions (20/min), reaction p50 4.5 s / p90 5.4 s (wait 0.3 s), model p50 2.6 s, 149 out tokens, packet 854 real, 0 timeouts, kept 31.3%, 15 rejected, cache 100% (3718 written), $0.2149 |
+| 27 | basesWorkers16x16-WorkerRush-mu4fo38c | claude-sonnet-5, quickdraw | loss | 2:36 | campaign 2/3: 54 decisions (20.4/min), reaction p50 3.9 s / p90 5.4 s (wait 0.2 s), model p50 2.4 s, 136 out tokens, packet 819 real, 0 timeouts, kept 23.1%, 10 rejected, cache 100%, $0.1972 |
+| 28 | basesWorkers16x16-WorkerRush-mu4frlxk | claude-sonnet-5, quickdraw | loss | 3:00 | campaign 3/3: 57 decisions (19.2/min), reaction p50 4.2 s / p90 6 s (wait 0.6 s), model p50 2.6 s, 144 out tokens, packet 899 real, 2 timeouts, kept 37.1%, 17 rejected, cache 100%, $0.2194 |
 
 **Campaign 1 (`script:rush` vs `ai.abstraction.WorkerRush`, 2026-09-15): 5 of 5**, every game 2:24–2:36, 55–60
 decisions a minute, reaction p50 0.4–0.5 s (one `refreshMs`: the floor for a 500 ms state cadence), $0.
@@ -71,6 +84,62 @@ harvesters 2–4 (9–11; 14–21). Fidelity on these recordings: **89% same / 6
 `--arm --microrts-goal-state false` on the same recordings reads 64%, so the flag itself is worth 25 points of fidelity
 and the whole of the churn. First Light still 464–509 (campaign 1: 434) but the harvesters never drop ore, so the
 defence holds and the push lands 500 cycles sooner. Both flags are the working config from here.
+
+**Model games 16–20 (Sonnet, `prompts/microrts/game01-sonnet.md`, working packet flags, 2026-09-15): 1 of 5, and the
+one win is the diagnostic.** At the real clock (100 ms a cycle) the model lost four games in 0:41–0:49, $0.04–0.06 each:
+reaction p50 3.1 s (2.2 s with `--effort low`) is 22–31 cycles a decision, so the base starts its first worker at cycle
+44–76 (script: 0), the barracks lands at 364–404 or never (script: 249), and the rush that arrives around cycle 320 kills
+the builder or the base before a Light exists. API time is 2.0–2.2 s of that on every config — `--thinking off` and
+`--overlap 2 --event-tick` do not move it, `--effort low` takes 0.9 s off the reaction and not enough off the opening.
+Game 18 at `--microrts-cycle-ms 300` (13 cycles a decision) **won in 6:06 for $0.30** with the barracks at 280 and the
+first Light at 452, inside the script's range: plan and packet carry the model once its latency is not the game clock.
+The model's own share, from the trajectory rules: 3–6 harvesters where the plan says two (`harvesters` 6/14, 7/21,
+12/110, 3/18, 9/29), the barracks builder re-tasked to harvest or move in games 17 and 19 (the buffer's one goal per
+unit cancels the build), and no answer to the raid in game 17. Two phrasings the parser refused (`a all wk 2,4`, a hunt
+with two ids) now parse (`lang.mjs`). Harness-side next: a scripted opening (`opening.mjs` exists for Ashfall) so the
+first 250 cycles do not wait on a 3 s call, and a sticky build so an in-flight barracks survives a re-task.
+
+**Memory (`--memory 200`, `game02-sonnet.md`, 300 ms a cycle, 2026-09-16): 1 of 3 (games 21–23) against 1 of 3 without it
+(games 18, 24–25).** The model writes a note to itself in the tool's `n` field and reads it back as layer `N` on the next
+packet (core, game-agnostic; docs/REQUIREMENTS.md M12). It did what it was built for: harvest orders per game 69/24/14 →
+38/12/13, barracks builders 3/2/4 → 2/1/2, the builder never re-tasked mid-build, and the note read as a plan
+(`#22,#25 harvesting. Base pumping workers to 6. Next free worker with 5+ banked builds barracks near 2,2`). It cost
+what a note costs: the model rewrote it on every call (116/116, 93 distinct), output 44–54 → 104–122 tokens, model p50
+2.1–2.3 → 2.4–2.8 s, reaction p50 3.9–5.1 → 4.8–5.4 s. It did not move the win rate, because all four losses are the same
+in-decision failure: raiders on `X` at d ≤ 6 from cycle ~205 while the model keeps ordering `t 20 wk 5`, four harvesters
+instead of two, the bank at 0–2 when the barracks finishes (255), so no Light ever comes and the base is dead by 360–470.
+The defence rule was never in the note, and the note cannot fire a rule the decision does not apply. Memory removes
+the forgetting; the rule-following is still the loss. Also fixed: a worker building a barracks read state `?` under
+`--microrts-goal-state` (STATE had no `train`); it reads `p` now, so game 18 replays 127/138 and every later run 100%.
+
+**History (`--journal 6 --log 60 --memory 300 --microrts-foe-events true --packet-max 900`, `game03-sonnet.md`, 300 ms a
+cycle, 2026-09-16): 0 of 3 (games 26–28), $0.20–0.22 a game.** The harness now keeps what happened — `G` the game so far
+(their production, contacts, losses, kills in 50-cycle buckets), `R` the last six decisions with their outcomes — and the
+note is asked for plan / why / doing / expect. The scaffolding worked as a scaffold: every note kept the form, the
+builder was tracked from order to barracks (games 26–27 one builder each), harvest orders 14/9/23, and the model wrote
+what it saw. It lost the same way as 22–25: first raider at d ≤ 6 on `X` at t218/240/222, first attack order at
+t293/never/260, base making workers throughout, barracks at 253/297/260 with the bank at 1–2, no Light. Game 26's `why`
+said `no threats near (d>=5)` on three consecutive packets that showed a raider at d5, d4, d3; game 27's `expect` said
+`br done soon` for twelve decisions with no cycle to check. Cost of the history: packet 819–899 real tokens (was ~530),
+output 136–149 (note rewritten every call), model p50 2.4–2.6 s. Conclusion after six memory games: neither memory nor
+history is the bottleneck against WorkerRush — the defence and the two-harvester rules are not applied inside the
+decision that sees the trigger. Script with the same flags: win 1:44, 115/115 replayed, `G`/`R`/`N` skipped by the reader.
+
+**Why memory did not help (probes on game 26's packets n=24–27, raider at d7/d6/d5/d4, ~$0.55 total).** Asked in text on
+packet 26 the model describes N/G/R correctly ("N is my own note… G the harness's game log… R my recent decisions so I
+can check if orders stuck"), quotes `wk#24 d5`, cites rule 5 and orders the attack. The same packet as the forced tool
+call answers `-` and re-emits the previous note with `no threats near (d>=6)` patched to `(d>=5)`. Ablation, 8 samples
+an arm (4 packets × 2): recorded 0/8 defend; N stripped 0/8 (`why: scattered but far`, `not urgent`); N reset to a
+neutral note 0/8; effort high 0/8; `check:` field first 0/8 — it writes `nearest wk#24 d5, rule5 doesn't fire (d>2)`,
+reading the harvesters' d ≤ 2 clause as the threshold; rule 5 rewritten (`two nearest workers hunt it, mining does not
+excuse`) 0/8, and with N present the note still says `no threats near (d>=6)` on a packet showing d5; rewritten rule +
+one line of text before the tool 2/8 (`d5 — under threshold ≤6, rule 5 fires` … or `d4 — just a lone worker, not an
+aggressive push`); same without N 2/8. Reading: (1) the model knows what the memory is; (2) the loss is a judgement it
+makes fresh each call from its priors about RTS games — a lone worker is not a raid, d6 is "borderline" — against a
+rule it treats as advisory, and in the forced one-line tool mode it never states the check at all; (3) the note makes
+this stickier, not better: `why` carries the previous verdict (`no threats near`) and the model inherits the verdict
+and edits its number rather than re-deriving it — a conflict between rule and memory that the model itself wrote into
+memory. Memory should carry facts and intent (ids, cycles, a checkable `expect`), never a conclusion.
 
 **What the plan is.** Two harvesters, the base on workers to six, a barracks at three workers and five banked, then
 Light forever; defend anything within six of the base (harvesters too inside two), attack at three Light. Written out in

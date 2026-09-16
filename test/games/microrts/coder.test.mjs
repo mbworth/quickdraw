@@ -73,3 +73,39 @@ test('splitStates: a mixed-state cluster splits into one line per state; off by 
   assert.deepEqual(armyOf(encode(inp)), ['wk x2@1,2 h #5,#6']);                              // default: one dominant-state line
   assert.deepEqual(armyOf(encode(inp, { splitStates: true })), ['wk x1@1,1 h #5', 'wk x1@1,2 m #6']);
 });
+
+test('goalState: a train goal on a worker (building a barracks) reads p, not ?', () => {
+  const W = (id, x, y, st, goal) => ({ id, type: 'Worker', player: 0, x, y, hp: 1, carry: 0, busy: st !== 'idle', st, eta: 0, idleFor: 0, goal });
+  const units = [tiny().units[0], tiny().units[1], W(5, 1, 1, 'move', 'train'), W(6, 3, 2, 'move', 'harvest')];
+  const inp = { state: tinySnap({ units }), prevDecisionState: null, triggers: [], lastOrders: [], pending: [] };
+  const armyOf = layers => layers.find(l => l.name === 'army').lines.map(l => l.text);
+  assert.deepEqual(armyOf(encode(inp, { splitStates: true, goalState: true })), ['wk x1@1,1 p #5', 'wk x1@3,2 h #6']);
+});
+
+test('G and R: the game log buckets logged triggers by 50 cycles with repeats counted; the journal is one line per decision; absent when off', () => {
+  const inp = { state: tinySnap(), prevDecisionState: null, triggers: [], lastOrders: [], pending: [] };
+  assert.ok(!encode(inp).some(l => l.name === 'log' || l.name === 'recent'));
+  const tr = (cls, key, native, gt, count = 1) => ({ cls, key, native, gt, count });
+  const log = [tr('info', 'started', { kind: 'started' }, 0), tr('done', '25', { kind: 'done', id: 25, type: 'Worker' }, 52), tr('contact', '0,2', null, 205, 2), tr('contact', '0,2', null, 231), tr('heartbeat', 'hb', null, 233), tr('economy', 'b20', null, 240), tr('loss', '29', { kind: 'lost', id: 29, type: 'Worker' }, 282), tr('info', 'e30', { kind: 'foe', id: 30, type: 'Light', x: 13, y: 12 }, 290)];
+  const journal = [{ n: 3, clocks: { cycle: 90 }, triggers: [tr('economy', 'b20', null, 90), tr('done', '25', { kind: 'done', id: 25, type: 'Worker' }, 88)], orders: SAMPLE_LAST }, { n: 4, clocks: { cycle: 105 }, triggers: [tr('heartbeat', 'hb', null, 105)], orders: [] }];
+  const layers = encode({ ...inp, log, journal });
+  assert.deepEqual(layers.map(l => l.name).slice(-3), ['log', 'recent', 'last']);
+  const text = name => layers.find(l => l.name === name).lines.map(l => l.text);
+  assert.deepEqual(text('log'), ['t0 started', 't50 done wk#25', 't200 seen at 0,2 x3', 't250 lost wk#29; foe li#30@13,12']);
+  assert.deepEqual(text('recent'), ['t90 done wk#25 | t 20 wk ok; h #22 #16 busy; a #22 13,13 dropped:stale', 't105 - | none']);
+  const empty = encode({ ...inp, log: [], journal: [] });
+  assert.equal(empty.find(l => l.name === 'log').text, 'G none'); assert.equal(empty.find(l => l.name === 'recent').text, 'R none');
+  for (const w of [...text('log'), ...text('recent')].join(' ').match(/[A-Za-z]+/g)) assert.ok(VOCAB.has(w), `word "${w}" not in ABBR`);
+});
+
+test('G and R trim oldest first under the budget', () => {
+  const tr = (gt, id) => ({ cls: 'done', key: String(id), native: { kind: 'done', id, type: 'Worker' }, gt, count: 1 });
+  const log = [tr(10, 1), tr(60, 2), tr(110, 3), tr(160, 4)];
+  const layers = encode({ state: tinySnap(), prevDecisionState: null, triggers: [], lastOrders: [], pending: [], log });
+  const g = layers.find(l => l.name === 'log');
+  assert.deepEqual(g.lines.map(l => l.priority), [4, 3, 2, 1]);
+  const trimmed = assemble([g], { maxTokens: assemble([g], { maxTokens: 100000 }).estTokens - 4 });   // the log alone: the army and buildings layers would go first in a whole packet
+  const kept = trimmed.text.split('\n').filter(l => /^t\d+ done/.test(l));
+  assert.ok(kept.length >= 1 && kept.length < 4, `trimmed some: ${kept.length}`);
+  assert.deepEqual(kept, ['t0 done wk#1', 't50 done wk#2', 't100 done wk#3', 't150 done wk#4'].slice(-kept.length), 'newest survive');
+});

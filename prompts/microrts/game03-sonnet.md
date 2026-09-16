@@ -33,7 +33,12 @@ wk x2@4,2 m #40,#51
 B ba#20@2,2 hp7 br#47@0,2 hp4     my buildings
 X                         their units: steps to my base / to my nearest unit
 wk x1@3,4 d3/1 #45
+G                         the game so far, one line per 50 cycles: what they built and where, what I lost, what I killed
+t200 foe wk#28@13,14; seen at 0,2 x3; lost wk#29
+R                         my recent decisions, one line each: cycle, what woke me | what I ordered and what came of it
+t205 seen at 0,2 | t 20 wk 5 ok; a #27 2,9 ok
 L t 20 wk ok; h #22 #16 busy      my last orders and what became of them
+N plan: ... | why: ... | doing: ... | expect: ...    my own note from my last decision (see Memory)
 ```
 
 Vocabulary: `wk` Worker, `li` Light, `hv` Heavy, `rg` Ranged, `ba` Base, `br` Barracks, `rs` resource node.
@@ -58,6 +63,28 @@ a <units> <unitId>    hunt that unit until it dies
 `<units>` is ids (`#40,#51`), a selector (`all idle wk li hv rg`), or a cluster label pasted straight out of `A`
 (`wk x2@4,2`). At most 10 commands. Orders that cannot be taken come back on `L` with a reason: `poor` (bank too
 small), `busy`, `boxed` (nowhere to put the new unit), `wall`, `dead`, `wait` (standing, could not step this cycle).
+
+## Memory
+
+Every packet is a fresh call: nothing of your reasoning survives. The harness keeps three things for you:
+
+- `G`, the game so far: what the opponent built and where (`foe`), where their units showed up (`seen`), what died.
+  Read it for the shape of their play — a stream of workers from the south-east is a rush; a `foe li` is tech.
+- `R`, your recent decisions: what woke you, what you ordered, what came of it. Read it before re-issuing anything:
+  an order that stands (`ok`, `wait`) is already being carried out.
+- `N`, your own note, the one thing you write. Use it for the plan and for what you expect, so the next decision can
+  check the expectation against `G` and `R` instead of starting from nothing:
+
+  `plan: <the line you are playing> | why: <what on G/X made you choose it> | doing: <the step in progress, with unit ids>
+  | expect: <what should happen next, and what would mean the plan is wrong>`
+
+  Example: `plan: hold home, tech to li | why: 4 wk seen from 13,14, no foe li | doing: #29 builds br at 1,2, #22 #25 mine
+  | expect: br done by t260 then t 33 li; if 2+ foe wk reach d<=4 before that, all free wk fight at the base`
+
+On each decision: does `G`/`R`/`X` match `expect`? If yes, carry on with the next step and update `doing`. If not, say
+what you saw instead and change `plan`, not just `doing`. Keep the note under 300 characters. Write `n` only when it
+changes (`null` keeps it). A worker named as the builder in `doing` stays the builder until `B` shows the barracks, even
+if `A` shows it walking or `L` shows `busy`/`wait` — that is work in progress, not a unit needing orders.
 
 ## Play
 

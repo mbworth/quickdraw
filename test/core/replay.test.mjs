@@ -48,3 +48,21 @@ test('replay reproduces every packet of an overlapping run: the call row holds t
   assert.ok(out.length >= 3);
   for (const r of out) assert.equal(r.replayed, r.recorded, `decision ${r.n}`);
 });
+
+test('replay reproduces the N layer from the call row\'s memory', async () => {
+  const clock = virtualClock(1000);
+  const adapter = createAdapter({}, { clock, seed: 4, turns: 3 });
+  await adapter.seat({});
+  const rec = createRecorder(path.join(dir, 'mock-4.jsonl'), { clock, statePolicy: 'on-decision' });
+  rec.writeNow('config', { game: 'mock', gameOpts: { seed: 4, turns: 3 }, packetMax: 600, divisor: 3.5 });
+  let k = 0;
+  const cm = async () => ({ act: true, orders: [{ cmd: 'move', id: 1, to: 2 }], note: `note ${++k}`, usage: null, stop: 'tool_use', latencyMs: 0, cost: 0 });
+  const p = runPilot({ adapter, callModel: cm, clock, record: rec, opts: { heartbeatMs: 100000, deadlineMarginMs: 100, memoryMax: 40 } });
+  await clock.advance(4000);
+  await p;
+  rec.flushAndClose();
+  const out = await replayFile(rec.file, 'all');
+  assert.ok(out.length >= 3);
+  assert.ok(out.some(r => /\nN note \d$/.test(r.recorded)), 'a later packet carries an earlier note');
+  for (const r of out) assert.equal(r.replayed, r.recorded, `decision ${r.n}`);
+});

@@ -47,3 +47,9 @@ test('the tool is a frozen one-string schema, strict-compatible', () => {
   assert.equal(tool.additionalProperties, false);
   assert.equal(tool.properties.o.type, 'string');
 });
+
+test('game 16 phrasings: a selector chain folds, a multi-id hunt takes the first', () => {
+  assert.deepEqual(parseOne('a all wk 2,4'), { cmd: 'attack', units: ['wk'], x: 2, y: 4 });
+  assert.deepEqual(parseOne('a idle wk 2,4'), { cmd: 'attack', units: ['idle:wk'], x: 2, y: 4 });
+  assert.equal(parseOne('a wk x1@4,3 #24,#25').target, 24);
+});

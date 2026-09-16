@@ -115,8 +115,8 @@ export function read(text) {
   let cur = null;
   for (const line of String(text || '').split('\n')) {
     if (!line.trim()) continue;
-    const m = /^([HDTPEABXL])(?: (.*))?$/.exec(line);
-    if (m && LAYER[m[1]]) {
+    const m = /^([HDTPEABXLGRN])(?: (.*))?$/.exec(line);
+    if (m && (LAYER[m[1]] || 'GRN'.includes(m[1]))) {   // G/R/N (--log/--journal/--memory) are history the script never reads: skipped, lines and all
       cur = m[1]; out.layers.add(cur);
       const rest = m[2];
       if (rest === undefined) continue;   // a line layer: its lines follow
@@ -135,6 +135,7 @@ export function read(text) {
       case 'E': out.e.push(nodeLine(line)); break;
       case 'A': out.a.push(armyLine(line)); break;
       case 'X': out.x.push(enemyLine(line)); break;
+      case 'G': case 'R': case 'N': break;   // history lines: not the script's business
       default: bad(cur || '?', line);
     }
   }

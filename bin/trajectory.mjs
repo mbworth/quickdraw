@@ -14,7 +14,7 @@ import { fileURLToPath } from 'node:url';
 import { ROOT, sha, boot, modelFor, redact } from './_boot.mjs';
 import { loadAdapterModule, parseArgs } from '../src/core/args.mjs';
 import { realClock } from '../src/core/clock.mjs';
-import { assemble } from '../src/core/packet.mjs';
+import { assemble, memoryLayer } from '../src/core/packet.mjs';
 import { applyOrders } from '../src/core/pilot.mjs';
 import { answered } from '../src/core/model.mjs';
 import { readRun } from '../src/core/record.mjs';
@@ -44,7 +44,7 @@ export async function replayTrajectory({ rows, adapter, callModel, flags = {}, d
   const out = [];
   for (const call of calls) {
     const state = snapOf(rows, call.stateRef), prev = call.prevDecisionRef ? snapOf(rows, call.prevDecisionRef) : null;
-    const layers = adapter.encode({ state, prevDecisionState: prev, triggers: call.triggers, lastOrders: call.lastOrders, pending: call.pending || [] });
+    const layers = [...adapter.encode({ state, prevDecisionState: prev, triggers: call.triggers, lastOrders: call.lastOrders, pending: call.pending || [], journal: call.journal, log: call.log }), ...memoryLayer(call.memory ?? null)];   // the recording's own N, R and G; an arm does not re-chain them
     const pkt = assemble(layers, { maxTokens: flags.packetMax ?? cfg.packetMax ?? 600, divisor, fullEvery: flags.slim ? 5 : (flags.fullEvery ?? cfg.fullEvery ?? 0), n: call.n });
     const res = await callModel({ packet: pkt.text });
     const { keep, dropped } = applyOrders({ adapter, orders: res.act ? res.orders : [], state, decidedOn: state, staleAfterMs: cfg.staleAfter, clock });   // the pilot's own pipeline (stale check included), so the arm is scored like the recording

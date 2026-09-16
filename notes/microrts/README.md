@@ -37,6 +37,12 @@ reads workers in state `h`/`r` as already harvesting, and a walking-to-node harv
 so it got re-topped-up by nearest node every decision (49–84 node swaps/game vs 12–32 without split-states;
 notes/microrts/games.md).
 
+Core flag `--memory <chars>` (default 0, off): the model writes a note to itself in the tool's `n` field and reads it back on
+the next packet as layer `N` (prompt game02). Game-agnostic; see docs/REQUIREMENTS.md M12. Core `--journal N` / `--log N`
+(default 0): the harness hands the last N decisions and the last N game triggers to encode, rendered here as `R` (recent
+decisions: cycle, what woke it | orders and results) and `G` (the game so far in 50-cycle buckets); `-foe-events true`
+adds `foe wk#28@13,14` events so `G` shows the opponent's production (M13; prompt game03, `--packet-max 900`).
+
 ## Packet
 
 One `*Facts` function and one renderer per layer, so `read.mjs`/`facts.mjs` cannot drift. Example
@@ -69,7 +75,9 @@ defend within 6 of base (harvesters within 2), attack at three Light. 5/5 vs `Wo
 
 Fidelity (oracle v3, the state side unshaped) 34% decision-equivalent / 28% exact, 716 decisions/5 runs, 0 read errors,
 the loss A's one-state-per-cluster fold (456) and X's centroid (71); **89% / 64% over 471 decisions on the working config (`--microrts-split-states --microrts-goal-state`, campaign 3, 5/5 in 1.5–1.9 min)** (`bin/oracle.mjs`); 298 tokens/packet (countTokens-calibrated, divisor 1.28, 2026-09-15); reaction p50
-0.4–0.5 s (one `refreshMs`, the floor for a 500 ms cadence); win rate 5/5 vs `WorkerRush`; core diff `git diff
+0.4–0.5 s (one `refreshMs`, the floor for a 500 ms cadence); win rate 5/5 vs `WorkerRush` with the script; **Sonnet 1/5
+(games 16–20): 0/4 at 100 ms a cycle, reaction p50 2.2–3.1 s = 22–31 cycles a decision loses the opening; the win is at
+300 ms a cycle, 6:06, $0.30**; with `--memory 200` (games 21–23) 1/3 vs 1/3 without (18, 24–25): churn down, win rate flat; with `--journal 6 --log 60` too (games 26–28) 0/3 — the losses are the defence rule not applied in-decision (`games.md`); core diff `git diff
 src/core` empty (X5 met).
 
 ## Known quirks / open
@@ -77,5 +85,4 @@ src/core` empty (X5 met).
 The engine bug + patch: stock CLIENT mode builds two type tables and compares unit types by identity, freezing every
 producer. `busy` excludes `TYPE_NONE` (`fillWithNones` hides real idleness). The engine allows one unit per
 destination cell, cancelling a second across cycles. An attack-move at an occupied cell (their base) stops one step
-short rather than completing. `bin/campaign.mjs` now counts a draw (`max_cycles`) as decided. Untested: `LightRush`, `HeavyRush`, `RangedRush`, `ai.coac.CoacAI`; no model
-game played yet (Sonnet-only key, MicroRTS has run at $0 so far).
+short rather than completing. `bin/campaign.mjs` now counts a draw (`max_cycles`) as decided. Untested: `LightRush`, `HeavyRush`, `RangedRush`, `ai.coac.CoacAI`; model games in `games.md` (16–20).

@@ -1,6 +1,11 @@
 // Assembles adapter layers under a token budget. Priority 0 never drops; lines go before their layer.
 export const estTokens = (text, divisor) => Math.ceil(text.length / divisor);
 
+// memoryLayer(memory) → the N layer: the model's own note from its last decision, fed back (--memory). null = feature off, no
+// layer; '' = on, nothing written yet. Core-owned and game-agnostic: no adapter renders it, so the tag N is reserved. Priority 0:
+// it is bounded by --memory's char cap, never by the budget.
+export const memoryLayer = memory => (memory == null ? [] : [{ name: 'memory', priority: 0, text: `N ${memory || 'none'}` }]);
+
 const render = (layer, lines) => {
   const parts = [];
   if (layer.text) parts.push(layer.text);

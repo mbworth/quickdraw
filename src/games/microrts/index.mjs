@@ -96,7 +96,7 @@ export function createAdapter(env = {}, opts = {}) {
       seat = player;
       const prev = native;
       const n = materialize(gs, player);
-      for (const ev of detect(prev, n)) em.emit('event', { ...ev, t: clock.now() });
+      for (const ev of detect(prev, n, { foe: !!opts.foeEvents })) em.emit('event', { ...ev, t: clock.now() });
       native = n;
       if (lifecycle === 'pregame') { lifecycle = 'active'; emitState(); }
       return buf.step(n);

@@ -319,3 +319,38 @@ test('--stream: a call that dies after orders went out is a decision, not a retr
   assert.deepEqual(d.sent, [{ cmd: 'move', id: 1, to: 5 }]);
   assert.equal(adapter.sent.filter(x => x.to === 5).length >= 1, true);
 });
+
+test('--memory: the note rides on the next packet as N, null keeps it, a string replaces it capped at memoryMax; off records no memory', async () => {
+  const notes = ['step 1: #3 harvests', null, 'x'.repeat(50)];
+  let i = 0;
+  const cm = async () => ({ act: true, orders: [{ cmd: 'move', id: 1, to: 5 }], note: notes[i++] ?? null, usage: null, stop: 'tool_use', latencyMs: 0, cost: 0 });
+  const { lines } = await play({ turns: 4, callModel: cm, opts: { memoryMax: 20 } });
+  const c = calls(lines);
+  assert.ok(c.length >= 4);
+  assert.equal(c[0].memory, ''); assert.ok(c[0].packet.endsWith('\nN none'));
+  assert.equal(c[1].memory, 'step 1: #3 harvests'); assert.ok(c[1].packet.endsWith('\nN step 1: #3 harvests'));
+  assert.equal(c[2].memory, 'step 1: #3 harvests', 'null keeps the note');
+  assert.equal(c[3].memory, 'x'.repeat(20), 'capped at memoryMax');
+  const off = calls((await play({ turns: 2 })).lines);
+  assert.ok(off.every(r => !('memory' in r) && !/\nN /.test(r.packet)));
+});
+
+test('--journal/--log: the call row carries the last N decisions (orders and results) and the last N game triggers; encode sees them; off records nothing', async () => {
+  const seen = [];
+  const clock0 = virtualClock(1000);
+  const adapter = createAdapter({}, { clock: clock0, seed: 1, turns: 5 });
+  const enc = adapter.encode; adapter.encode = inp => { seen.push({ journal: inp.journal, log: inp.log }); return enc(inp); };
+  await adapter.connect(); await adapter.seat({});
+  const record = memRecorder();
+  const p = runPilot({ adapter, callModel: stub({ clock: clock0 }), clock: clock0, record, opts: { heartbeatMs: 100000, deadlineMarginMs: 100, journalN: 2, logN: 3 } });
+  await clock0.advance(5500); await p;
+  const c = calls(record.lines);
+  assert.ok(c.length >= 4);
+  assert.deepEqual(c[0].journal, []); assert.ok(c[0].log.some(t => t.cls === 'turn') && c[0].log.length <= 3);
+  assert.equal(c[1].journal.length, 1); assert.equal(c[1].journal[0].n, 1); assert.deepEqual(c[1].journal[0].orders.map(o => o.ok), [true]); assert.ok('clocks' in c[1].journal[0]);
+  assert.equal(c[3].journal.length, 2, 'capped at journalN'); assert.deepEqual(c[3].journal.map(j => j.n), [2, 3]);
+  assert.equal(c[3].log.length, 3, 'capped at logN'); assert.ok(c[3].log.every(t => t.cls !== 'heartbeat'));
+  assert.deepEqual(seen[1].journal, c[1].journal); assert.deepEqual(seen[1].log, c[1].log);
+  const off = calls((await play({ turns: 2 })).lines);
+  assert.ok(off.every(r => !('journal' in r) && !('log' in r)));
+});

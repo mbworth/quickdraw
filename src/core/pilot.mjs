@@ -1,7 +1,7 @@
 // The loop: triggers → encode → assemble → model → expand → validate → send → record. Knows no game.
 import fs from 'node:fs';
 import { createTriggers, isCore } from './triggers.mjs';
-import { assemble } from './packet.mjs';
+import { assemble, memoryLayer } from './packet.mjs';
 import { answered } from './model.mjs';
 
 const wait = (clock, ms) => new Promise(r => (ms > 0 ? clock.setTimeout(r, ms) : r()));
@@ -31,13 +31,19 @@ export const lastOrdersOf = (keep, results, dropped) =>
 export async function runPilot({ adapter, callModel, clock, record = null, opts = {}, log = () => {}, stop = null }) {
   const o = {
     heartbeatMs: 3000, deadlineMarginMs: 1000, packetMax: 600, divisor: 3.5, fullEvery: 0, staleAfterMs: 8000,
-    maxUsd: Infinity, maxDecisions: Infinity, concedeOn: 'never', stopFile: null, stopPollMs: 500, leaveTimeoutMs: 2000, maxInFlight: 1, eventTick: false, stream: false, reserveFor: [], ...opts,
+    maxUsd: Infinity, maxDecisions: Infinity, concedeOn: 'never', stopFile: null, stopPollMs: 500, leaveTimeoutMs: 2000, maxInFlight: 1, eventTick: false, stream: false, reserveFor: [], memoryMax: 0, journalN: 0, logN: 0, ...opts,
   };
   const meta = adapter.meta;
   const rec = record || { writeNow: () => -1, writeState: () => null, ensureState: () => null, flushAndClose() {} };
 
   let latest = null, prevDecisionState = null, prevDecisionRef = null, idx = 0, eventsSince = [], resumeT = -Infinity;
   let lastOrders = [], decisions = 0, usd = 0, started = false, budgetStopped = false, inFlight = 0, nextN = 0;
+  let memory = o.memoryMax > 0 ? '' : null;   // --memory: the model's note to itself, rewritten by each answered decision that returns one (null keeps it), capped at memoryMax chars
+  // --journal N: the last N decisions (what I ordered, what came of it, what woke me) handed to encode as `journal`; --log N: the last N
+  // game triggers (non-core) since the start as `log`. Harness-kept, so nothing depends on the model copying its own history. Both ride
+  // on the call row so replay reproduces the packet. undefined = off: an adapter that never heard of them sees nothing.
+  const journal = o.journalN > 0 ? [] : undefined, gameLog = o.logN > 0 ? [] : undefined, logged = new WeakSet();   // logged: a retried call re-encodes the same set; it is logged once
+  const remember = (n, snap, set, orders) => { if (journal) { journal.push({ n, clocks: snap.header.clocks || {}, triggers: set.map(reduceTr), orders }); if (journal.length > o.journalN) journal.splice(0, journal.length - o.journalN); } };
   const aborts = new Set(), pendingSets = new Map();   // in-flight decisions: n → their trigger sets, told to the next packet
   let finished = null, finishResolve, stopTimer = null, endTimer = null;
   const finishedP = new Promise(r => (finishResolve = r));
@@ -138,8 +144,10 @@ export async function runPilot({ adapter, callModel, clock, record = null, opts 
         const eventArrivalT = Math.min(...(evs.length ? evs : set).map(tr => tr.t));
         const tickT = set.tickT ?? startT;
         const T = { waitMs: tickT - eventArrivalT, queueMs: startT - tickT }; let t0 = startT;
-        const lo = lastOrders;   // captured now: under --overlap another decision may replace lastOrders before this call returns, and the call row must hold what the packet used
-        const layers = adapter.encode({ state: snap, prevDecisionState: prevSnap, triggers: set, lastOrders: lo, pending });
+        const lo = lastOrders, mem = memory;   // captured now: under --overlap another decision may replace lastOrders before this call returns, and the call row must hold what the packet used
+        if (gameLog && !logged.has(set)) { logged.add(set); gameLog.push(...set.filter(tr => !isCore(tr.cls)).map(reduceTr)); if (gameLog.length > o.logN) gameLog.splice(0, gameLog.length - o.logN); }
+        const jn = journal && journal.slice(), lg = gameLog && gameLog.slice();
+        const layers = [...adapter.encode({ state: snap, prevDecisionState: prevSnap, triggers: set, lastOrders: lo, pending, journal: jn, log: lg }), ...memoryLayer(mem)];
         const pkt = assemble(layers, { maxTokens: o.packetMax, divisor: o.divisor, fullEvery: o.fullEvery, n });
         T.encodeMs = clock.now() - t0; t0 = clock.now();
         const ac = new AbortController(); aborts.add(ac);
@@ -165,16 +173,17 @@ export async function runPilot({ adapter, callModel, clock, record = null, opts 
         const callBase = {
           n, stateRef, prevDecisionRef: prevRef, triggerRefs: [...new Set(set.map(tr => tr.ref).filter(x => x >= 0))],
           triggers: set.map(reduceTr), ...(pending.length ? { pending: pending.map(s => s.map(reduceTr)), overlap: pending.length } : {}),
-          lastOrders: lo, packet: pkt.text,
+          lastOrders: lo, ...(mem !== null ? { memory: mem } : {}), ...(jn ? { journal: jn } : {}), ...(lg ? { log: lg } : {}), packet: pkt.text,
           packetMeta: { kept: pkt.kept, dropped: pkt.dropped, estTokens: pkt.estTokens, realTokens: res.usage && res.usage.cache_read_input_tokens > 0 ? res.usage.input_tokens : null },
           usage: res.usage, stop: res.stop, error: res.error, note: res.note, raw: res.raw, eventArrivalT, anchor,
         };
         const failed = !answered(res.stop);
+        if (memory !== null && !failed && typeof res.note === 'string') memory = res.note.slice(0, o.memoryMax);
         if ((failed || finished) && chunks.some(c => c.keep.length)) {   // --stream: orders already went out before the call died or the game ended; that is a decision, not a retry or a skip
           try { await adapter.send([], { partial: false, n }); } catch {}
           const keep = chunks.flatMap(c => c.keep), dropped = chunks.flatMap(c => c.dropped), results = chunks.flatMap(c => c.results);
           T.expandMs = expandAcc; T.validateMs = validateAcc; T.sendMs = sendAcc; T.firstSendMs = firstSendT - eventArrivalT; T.totalMs = clock.now() - eventArrivalT;
-          lastOrders = lastOrdersOf(keep, results, dropped);
+          lastOrders = lastOrdersOf(keep, results, dropped); remember(n, snap, set, lastOrders);
           const callRef = rec.writeNow('call', { ...callBase, latency: T, partial: true });
           rec.writeNow('decision', { n, callRef, act: true, orders: keep, sent: keep, dropped });
           rec.writeNow('result', { n, results });
@@ -209,7 +218,7 @@ export async function runPilot({ adapter, callModel, clock, record = null, opts 
           T.sendMs = clock.now() - t0;
         }
         T.totalMs = clock.now() - eventArrivalT;
-        lastOrders = lastOrdersOf(keep, results, dropped);
+        lastOrders = lastOrdersOf(keep, results, dropped); remember(n, snap, set, lastOrders);
         const callRef = rec.writeNow('call', { ...callBase, latency: T });
         rec.writeNow('decision', { n, callRef, act: res.act, orders, sent: keep, dropped });
         rec.writeNow('result', { n, results });

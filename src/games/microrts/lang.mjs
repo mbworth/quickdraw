@@ -28,12 +28,16 @@ export function parseOne(text) {
   const toks = marked.match(TOKEN) || [];
   if (!toks.length) return null;
   const verb = own(VERB, toks[0].toLowerCase()), bad = { cmd: '?', text };
-  const [, a1, a2, a3] = toks;
+  // `a all wk 2,4` / `a idle wk 2,4` (game 16): a selector chain before the argument. `all T` is T; `idle T` is `idle:T`.
+  let i = 2;
+  while (verb !== 'train' && toks[i] && SELECTORS.has(toks[i].toLowerCase()) && SELECTORS.has((toks[i - 1] || '').toLowerCase())) i++;
+  const a1 = i === 2 ? toks[1] : toks.slice(1, i).map(t => t.toLowerCase()).reduce((acc, t) => (acc === 'all' ? t : acc === 'idle' ? `idle:${t}` : acc));
+  const a2 = toks[i], a3 = toks[i + 1];
   switch (verb) {
     case 'train': { const building = coerceId(a1), type = own(NAME, (a2 || '').toLowerCase()); if (building === null || !type) return bad; return { cmd: 'train', building, type, count: Math.max(1, Math.min(5, Number(a3) || 1)) }; }
     case 'harvest': { const u = units(a1); if (!u.length) return bad; const node = a2 && a2 !== '-' ? coerceId(a2) : null; return { cmd: 'harvest', units: u, node }; }
     case 'move': { const u = units(a1), p = pos(a2); if (!u.length || !p) return bad; return { cmd: 'move', units: u, ...p }; }
-    case 'attack': { const u = units(a1); if (!u.length) return bad; const p = pos(a2); if (p) return { cmd: 'attack', units: u, ...p }; const target = coerceId(a2); if (target === null) return bad; return { cmd: 'attack', units: u, target }; }
+    case 'attack': { const u = units(a1); if (!u.length) return bad; const p = pos(a2); if (p) return { cmd: 'attack', units: u, ...p }; const target = coerceId((a2 || '').split(',')[0]); if (target === null) return bad; return { cmd: 'attack', units: u, target }; }   // `a #33 #24,#25` (game 16): hunt the first
     default: return bad;
   }
 }

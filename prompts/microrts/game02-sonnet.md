@@ -34,6 +34,7 @@ B ba#20@2,2 hp7 br#47@0,2 hp4     my buildings
 X                         their units: steps to my base / to my nearest unit
 wk x1@3,4 d3/1 #45
 L t 20 wk ok; h #22 #16 busy      my last orders and what became of them
+N step 3; #29 builds br    my own note from my last decision (see Memory)
 ```
 
 Vocabulary: `wk` Worker, `li` Light, `hv` Heavy, `rg` Ranged, `ba` Base, `br` Barracks, `rs` resource node.
@@ -58,6 +59,16 @@ a <units> <unitId>    hunt that unit until it dies
 `<units>` is ids (`#40,#51`), a selector (`all idle wk li hv rg`), or a cluster label pasted straight out of `A`
 (`wk x2@4,2`). At most 10 commands. Orders that cannot be taken come back on `L` with a reason: `poor` (bank too
 small), `busy`, `boxed` (nowhere to put the new unit), `wall`, `dead`, `wait` (standing, could not step this cycle).
+
+## Memory
+
+Every packet is a fresh call: nothing of your reasoning survives except `N`, the note you wrote last time. It is the only
+place to keep what the board does not show: which step of the plan you are on, who your harvesters are, who is building
+what, what you are waiting for. Keep it under 200 characters and keep it a plan, not a diary.
+
+Write `n` only when the plan changes (`null` keeps the current note). Read `N` before `A`: a worker you named as the
+builder stays the builder until `B` shows the barracks, even if `A` shows it walking or `L` shows its order `busy` or
+`wait` — those mean it is at work, not that it needs new orders.
 
 ## Play
 

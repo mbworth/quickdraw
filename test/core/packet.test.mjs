@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { assemble } from '../../src/core/packet.mjs';
+import { assemble, memoryLayer } from '../../src/core/packet.mjs';
 
 const L = (name, priority, text, extra = {}) => ({ name, priority, text, ...extra });
 
@@ -33,4 +33,13 @@ test('full layers appear only every Nth packet when fullEvery is set', () => {
 
 test('estimate uses the divisor', () => {
   assert.equal(assemble([L('h', 0, 'x'.repeat(35))], { divisor: 3.5 }).estTokens, 10);
+});
+
+test('memoryLayer: off is no layer, on-and-empty is "N none", a note rides as N at priority 0', () => {
+  assert.deepEqual(memoryLayer(null), []);
+  assert.deepEqual(memoryLayer(undefined), []);
+  assert.deepEqual(memoryLayer(''), [{ name: 'memory', priority: 0, text: 'N none' }]);
+  assert.deepEqual(memoryLayer('step 3; #29 builds br'), [{ name: 'memory', priority: 0, text: 'N step 3; #29 builds br' }]);
+  const pkt = assemble([{ name: 'a', priority: 1, text: 'A '.repeat(200) }, ...memoryLayer('keep me')], { maxTokens: 10, divisor: 3.5 });
+  assert.equal(pkt.text, 'N keep me');
 });

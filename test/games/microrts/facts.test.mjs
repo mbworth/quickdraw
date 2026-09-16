@@ -141,3 +141,10 @@ test('unbudgeted invariant holds with goalState in opts', () => {
     for (const key of KEYS) assert.deepStrictEqual(s[key], k[key], `${id}: ${key}`);
   }
 });
+
+test('G, R and N layers are skipped by the reader, lines and all', () => {
+  const text = 'H t319 r5 u1/7\nD none\nT hb\nP ba#20 IDLE\nE none\nA none\nB ba#20@2,2 hp1\nX\nwk x1@3,3 d2/4 #24\nG\nt0 started\nt250 foe wk#28@14,13; dmg ba#20 hp9\nR\nt205 seen at 0,2 | t 20 wk 5 ok\nL none\nN plan: hold | expect: br by t260';
+  const r = read(text);
+  assert.equal(r.x.length, 1); assert.equal(r.b.length, 1);
+  assert.ok(r.layers.has('G') && r.layers.has('R') && r.layers.has('N'));
+});
