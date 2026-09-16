@@ -34,6 +34,15 @@ Local engine, `maps/16x16/basesWorkers16x16.xml` against `ai.abstraction.WorkerR
 | 26 | basesWorkers16x16-WorkerRush-mu4fki7q | claude-sonnet-5, quickdraw | loss | 2:42 | campaign 1/3: 54 decisions (20/min), reaction p50 4.5 s / p90 5.4 s (wait 0.3 s), model p50 2.6 s, 149 out tokens, packet 854 real, 0 timeouts, kept 31.3%, 15 rejected, cache 100% (3718 written), $0.2149 |
 | 27 | basesWorkers16x16-WorkerRush-mu4fo38c | claude-sonnet-5, quickdraw | loss | 2:36 | campaign 2/3: 54 decisions (20.4/min), reaction p50 3.9 s / p90 5.4 s (wait 0.2 s), model p50 2.4 s, 136 out tokens, packet 819 real, 0 timeouts, kept 23.1%, 10 rejected, cache 100%, $0.1972 |
 | 28 | basesWorkers16x16-WorkerRush-mu4frlxk | claude-sonnet-5, quickdraw | loss | 3:00 | campaign 3/3: 57 decisions (19.2/min), reaction p50 4.2 s / p90 6 s (wait 0.6 s), model p50 2.6 s, 144 out tokens, packet 899 real, 2 timeouts, kept 37.1%, 17 rejected, cache 100%, $0.2194 |
+| 29 | basesWorkers16x16-WorkerRush-mu4gu26e | claude-sonnet-5, quickdraw | loss | 3:24 | campaign 1/3: 71 decisions (21.1/min), reaction p50 4.2 s / p90 5.4 s (wait 0.8 s), model p50 2.4 s, 147 out tokens, packet 906 real, 0 timeouts, kept 37.6%, 17 rejected, cache 100% (3777 written), $0.2816 |
+| 30 | basesWorkers16x16-WorkerRush-mu4gyiha | claude-sonnet-5, quickdraw | loss | 3:18 | campaign 2/3: 71 decisions (21.2/min), reaction p50 4.5 s / p90 5.4 s (wait 0.6 s), model p50 2.5 s, 138 out tokens, packet 928 real, 0 timeouts, kept 49.5%, 14 rejected, cache 100%, $0.2698 |
+| 31 | basesWorkers16x16-WorkerRush-mu4h2xla | claude-sonnet-5, quickdraw | loss | 2:48 | campaign 3/3: 59 decisions (20.7/min), reaction p50 4.8 s / p90 5.7 s (wait 0.9 s), model p50 2.5 s, 129 out tokens, packet 901 real, 0 timeouts, kept 46.2%, 9 rejected, cache 100%, $0.2191 |
+| 32 | basesWorkers16x16-WorkerRush-mu4h8cau | claude-sonnet-5, quickdraw | loss | 2:30 | campaign 1/3: 50 decisions (20/min), reaction p50 5.1 s / p90 6.6 s (wait 0.7 s), model p50 2.5 s, 148 out tokens, packet 781 real, 0 timeouts, kept 36.7%, 20 rejected, cache 100%, $0.1932 |
+| 33 | basesWorkers16x16-WorkerRush-mu4hbo2j | claude-sonnet-5, quickdraw | **win** | 5:54 | campaign 2/3: 118 decisions (19.9/min), reaction p50 4.8 s / p90 6.3 s (wait 1.3 s), model p50 2.6 s, 172 out tokens, packet 955 real, 0 timeouts, kept 67.2%, 70 rejected, cache 100%, $0.5014 |
+| 34 | basesWorkers16x16-WorkerRush-mu4hjegh | claude-sonnet-5, quickdraw | loss | 2:24 | campaign 3/3: 46 decisions (19.4/min), reaction p50 4.8 s / p90 6 s (wait 0.8 s), model p50 2.7 s, 149 out tokens, packet 762 real, 0 timeouts, kept 40%, 24 rejected, cache 100%, $0.1766 |
+| 35 | basesWorkers16x16-WorkerRush-mu4hzowq | commander:rush, quickdraw | **win** | 1:48 | campaign 1/3: 114 decisions (64.5/min), reaction p50 0.5 s / p90 0.5 s (wait 0.4 s), model p50 0 s, 0 out tokens, packet 963 real, 0 timeouts, kept 50.8%, 22 rejected, cache 94.4% (2824 written), $0.1039 |
+| 36 | basesWorkers16x16-WorkerRush-mu4i22va | commander:rush, quickdraw | **win** | 1:18 | campaign 2/3: 78 decisions (60.3/min), reaction p50 0.5 s / p90 0.5 s (wait 0.3 s), model p50 0 s, 0 out tokens, packet 955 real, 0 timeouts, kept 54.8%, 18 rejected, cache 100%, $0.0786 |
+| 37 | basesWorkers16x16-WorkerRush-mu4i3uu3 | commander:rush, quickdraw | **win** | 1:30 | campaign 3/3: 87 decisions (58.6/min), reaction p50 0.5 s / p90 0.5 s (wait 0.3 s), model p50 0 s, 0 out tokens, packet 971 real, 0 timeouts, kept 50.8%, 20 rejected, cache 100%, $0.0905 |
 
 **Campaign 1 (`script:rush` vs `ai.abstraction.WorkerRush`, 2026-09-15): 5 of 5**, every game 2:24–2:36, 55–60
 decisions a minute, reaction p50 0.4–0.5 s (one `refreshMs`: the floor for a 500 ms state cadence), $0.
@@ -124,6 +133,35 @@ said `no threats near (d>=5)` on three consecutive packets that showed a raider 
 output 136–149 (note rewritten every call), model p50 2.4–2.6 s. Conclusion after six memory games: neither memory nor
 history is the bottleneck against WorkerRush — the defence and the two-harvester rules are not applied inside the
 decision that sees the trigger. Script with the same flags: win 1:44, 115/115 replayed, `G`/`R`/`N` skipped by the reader.
+
+**Games 26–31 are tainted by a budget fault.** `G`/`R` were emitted at priority 1, above `A`/`B` (2), so under
+`--packet-max 900` the assembler dropped army and buildings on 13–34 packets a game (triggers too) — the model could not
+see its own units or the barracks id on a third of its decisions. Fixed 2026-09-16: history is priority 3, first to go.
+The defence findings below stand (the raider packets probed had every layer), but the win rates of 26–31 do not
+measure memory.
+
+**Facts-only note (`game04-sonnet.md`: `plan | doing | expect`, no `why`; same flags as 26–28; 2026-09-16).** Games 29–31
+under the budget fault: 0 of 3. Games 32–34 with history at priority 3 (only `G` trimmed, on 7/7/79 packets): **1 of 3**,
+the win in 5:54 at $0.50. The note held its form — `plan: 2 harvesters, wk to 6, br at 3wk+5r, li to 3, then attack |
+doing: #22 mines rs#17, #25 mines rs#16, #27 builds br | expect: br on B by t180` — and verdict words fell (3–14 a game
+while the base stood, 23 in the long win, vs the `why` arm's every call). The defence rule did not move: raider at d ≤ 6
+at t220/220/222, first attack order at t353/280/257 (game 18 win: 263; game 21 win: 263). Game 33 won the way 18 and 21
+did — a post held at 2,3/3,3 with two or three workers on every decision from t280, two named harvesters kept, Light at
+639 — and lost the log on 79 packets doing it, so the win came from `R` and `N`, not `G`. Six clean games with the
+note (21–23, 32–34): 2 of 6; three without (18, 24–25): 1 of 3. Not distinguishable at this sample; what is
+distinguishable is that every loss, note or not, is the t220 raider answered 30–130 cycles late while the base makes workers.
+
+**Commander split (`--model commander:rush`, `commander01-sonnet.md`, `--commander-every 5000`, memory/journal/log on,
+100 ms a cycle — the real clock, 2026-09-16): 3 of 3 (games 35–37), 1:18 / 1:30 / 1:48, $0.08–0.10 a game.** The rush
+script answers every packet at 0 ms (reaction p50 0.5 s, one refresh) from a parameter set; Sonnet is called in the
+background every 5 s on the latest packet and returns the next parameter set and its note (core M14). Script alone at
+this clock: 5/5 in 1:30–2:00; the model alone: 0/4. 15–19 commander calls a game at 3.4–3.8 s latency, one deadline
+abort in 51. Its changes read as a plan: `workers 6→5` once the barracks was up ("stop worker growth, wait for light"),
+`pushLight 3→2` under harassment, `defend 6→8 panic 2→3` at base hp 4 ("catch incoming wk earlier"), back to 6/2 for
+the push, `target` to their base then to the far node once `X` lost its `ba`. Notes stayed facts and intent with a
+cycle in every `expect`. One tool slip: a target sent as `"\"15,15\""` (apply fell back). This is the first config
+where the model's latency is not the clock and the defence rule is never the model's to miss; whether the commander
+adds anything over the script's own parameters needs an opponent the defaults lose to.
 
 **Why memory did not help (probes on game 26's packets n=24–27, raider at d7/d6/d5/d4, ~$0.55 total).** Asked in text on
 packet 26 the model describes N/G/R correctly ("N is my own note… G the harness's game log… R my recent decisions so I

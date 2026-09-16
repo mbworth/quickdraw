@@ -14,22 +14,24 @@
 //      attack-moves at their base.
 //   7. Otherwise fighters attack-move to the post, two steps from my base toward theirs, so the fight happens at home.
 //
-// decide(text) → {o, why}: `o` in the order language, `why` the lines that fired. No memory, no state, no map size —
-// the enemy base comes from X, and every id from A. decideFacts(k) is the body, so the same policy runs on facts built
-// straight from the state (facts.mjs); that pair is the fidelity oracle (bin/oracle.mjs).
+// decide(text, params) → {o, why}: `o` in the order language, `why` the lines that fired. No memory, no state, no map
+// size — the enemy base comes from X, and every id from A. decideFacts(k, params) is the body, so the same policy
+// runs on facts built straight from the state (facts.mjs); that pair is the fidelity oracle (bin/oracle.mjs). `params`
+// is the commander split's parameter set (policy/commander.mjs): DEFAULTS reproduces this file's old constants exactly.
 import { read } from '../read.mjs';
 
 const WK_COST = 1, BR_COST = 5, LI_COST = 2;
-const HARV = 2, WK_CAP = 6, BR_AT = 3, DEFEND = 6, PANIC = 2, PUSH_LI = 3, PUSH_WK = 6, POST = 1;
+export const DEFAULTS = { harvesters: 2, workers: 6, barracksAt: 3, defend: 6, panic: 2, pushLight: 3, pushWorkers: 6, post: 1, target: null };
 const MOBILE = new Set(['wk', 'li', 'hv', 'rg']);
 const d1 = (a, b) => Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
 const step = (from, to, n) => { const dx = to.x - from.x, dy = to.y - from.y, L = Math.abs(dx) + Math.abs(dy) || 1; return { x: Math.round(from.x + (n * dx) / L), y: Math.round(from.y + (n * dy) / L) }; };
 const P = p => `${p.x},${p.y}`;
 const list = us => us.map(u => `#${u.id}`).join(',');
 
-export const decide = text => decideFacts(read(text));
+export const decide = (text, params = DEFAULTS) => decideFacts(read(text), params);
 
-export function decideFacts(k) {
+export function decideFacts(k, params = DEFAULTS) {
+  const { harvesters: HARV, workers: WK_CAP, barracksAt: BR_AT, defend: DEFEND, panic: PANIC, pushLight: PUSH_LI, pushWorkers: PUSH_WK, post: POST, target: TARGET } = params;
   const { h, p, e, a, b, x } = k;
   const why = [], orders = [];
   const base = b.find(c => c.type === 'ba') || null;
@@ -46,7 +48,7 @@ export function decideFacts(k) {
 
   const theirBase = x.find(c => c.type === 'ba');
   const far = [...e].sort((n1, n2) => (n2.d ?? 0) - (n1.d ?? 0))[0];
-  const target = theirBase ? { x: theirBase.x, y: theirBase.y } : far ? { x: far.x, y: far.y } : null;
+  const target = TARGET || (theirBase ? { x: theirBase.x, y: theirBase.y } : far ? { x: far.x, y: far.y } : null);
   const post = target ? step(anchor, target, POST) : anchor;
 
   // Their base is on the packet (no fog on this map); the far nodes are where it stood if it has already fallen.

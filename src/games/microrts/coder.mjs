@@ -119,7 +119,8 @@ export const journalLines = journal => journal.map(j => `t${j.clocks?.cycle ?? '
 
 const layer = (name, priority, text, extra = {}) => ({ name, priority, text: `${TAG[name]} ${text}`, ...extra });
 const lineLayer = (name, priority, items, extra = {}, prio = () => priority) => (items.length ? { name, priority, text: TAG[name], lines: items.map((text, i) => ({ text, priority: prio(i, items.length) })), ...extra } : { name, priority, text: `${TAG[name]} none`, ...extra });
-const oldestFirst = (i, len) => 1 + (len - 1 - i);   // G/R under budget: the oldest line goes first, the newest last
+const oldestFirst = (i, len) => HIST + (len - 1 - i);   // G/R under budget: the oldest line goes first, the newest last
+const HIST = 3;   // history ranks below the board: games 26–31 had G/R at 1 and lost A and B on a third of their packets
 
 // encode({state, prevDecisionState, triggers, lastOrders}, opts) → Layer[]
 // opts.full: the unbudgeted full state view — A one line per unit and X one line per enemy (v3), facts.mjs's shape, for the
@@ -135,8 +136,8 @@ export function encode({ state, prevDecisionState, triggers = [], lastOrders: lo
     lineLayer('army', 2, armyLines(n, { r: full ? FULL_R : CLUSTER_R, splitStates, goalState })),
     layer('buildings', 2, buildings(n)),
     lineLayer('enemy', 1, enemy(n, { r: full ? FULL_R : CLUSTER_R })),
-    ...(log ? [lineLayer('log', 1, logLines(log), {}, oldestFirst)] : []),
-    ...(journal ? [lineLayer('recent', 1, journalLines(journal), {}, oldestFirst)] : []),
+    ...(log ? [lineLayer('log', HIST, logLines(log), {}, oldestFirst)] : []),
+    ...(journal ? [lineLayer('recent', HIST, journalLines(journal), {}, oldestFirst)] : []),
     layer('last', 0, lastOrders(lo) + (pending.length ? `; ${pending.map(s => s.slice(0, 4).map(renderTrigger).join(', ')).join(' | ')}` : '')),
   ];
 }

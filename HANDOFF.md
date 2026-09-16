@@ -57,7 +57,16 @@ while it orders workers, no Light. Six memory/history games say the loss is rule
 across decisions. Probes (games.md, "Why memory did not help"): the model describes N/G/R correctly and, asked in text,
 applies rule 5; as the forced tool call it re-judges the raid from its priors ("lone worker, not a push", "d6 borderline")
 and inherits the verdict written in its own `why` (`no threats near`), patching the number. Memory must hold facts and intent,
-not conclusions. Next, in order: the commander split (script reflexes: harvesters, defence, build; the model sets plan
+not conclusions. Facts-only note (game04, `plan | doing | expect`): games 32–34 with history ranked below the board 1 of 3
+(games 26–31 had `G`/`R` at priority 1 and lost `A`/`B` on a third of their packets — fixed, priority 3). Six clean note games
+2/6 vs 1/3 without; every loss is the same t220 raider answered 30–130 cycles late.
+
+**Commander split (2026-09-16, core M14): `--model commander:<policy>` — the script plays every packet at 0 ms from a parameter
+set; the API model (`--commander-model`, `--commander-every` ms) rewrites the parameters and its note in the background.**
+MicroRTS games 35–37 at the real 100 ms clock: 3 of 3 in 1:18–1:48, $0.08–0.10, reaction 0.5 s; commander 15–19 calls a game.
+The model alone at that clock was 0/4. Next: script campaigns vs `LightRush`, `HeavyRush`, `ai.coac.CoacAI` to find where the
+defaults lose, then the commander on exactly those (the only setting where its parameter changes can be measured); raise
+`--decision-deadline` for the commander (one 6 s abort); Ashfall's `game38` policy has no params yet. Was: the commander split (script reflexes: harvesters, defence, build; the model sets plan
 parameters + note on a slow clock), then script campaigns vs LightRush/HeavyRush/CoacAI to find where the plan itself breaks.
 
 **Oracle v2 (2026-09-15).** The state side is now the full state view, not the encoder's shaping: every unit its own
@@ -106,6 +115,7 @@ The script plays the same line with `--model script:game38` and no `--prompt`/`-
 | `--ashfall-no-note` | schema without `note`; output 121 → 89 | game 23 |
 | `--memory <chars>` (core) | the model's `n` note fed back as layer `N` on the next packet; M12 | MicroRTS games 21+ |
 | `--journal N` `--log N` (core) | harness-kept history: last N decisions as `R`, last N game triggers as `G`; M13 | MicroRTS games 26+ |
+| `--model commander:<policy>` (core) | the policy answers every packet at 0 ms from a parameter set; an API model rewrites the set in the background every `--commander-every` ms (`--commander-model <id>`); M14 | new, untested |
 | `--microrts-foe-events` | a new enemy unit is an info event, so `G` carries their production | games 26+ |
 | `--ashfall-compact-buildings` | one always-on `B` line: ids, types, anchor positions, hp/bld only when hurt or unfinished | bench: equals the full packet at 39% of its tokens |
 | `--ashfall-keep-remembered` | `M` on every packet at army priority (game 25: the enemy base reached the model on 1 packet of 118) | trajectory: pushTarget 22/25 vs 1/14 |

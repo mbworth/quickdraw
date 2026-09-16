@@ -37,6 +37,13 @@ reads workers in state `h`/`r` as already harvesting, and a walking-to-node harv
 so it got re-topped-up by nearest node every decision (49–84 node swaps/game vs 12–32 without split-states;
 notes/microrts/games.md).
 
+`--model commander:rush` — the commander split: `policy/rush.mjs` answers every packet at 0 ms from a parameter set
+(`harvesters, workers, barracksAt, defend, panic, pushLight, pushWorkers, post, target`, defaults 2/6/3/6/2/3/6/1/null,
+see the rule comments 1-7 in rush.mjs), while `policy/commander.mjs` runs an API model on its own clock in the
+background and returns the next parameter set plus a note (`prompts/microrts/commander01-sonnet.md`); `apply()`
+clamps the model's answer and falls back to the previous value field by field, so a bad tool call never breaks the
+reflex.
+
 Core flag `--memory <chars>` (default 0, off): the model writes a note to itself in the tool's `n` field and reads it back on
 the next packet as layer `N` (prompt game02). Game-agnostic; see docs/REQUIREMENTS.md M12. Core `--journal N` / `--log N`
 (default 0): the harness hands the last N decisions and the last N game triggers to encode, rendered here as `R` (recent
@@ -77,7 +84,7 @@ Fidelity (oracle v3, the state side unshaped) 34% decision-equivalent / 28% exac
 the loss A's one-state-per-cluster fold (456) and X's centroid (71); **89% / 64% over 471 decisions on the working config (`--microrts-split-states --microrts-goal-state`, campaign 3, 5/5 in 1.5–1.9 min)** (`bin/oracle.mjs`); 298 tokens/packet (countTokens-calibrated, divisor 1.28, 2026-09-15); reaction p50
 0.4–0.5 s (one `refreshMs`, the floor for a 500 ms cadence); win rate 5/5 vs `WorkerRush` with the script; **Sonnet 1/5
 (games 16–20): 0/4 at 100 ms a cycle, reaction p50 2.2–3.1 s = 22–31 cycles a decision loses the opening; the win is at
-300 ms a cycle, 6:06, $0.30**; with `--memory 200` (games 21–23) 1/3 vs 1/3 without (18, 24–25): churn down, win rate flat; with `--journal 6 --log 60` too (games 26–28) 0/3 — the losses are the defence rule not applied in-decision (`games.md`); core diff `git diff
+300 ms a cycle, 6:06, $0.30**; with `--memory 200` (games 21–23) 1/3 vs 1/3 without (18, 24–25): churn down, win rate flat; with `--journal 6 --log 60` and a facts-only note (games 32–34, history ranked below the board) 1/3 — the losses are the defence rule not applied in-decision; **commander split (`--model commander:rush`, games 35–37) 3/3 at the real 100 ms clock, 1:18–1:48, $0.08–0.10** (`games.md`); core diff `git diff
 src/core` empty (X5 met).
 
 ## Known quirks / open

@@ -103,7 +103,8 @@ test('G and R trim oldest first under the budget', () => {
   const log = [tr(10, 1), tr(60, 2), tr(110, 3), tr(160, 4)];
   const layers = encode({ state: tinySnap(), prevDecisionState: null, triggers: [], lastOrders: [], pending: [], log });
   const g = layers.find(l => l.name === 'log');
-  assert.deepEqual(g.lines.map(l => l.priority), [4, 3, 2, 1]);
+  assert.deepEqual(g.lines.map(l => l.priority), [6, 5, 4, 3]);
+  assert.equal(g.priority, 3, 'history drops before army and buildings');
   const trimmed = assemble([g], { maxTokens: assemble([g], { maxTokens: 100000 }).estTokens - 4 });   // the log alone: the army and buildings layers would go first in a whole packet
   const kept = trimmed.text.split('\n').filter(l => /^t\d+ done/.test(l));
   assert.ok(kept.length >= 1 && kept.length < 4, `trimmed some: ${kept.length}`);
