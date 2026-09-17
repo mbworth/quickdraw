@@ -1,10 +1,47 @@
-# Handoff — 2026-09-15
+# Handoff — 2026-09-17
 
 Where Quickdraw stands and what to do next. History lives in `notes/ashfall/games.md` (every game, one row, and what it taught), `docs/reviews/` (the four reviews and what they fixed) and `git log`. Nothing here repeats those.
 
+## Current aim (2026-09-17): a commander that plans, watches its plan, and leaves the script when the script is failing
+
+The script reflex is a fixed plan with parameters. It wins where its rules fit (WorkerRush 5/5) and loses where they do not
+(LightRush 1/3, HeavyRush 0–1/3, CoacAI 0/3). The commander's job is the part a script cannot do: read the opponent, hold a
+plan of its own, notice when that plan or the script's rule is not working, and change it. Everything below is measured against
+that, not against win rate alone. Full log: `notes/microrts/games.md` (games 38–87).
+
+**What is settled.**
+- Speed: the reflex answers at 0 ms; the commander's set lands one model latency later (Sonnet ~4 s, Fable 5.1 ~15–20 s). The loop
+  is serial, so `--commander-every` below the latency does nothing (games 74–79).
+- Information: packet facts are correct. The gaps were feedback, not facts (F layer, games 68–73) and one dead lever (`train`, fixed).
+- Knowledge: commander03 carries the unit table, counters, timings and openings. It names the opening by ~t300 and picks the textbook counter.
+- The failure that remains is **plan revision**. Sonnet states a plan ("hold until 3 Heavies, then push") and keeps it while the packet shows
+  it cannot happen. Low, medium and high effort give the same answers with the same ~330 output tokens; a think-hard/adapt prod changes nothing.
+  Debriefed out of game it says: it never checked whether its trigger was reachable, read `orders differed 0/k` plus "or wait" as permission
+  to hold, followed the counter line as a rule, and would do what Fable does if "free" (pushLight 2, workers 4, recall).
+- So the harness now grades the plan, as evidence, not as a rule: the tool takes `plan` (one line, the model's words) and
+  `expect {metric, op, value, by}`; the game's `measure(packet)` grades it on every packet; `F` echoes the plan beside `MET` / `MISSED` /
+  `pending`, and a restated claim keeps its history (`claim since t514, by moved 9x, value 3>4>3`). `commander05-sonnet.md` describes the
+  grade and prescribes nothing; the counters are "starting points, not rules".
+- Result (replay of game 80, then live games 86/87): same evidence, different models. **Sonnet moves the deadline; Fable 5.1 changes the plan**
+  and says why ("stop chasing rg at d10: defend 5", "switch to Light vs the rg pair: 1 swing kill", `harvesters` 4). Live at equal lag
+  (Fable on a 400 ms clock) Fable built 5 Heavies to Sonnet's 1, kept the barracks fed (17% idle-broke vs 51%), and landed the only hit any of our
+  armies has made on CoacAI's base (10 → 6 hp). It still lost, at $1.98 a game vs $0.08.
+- The ceiling has moved from the commander to the reflex: the push leaves strung out over three tiles and every fighter dies alone; the base is
+  sniped by Ranged at three tiles with nothing adjacent; there is no recall.
+
+**Open, in order.**
+1. Script rules the commander cannot express: a push that moves as a group, a recall/push gate on an empty `defend` radius. Held back so far on purpose
+   (the user wanted to see the commander adapt with the script as is); the live Fable game says they are now the binding constraint.
+2. Whether a cheap model can be brought to revise: the grade reaches Sonnet and it still holds. Untried: a required self-grade field in the tool
+   (`last_expect: met|missed|pending`, `trigger_reachable`), Opus 5 on the same replay, a two-step call (grade first, then set).
+3. Fable live at the real 100 ms clock needs overlapping commander calls (area of interest, not scheduled); until then a slower clock is the fair test.
+4. `X` distance is to the cluster centroid, 1–2 low in a fifth of calls.
+5. Replay caveat to remember: `replay80.mjs` (scratchpad) builds its own F and nothing the replayed model sets takes effect; only live games exercise
+   the closed-window F fix.
+
 ## State
 
-M0–M11 built; Ashfall 55 live games (hub games 1–76), MicroRTS 5 scripted games (5/5 vs `ai.abstraction.WorkerRush`); `npm test` 235 tests, 229 pass, 6 skipped without a key or `MICRORTS_LOCAL`, 7 s. The harness levers inside a call are spent: reaction p50 5.6 s (game 24) → 2.2 s (game 30) by the order language, two calls in flight, the event tick and streaming dispatch; output 101 → 38 tokens, of which 29 are the forced tool call's framing; every packet layer is read (sensitivity); a third slot and a reserved slot sit inside one game's noise. Win rate on the game38 prompt (2026-09-14 evening campaigns): **the script 10 of 11** (games 39–49, 4.5–7.1 min, $0), **the model 4 of 5** (games 50–54, 5.4–14.6 min, $6.90); game 38 was the model's earlier loss on a quiet-packet commit.
+M0–M14 built; Ashfall 55 live games (hub games 1–76), MicroRTS games 1–87 (script, model and commander; see Current aim); `npm test` 296 tests, 290 pass, 6 skipped without a key or `MICRORTS_LOCAL`, 7 s. The harness levers inside a call are spent: reaction p50 5.6 s (game 24) → 2.2 s (game 30) by the order language, two calls in flight, the event tick and streaming dispatch; output 101 → 38 tokens, of which 29 are the forced tool call's framing; every packet layer is read (sensitivity); a third slot and a reserved slot sit inside one game's noise. Win rate on the game38 prompt (2026-09-14 evening campaigns): **the script 10 of 11** (games 39–49, 4.5–7.1 min, $0), **the model 4 of 5** (games 50–54, 5.4–14.6 min, $6.90); game 38 was the model's earlier loss on a quiet-packet commit.
 
 **2026-09-14, late: the three-way split.** Every loss was ambiguous between the packet, the strategy and the model. Now `src/games/ashfall/policy/game38.mjs` plays the game38 prompt as code from the packet text alone (`src/games/ashfall/read.mjs` reads the packet back into facts, strict on the structured layers), through the same `callModel` seam as the API (`--model script:game38`, `scriptModel` in `src/core/model.mjs`, no key, $0). What it answers:
 - **Is the packet sufficient?** The script passes the bench 13/13 on the working config and reads every packet of every recording (6,561). Anything it cannot read throws (`stop: error:read`), never a silent `-`.
@@ -157,6 +194,8 @@ Timing levers (overlap, event tick, stream) cannot be measured offline; one live
 - **Model vs plan (game 38)**: army 95%, purchases 51%; the misses are purchases not made. Whether that costs games is what the script's live record will say.
 
 ## Next, in order
+
+0. **MicroRTS commander: see Current aim at the top.** The items below are the Ashfall-era list, still open but not the active line of work.
 
 1. **The model's departures, read and half closed (2026-09-14 night, all offline).** `trajectory --model script:game38 --diff` on runs 70–74 with a 6-decision window (the script re-issues standing orders every packet; the model says them once; `buyAgreeW`/`armyAgreeW`): purchases 64–84%, army 63–88%. The residue is four compound rules the model skips: rally out with under 5 riflemen (never recalled: 120 packets in game 52), a cluster out while the rally is home (81), the second barracks at 200 ore with every queue full (never built: 107), a raid at home the riflemen outnumber (21); plus one decisive stochastic one, the commit with 8 on a kill packet (game 50 at 2:46). Three new bench cases from those states: `sally`, `secondba`, `failed`. Sonnet on the game38 packet: sally 5/5 (does not reproduce offline), secondba 0/5, failed 0/5. `--ashfall-plan-marks` puts the two compound conditions where their rule reads them (`out failed` on the rally, `(2nd ba)` on B): with the game38 prompt still 0/5 and 0/5 (a mark the prompt does not name is ignored); with `game55-sonnet.md` (game38 plus four lines naming them) failed 4/5, secondba 3/5, the full 16 cases 86% with the same two old misses (`train`, `remembered` 1/5). Arm files `runs/bench/2026-09-14-game55-*.json`, `…-departures-*.json`. **Game 55 (hub 76), the first live game on game55 + marks: win in 4:54, $0.61**, the model's fastest and closest to the plan (first push 16 at 4:06, 10 pushes, ore p50 45; windowed agreement purchases 79%, army 93% against 64–84 / 63–88 in games 50–54). One game, and **neither mark fired in it** (no packet carried `(2nd ba)` or `out failed`: ore never sat at 200 with a full queue and the attack never failed), so the win confirms the prompt's four lines do no harm, not that the marks work live; that needs a game that enters those states. The working config adopts game55 + marks on the bench gate. The second barracks is the open bench miss (3/5): the model attacks the visible core and buys nothing.
 2. **Longer campaigns only when a change needs them**: 10 games an arm gives ±26 points; the script arm is free, the model arm ~$1.40 a game (its games run long). Note the model's games grew through the evening (5.4 → 14.6 min, reaction p50 2.1 → 2.5 s) while the hub was stuttering (`ashfall_sector/requests/2026-09-14-live-hub-stutter.md`): rerun one model game after the hub fix before reading the minutes as the model's.
