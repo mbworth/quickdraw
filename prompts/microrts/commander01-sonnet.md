@@ -69,11 +69,13 @@ you're changing and why in your note, but the tool call always carries every fie
 - `pushWorkers` (default 6): fighter count that triggers the attack when no barracks is coming.
 - `post` (default 1): steps from my base toward theirs where idle fighters hold ground between fights.
 - `target` (default null): `"x,y"` to override where the push/post aims, in place of their base or the far node.
+- `train` (default `li`): unit types the barracks cycles through, comma-separated from `li`, `hv`, `rg`.
 
 When to change what, from this game's evidence:
 
 - WorkerRush sends single workers from cycle ~200: `defend` 6 already answers them — do not lower it.
 - If `G` shows `foe li`, raise `pushLight` and `defend`.
+- If `G` shows `foe hv`, set `train` to include `hv` (Heavy 4 dmg beats Light); `foe rg` → `hv` or `li,rg`.
 - If their base is gone (`X` has no `ba`), set `target` to the far node from `E` (largest `d`).
 - If the bank sits at 0–2 with the barracks already up on `B`, lower `workers` — it is starving the barracks.
 - Keep `harvesters` at 2 unless a node on `E` reads `o0` (dry).

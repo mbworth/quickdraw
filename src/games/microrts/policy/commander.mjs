@@ -17,8 +17,9 @@ export const tool = Object.freeze({
     pushWorkers: { ...CT(1, 12), description: 'fighter count that triggers the attack when no barracks is coming (rule 6); default 6' },
     post: { ...CT(0, 6), description: 'steps from my base toward theirs where idle fighters hold ground (rule 7); default 1' },
     target: { type: ['string', 'null'], description: '"x,y" (0-15 each) to override the push/post destination in place of their base or the far node; null uses the computed one' },
+    train: { type: 'string', description: 'unit types the barracks cycles through, comma-separated from li, hv, rg; default "li"' },
   },
-  required: ['harvesters', 'workers', 'barracksAt', 'defend', 'panic', 'pushLight', 'pushWorkers', 'post', 'target'],
+  required: ['harvesters', 'workers', 'barracksAt', 'defend', 'panic', 'pushLight', 'pushWorkers', 'post', 'target', 'train'],
   additionalProperties: false,
 });
 
@@ -31,6 +32,12 @@ const parseTarget = (v, fallback) => {
   if (!m) return fallback;
   const x = Number(m[1]), y = Number(m[2]);
   return x >= 0 && x <= 15 && y >= 0 && y <= 15 ? { x, y } : fallback;
+};
+const TRAIN_TYPES = new Set(['li', 'hv', 'rg']);
+const parseTrain = (v, fallback) => {
+  if (typeof v !== 'string') return fallback;
+  const types = v.split(',').map(s => s.trim()).filter(t => TRAIN_TYPES.has(t));
+  return types.length ? types.join(',') : fallback;
 };
 
 // apply(input, prev) → params. Pure: any field out of range or the wrong shape falls back to prev's value.
@@ -47,5 +54,6 @@ export function apply(input, prev = defaults) {
     pushWorkers: clamp(i.pushWorkers, 1, 12, prev.pushWorkers),
     post: clamp(i.post, 0, 6, prev.post),
     target: parseTarget(i.target, prev.target),
+    train: parseTrain(i.train, prev.train),
   };
 }

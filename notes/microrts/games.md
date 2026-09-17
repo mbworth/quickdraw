@@ -43,6 +43,36 @@ Local engine, `maps/16x16/basesWorkers16x16.xml` against `ai.abstraction.WorkerR
 | 35 | basesWorkers16x16-WorkerRush-mu4hzowq | commander:rush, quickdraw | **win** | 1:48 | campaign 1/3: 114 decisions (64.5/min), reaction p50 0.5 s / p90 0.5 s (wait 0.4 s), model p50 0 s, 0 out tokens, packet 963 real, 0 timeouts, kept 50.8%, 22 rejected, cache 94.4% (2824 written), $0.1039 |
 | 36 | basesWorkers16x16-WorkerRush-mu4i22va | commander:rush, quickdraw | **win** | 1:18 | campaign 2/3: 78 decisions (60.3/min), reaction p50 0.5 s / p90 0.5 s (wait 0.3 s), model p50 0 s, 0 out tokens, packet 955 real, 0 timeouts, kept 54.8%, 18 rejected, cache 100%, $0.0786 |
 | 37 | basesWorkers16x16-WorkerRush-mu4i3uu3 | commander:rush, quickdraw | **win** | 1:30 | campaign 3/3: 87 decisions (58.6/min), reaction p50 0.5 s / p90 0.5 s (wait 0.3 s), model p50 0 s, 0 out tokens, packet 971 real, 0 timeouts, kept 50.8%, 20 rejected, cache 100%, $0.0905 |
+| 38 | basesWorkers16x16-LightRush-mu4id71h | script:rush, quickdraw | **win** | 2:12 | campaign 1/3: 113 decisions (50.5/min), reaction p50 0.4 s / p90 0.5 s (wait 0 s), model p50 0 s, 0 out tokens, packet null real, 0 timeouts, kept 54.5%, 33 rejected, cache null%, $0 |
+| 39 | basesWorkers16x16-LightRush-mu4ig6q1 | script:rush, quickdraw | loss | 2:00 | campaign 2/3: 84 decisions (43/min), reaction p50 0.4 s / p90 0.5 s (wait 0 s), model p50 0 s, 0 out tokens, packet null real, 0 timeouts, kept 54.9%, 37 rejected, cache null%, $0 |
+| 40 | basesWorkers16x16-LightRush-mu4iit9d | script:rush, quickdraw | loss | 2:06 | campaign 3/3: 93 decisions (45.2/min), reaction p50 0.4 s / p90 0.5 s (wait 0 s), model p50 0 s, 0 out tokens, packet null real, 0 timeouts, kept 56.1%, 39 rejected, cache null%, $0 |
+| 41 | basesWorkers16x16-HeavyRush-mu4ilgwq | script:rush, quickdraw | loss | 5:00 | campaign 1/3: 159 decisions (31.8/min), reaction p50 0.4 s / p90 0.5 s (wait 0 s), model p50 0 s, 0 out tokens, packet null real, 0 timeouts, kept 47.3%, 125 rejected, cache null%, $0 |
+| 42 | basesWorkers16x16-HeavyRush-mu4is0iw | script:rush, quickdraw | loss | 1:48 | campaign 2/3: 78 decisions (44.6/min), reaction p50 0.4 s / p90 0.5 s (wait 0 s), model p50 0 s, 0 out tokens, packet null real, 0 timeouts, kept 54.6%, 22 rejected, cache null%, $0 |
+| 43 | basesWorkers16x16-HeavyRush-mu4iudnz | script:rush, quickdraw | loss | 2:06 | campaign 3/3: 101 decisions (47.4/min), reaction p50 0.1 s / p90 0.5 s (wait 0 s), model p50 0 s, 0 out tokens, packet null real, 0 timeouts, kept 57.1%, 19 rejected, cache null%, $0 |
+| 44 | basesWorkers16x16-RangedRush-mu4ix4oy | script:rush, quickdraw | loss | 2:12 | campaign 1/3: 106 decisions (48.7/min), reaction p50 0.5 s / p90 0.5 s (wait 0 s), model p50 0 s, 0 out tokens, packet null real, 0 timeouts, kept 51.5%, 22 rejected, cache null%, $0 |
+| 45 | basesWorkers16x16-RangedRush-mu4j01j0 | script:rush, quickdraw | **win** | 1:54 | campaign 2/3: 89 decisions (45.9/min), reaction p50 0.5 s / p90 0.5 s (wait 0 s), model p50 0 s, 0 out tokens, packet null real, 0 timeouts, kept 55.2%, 17 rejected, cache null%, $0 |
+| 46 | basesWorkers16x16-RangedRush-mu4j2ng7 | script:rush, quickdraw | **win** | 1:12 | campaign 3/3: 50 decisions (41.9/min), reaction p50 0.5 s / p90 0.5 s (wait 0 s), model p50 0 s, 0 out tokens, packet null real, 0 timeouts, kept 50%, 13 rejected, cache null%, $0 |
+| 47 | basesWorkers16x16-CoacAI-mu4j4730 | script:rush, quickdraw | loss | 1:42 | campaign 1/3: 80 decisions (47.5/min), reaction p50 0.4 s / p90 0.5 s (wait 0 s), model p50 0 s, 0 out tokens, packet null real, 0 timeouts, kept 46.6%, 18 rejected, cache null%, $0 |
+| 48 | basesWorkers16x16-CoacAI-mu4j6h4j | script:rush, quickdraw | loss | 1:42 | campaign 2/3: 81 decisions (47.2/min), reaction p50 0.4 s / p90 0.5 s (wait 0 s), model p50 0 s, 0 out tokens, packet null real, 0 timeouts, kept 50%, 13 rejected, cache null%, $0 |
+| 49 | basesWorkers16x16-CoacAI-mu4j8spt | script:rush, quickdraw | loss | 1:30 | campaign 3/3: 74 decisions (50.4/min), reaction p50 0.4 s / p90 0.5 s (wait 0 s), model p50 0 s, 0 out tokens, packet null real, 0 timeouts, kept 53.4%, 9 rejected, cache null%, $0 |
+| 50 | basesWorkers16x16-HeavyRush-mu4jt1b6 | script:rush, quickdraw | **win** | 2:30 | campaign 1/3: 106 decisions (42.2/min), reaction p50 0.4 s / p90 0.5 s (wait 0 s), model p50 0 s, 0 out tokens, packet null real, 0 timeouts, kept 51.6%, 16 rejected, cache null%, $0 |
+| 51 | basesWorkers16x16-HeavyRush-mu4jwdnv | script:rush, quickdraw | loss | 2:06 | campaign 2/3: 73 decisions (34.5/min), reaction p50 0.5 s / p90 0.5 s (wait 0 s), model p50 0 s, 0 out tokens, packet null real, 0 timeouts, kept 60.9%, 11 rejected, cache null%, $0 |
+| 52 | basesWorkers16x16-HeavyRush-mu4jz7su | script:rush, quickdraw | loss | 2:36 | campaign 3/3: 91 decisions (34.7/min), reaction p50 0.5 s / p90 0.5 s (wait 0 s), model p50 0 s, 0 out tokens, packet null real, 0 timeouts, kept 55%, 41 rejected, cache null%, $0 |
+| 53 | basesWorkers16x16-HeavyRush-mu4k2lra | script:rush, quickdraw | **win** | 1:54 | campaign 1/3: 73 decisions (39.4/min), reaction p50 0.5 s / p90 0.5 s (wait 0 s), model p50 0 s, 0 out tokens, packet null real, 0 timeouts, kept 53.7%, 24 rejected, cache null%, $0 |
+| 54 | basesWorkers16x16-HeavyRush-mu4k53ks | script:rush, quickdraw | loss | 1:48 | campaign 2/3: 69 decisions (38.6/min), reaction p50 0.4 s / p90 0.5 s (wait 0 s), model p50 0 s, 0 out tokens, packet null real, 0 timeouts, kept 57.5%, 21 rejected, cache null%, $0 |
+| 55 | basesWorkers16x16-HeavyRush-mu4k7ihq | script:rush, quickdraw | loss | 1:48 | campaign 3/3: 75 decisions (40.9/min), reaction p50 0.5 s / p90 0.5 s (wait 0 s), model p50 0 s, 0 out tokens, packet null real, 0 timeouts, kept 59.9%, 22 rejected, cache null%, $0 |
+| 56 | basesWorkers16x16-CoacAI-mu4k9vql | script:rush, quickdraw | loss | 1:54 | campaign 1/3: 94 decisions (48.6/min), reaction p50 0.5 s / p90 0.5 s (wait 0 s), model p50 0 s, 0 out tokens, packet null real, 0 timeouts, kept 51.6%, 17 rejected, cache null%, $0 |
+| 57 | basesWorkers16x16-CoacAI-mu4kchdf | script:rush, quickdraw | loss | 1:30 | campaign 2/3: 65 decisions (42.8/min), reaction p50 0.5 s / p90 0.5 s (wait 0 s), model p50 0 s, 0 out tokens, packet null real, 0 timeouts, kept 53.4%, 24 rejected, cache null%, $0 |
+| 58 | basesWorkers16x16-CoacAI-mu4kejpn | script:rush, quickdraw | loss | 1:54 | campaign 3/3: 98 decisions (52.2/min), reaction p50 0.5 s / p90 0.5 s (wait 0 s), model p50 0 s, 0 out tokens, packet null real, 0 timeouts, kept 53.7%, 15 rejected, cache null%, $0 |
+| 59 | basesWorkers16x16-CoacAI-mu4kgz03 | script:rush, quickdraw | loss | 1:54 | campaign 1/3: 77 decisions (40.3/min), reaction p50 0.5 s / p90 0.5 s (wait 0 s), model p50 0 s, 0 out tokens, packet null real, 0 timeouts, kept 45.2%, 31 rejected, cache null%, $0 |
+| 60 | basesWorkers16x16-CoacAI-mu4kjjha | script:rush, quickdraw | loss | 1:48 | campaign 2/3: 83 decisions (45.8/min), reaction p50 0.5 s / p90 0.5 s (wait 0 s), model p50 0 s, 0 out tokens, packet null real, 0 timeouts, kept 50.3%, 14 rejected, cache null%, $0 |
+| 61 | basesWorkers16x16-CoacAI-mu4klzhe | script:rush, quickdraw | loss | 1:54 | campaign 3/3: 79 decisions (41.4/min), reaction p50 0.5 s / p90 0.5 s (wait 0 s), model p50 0 s, 0 out tokens, packet null real, 0 timeouts, kept 45.6%, 31 rejected, cache null%, $0 |
+| 62 | basesWorkers16x16-LightRush-mu4l4iw4 | commander:rush, quickdraw | loss | 1:42 | campaign 1/3: 84 decisions (48.6/min), reaction p50 0.4 s / p90 0.5 s (wait 0.1 s), model p50 0 s, 0 out tokens, packet 940 real, 0 timeouts, kept 60.4%, 11 rejected, cache 94.1% (2979 written), $0.1019 |
+| 63 | basesWorkers16x16-LightRush-mu4l6v2j | commander:rush, quickdraw | **win** | 4:36 | campaign 2/3: 236 decisions (51.5/min), reaction p50 0.5 s / p90 0.5 s (wait 0 s), model p50 0 s, 0 out tokens, packet 962 real, 0 timeouts, kept 55.5%, 36 rejected, cache 100%, $0.2906 |
+| 64 | basesWorkers16x16-LightRush-mu4lcvjk | commander:rush, quickdraw | loss | 1:48 | campaign 3/3: 96 decisions (52.4/min), reaction p50 0.5 s / p90 0.5 s (wait 0 s), model p50 0 s, 0 out tokens, packet 942 real, 0 timeouts, kept 55.4%, 15 rejected, cache 100%, $0.1102 |
+| 65 | basesWorkers16x16-CoacAI-mu4lf8o9 | commander:rush, quickdraw | loss | 1:42 | campaign 1/3: 83 decisions (48.1/min), reaction p50 0.5 s / p90 0.5 s (wait 0.1 s), model p50 0 s, 0 out tokens, packet 953 real, 0 timeouts, kept 49.7%, 12 rejected, cache 100%, $0.1001 |
+| 66 | basesWorkers16x16-CoacAI-mu4lhkpc | commander:rush, quickdraw | loss | 1:48 | campaign 2/3: 87 decisions (49/min), reaction p50 0.5 s / p90 0.5 s (wait 0 s), model p50 0 s, 0 out tokens, packet 953 real, 0 timeouts, kept 57.3%, 17 rejected, cache 100%, $0.0936 |
+| 67 | basesWorkers16x16-CoacAI-mu4ljyyw | commander:rush, quickdraw | loss | 1:30 | campaign 3/3: 73 decisions (49.7/min), reaction p50 0.5 s / p90 0.5 s (wait 0.1 s), model p50 0 s, 0 out tokens, packet 927 real, 0 timeouts, kept 57.1%, 9 rejected, cache 100%, $0.0872 |
 
 **Campaign 1 (`script:rush` vs `ai.abstraction.WorkerRush`, 2026-09-15): 5 of 5**, every game 2:24–2:36, 55–60
 decisions a minute, reaction p50 0.4–0.5 s (one `refreshMs`: the floor for a 500 ms state cadence), $0.
@@ -179,6 +209,59 @@ this stickier, not better: `why` carries the previous verdict (`no threats near`
 and edits its number rather than re-deriving it — a conflict between rule and memory that the model itself wrote into
 memory. Memory should carry facts and intent (ids, cycles, a checkable `expect`), never a conclusion.
 
+**Script baseline vs the other bots (games 38–49, 100 ms a cycle, $0, 2026-09-16): LightRush 1/3, HeavyRush 0/3 (one
+5:00 draw), RangedRush 2/3, CoacAI 0/3; WorkerRush stays 5/5.** Same opening every game — barracks at t249, first Light
+at t369 — so the divergence is at first contact. LightRush: a Light at d6 by t399, before ours; the base fell at t649 in
+both losses and held to t1190 in the win. HeavyRush: contact late (t825–1130) but paired Heavies beat our 4 Light; the
+draw had both bases dead and our last Light attack-moving to the post by its dead base instead of their surviving
+barracks — the post fallback never retargets a last building. RangedRush: the two wins pushed or killed early; the loss
+ground down 4 Light without a push. CoacAI: Heavy plus Ranged together at t554, 3 of 3 losses with our highest Light count
+(5) — no parameter fixes a pure-Light army. Plausible levers for the commander: `defend`/`panic` up and `barracksAt`
+down vs LightRush, `pushLight` up vs HeavyRush and down vs RangedRush; CoacAI needs a unit choice the script lacks.
+
+**Unit mix and the post fallback (games 50–61, script, `--script-params '{"train":"hv"}'` / `"li,rg"`, 100 ms, $0,
+2026-09-16): HeavyRush 1/3 with each mix (was 0/3), CoacAI 0/3 with each (was 0/3).** The rush script's `train` parameter
+is now a comma list from `li`, `hv`, `rg`; a single type keeps the standing count of 5 (the default is byte-identical),
+a mix cycles one unit at a time. Target falls back their base → their nearest other building → the far node, and with no
+enemy mobile unit on `X` every free fighter pushes the last building (`push:last`), so game 41's draw cannot recur.
+HeavyRush: both wins reached three units and pushed with one raider dead at home; all four losses had two Heavies inside
+`defend` at once, either stalled at two units or recalled from 8–9 tiles out after the second Heavy was already at d5.
+CoacAI: not production (counts match at t600) — its Heavy closes d6→d1 in ~10 cycles while our two defenders sit 2–4 tiles
+off the raider's cell, the barracks dies ~t624, a Ranged follows. Next levers: gate `push` on no enemy inside `defend`
+rather than on count alone; `defend` 8–9 vs CoacAI so defenders close earlier. `--script-params <json>` runs any fixed
+parameter set as a script arm.
+
+**Commander vs LightRush and CoacAI (games 62–67, `commander01-sonnet.md`, 100 ms, $0.78 for six, 2026-09-16): LightRush
+1/3, CoacAI 0/3 — the script's record on the same bots.** Read decision by decision (every commander call against the
+packet it saw, each `expect` scored, the default script replayed over the same packets to isolate what the parameters
+changed). The commander did one thing the script cannot: it attacked. `pushLight 2` produced sustained pushes in four
+games; game 63 (win, 4:36) attack-moved at their base from t1374 where the defaults held the post, and game 64 killed
+their base at t794 — no script game ever touched it — then held an empty corner for 195 cycles while four Lights walked
+into ours. Everything else restated defaults: the opening was byte-identical in all six, `harvesters`/`barracksAt` never
+moved in 141 calls, ~40% of changes reverted within two calls, `target` was set 11 times and never beat the script's own
+fallback. It never countered a raid the script would have missed — `defend 7–12` only fired after contact, and in game
+62 `defend 8` pulled the lone Light off the base to chase a d7 raider while a second took the base. Expects: 32 met, 70
+failed, 39 uncheckable; the plan/expect loop worked once (game 66: three failed "base hp" expects → abort push, rebuild).
+Its `train` mix churn dropped the standing count 5→1 and idled the barracks up to 29% of affordable cycles, which its own
+notes then complained about — nothing tells it what a parameter did. Latency is the ceiling: packet→apply +45 cycles
+median, two timeouts in 66, and in five games the last calls answered a dead board. Packet defect found: `X`'s `d` is
+the distance to the cluster centroid, 1–2 low in 27/141 calls, so `defend`/`panic` fire late. Losses vs the baselines:
+62/65/66/67 lost the same way 50–180 cycles slower; 63/64 were different games. Full per-call detail was produced in the
+session scratchpad (`commander-analysis.md`), not kept.
+
+**Feedback layer and `commander02-sonnet.md`, replayed offline (2026-09-16, $0.32).** Core M14 now appends `F` to the
+packet the commander sees: its last parameter set, decisions in force, how many reflex orders it changed (the reflex is
+re-run on the old set) and the last differing pair; recorded as `feedback` on the ride-out. The prompt rewrite gives
+each parameter the rule that reads it, its effect within ~50 cycles, its cost and when it is the wrong lever, plus
+"read F first; a change that differed 0/k is not repeated; a failed expect changes the lever, not the cycle". All 53
+recorded commander calls of games 62, 64 and 67 were re-sent with the new prompt and a reconstructed `F` (the reflex is
+deterministic, so `differed` is exact). 28/53 chose a different lever than the recorded answer: `defend` 4→0, `target`
+3→1, `workers` 12→15, `harvesters`/`barracksAt` 0→2. Against CoacAI single-type `hv` in 9/16 calls (the old mix 9/16 →
+1/16). Repeating a lever after `differed 0/k`: 3/53. Not fixed: "more Light" still split between `workers` down and
+`pushLight` up (4/4/2 of 9); the recall rule after their base died was not followed (game 64 seq19 raised `post` 1→3);
+one overcorrection (game 67 t644 `pushLight` 2→10 with the base at 2 hp). Single-step replay only — the note chain is
+the old prompt's; live games are the test.
+
 **What the plan is.** Two harvesters, the base on workers to six, a barracks at three workers and five banked, then
 Light forever; defend anything within six of the base (harvesters too inside two), attack at three Light. Written out in
 `prompts/microrts/game01-sonnet.md` and implemented in `src/games/microrts/policy/rush.mjs`.
@@ -186,4 +269,4 @@ Light forever; defend anything within six of the base (harvesters too inside two
 **What it loses to.** An earlier draft with `BR_AT = 5` lost 1 of 5: the barracks started around cycle 300 and the rush
 arrived first. At `BR_AT = 3` the barracks is up by ~220 and the Lights carry the game. The remaining exposure is the
 same one — a rush that reaches the base before the first Light — and the plan has no answer but the two or three workers
-already standing at the post. Untested against `LightRush`, `HeavyRush`, `RangedRush` or `ai.coac.CoacAI`.
+already standing at the post. Games 38–49: LightRush 1/3, HeavyRush 0/3, RangedRush 2/3, CoacAI 0/3.

@@ -33,11 +33,13 @@ const policyOf = async (adapter, game, model, prefix) => {
 // --model script:<name>: src/games/<game>/policy/<name>.mjs plays instead of the API (no key, no prompt, $0); needs the order language decode.
 // --model commander:<name>: that policy is the reflex (0 ms, every packet) and policy/commander.mjs's schema is the API model's
 // parameter set, rewritten in the background every --commander-every ms.
+// --script-params '{"train":"hv"}' overrides the policy's DEFAULTS for a script arm (a fixed commander setting at $0).
 export async function modelFor({ adapter, game, model, system, thinking = 'adaptive', effort = 'low', reply = 'tool', stream = false, memory = 0, decisionDeadlineMs, clock, opts = {} }) {
   if (isScript(model)) {
     const { dir, name } = await policyOf(adapter, game, model, 'script:');
-    const { decide } = await import(path.join(dir, `${name}.mjs`));
-    return scriptModel({ decide, decode: adapter.decode, clock });
+    const { decide, DEFAULTS } = await import(path.join(dir, `${name}.mjs`));
+    const params = opts.scriptParams ? { ...DEFAULTS, ...opts.scriptParams } : null;
+    return scriptModel({ decide: params ? t => decide(t, params) : decide, decode: adapter.decode, clock });
   }
   if (isCommander(model)) {
     const { dir, name } = await policyOf(adapter, game, model, 'commander:');

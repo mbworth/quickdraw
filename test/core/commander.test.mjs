@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { commanderModel } from '../../src/core/commander.mjs';
+import { commanderModel, feedbackLayer } from '../../src/core/commander.mjs';
 import { virtualClock } from '../../src/core/clock.mjs';
 
 const usage = { input_tokens: 500, cache_creation_input_tokens: 0, cache_read_input_tokens: 4000, output_tokens: 40 };
@@ -35,7 +35,7 @@ test('the reflex answers at 0 ms with the old params while the commander is in f
   const { callModel, clock, calls } = mk();
   const r1 = await callModel({ packet: 'P1' });
   assert.equal(calls.length, 1);
-  assert.equal(calls[0].packet, 'P1');
+  assert.equal(calls[0].packet, 'P1\nF none');
   assert.deepEqual(r1.orders, [{ cmd: 'a1' }]);
   assert.equal(r1.stop, 'tool_use');
   assert.equal(r1.latencyMs, 0);
@@ -65,7 +65,7 @@ test('a commander result lands once: note, usage, cost, raw.commander, new param
   assert.equal(r.note, 'holding the ramp');
   assert.deepEqual(r.usage, usage);
   assert.equal(r.cost, 0.002);
-  assert.deepEqual(r.raw.commander, { seq: 1, input: { mode: 'b', push: 4, n: 'holding the ramp' }, stop: 'tool_use', latencyMs: 12, apiPacketN: 1 });
+  assert.deepEqual(r.raw.commander, { seq: 1, input: { mode: 'b', push: 4, n: 'holding the ramp' }, stop: 'tool_use', latencyMs: 12, apiPacketN: 1, feedback: 'F none' });
   assert.equal(JSON.stringify(r.raw).includes('P1'), false);   // no packet text in the row
 
   const r2 = await callModel({ packet: 'P3' });   // each rides out exactly once
@@ -90,7 +90,7 @@ test('the next commander call waits for everyMs from the last start', async () =
   await clock.advance(1);
   await callModel({ packet: 'P4' });
   assert.equal(calls.length, 2);
-  assert.equal(calls[1].packet, 'P4');
+  assert.match(calls[1].packet, /^P4\nF set 1 /);
   await callModel.close();
 });
 
@@ -103,7 +103,7 @@ test('a failed commander leaves the params alone and reports the error once', as
   assert.deepEqual(callModel.params(), { mode: 'a', push: 1 });
   assert.deepEqual(r.orders, [{ cmd: 'a1' }]);
   assert.equal(r.note, null);
-  assert.deepEqual(r.raw.commander, { seq: 1, input: null, stop: 'timeout', error: 'deadline', latencyMs: 6000, apiPacketN: 1 });
+  assert.deepEqual(r.raw.commander, { seq: 1, input: null, stop: 'timeout', error: 'deadline', latencyMs: 6000, apiPacketN: 1, feedback: 'F none' });
   await callModel.close();
 });
 
@@ -141,4 +141,69 @@ test('onOrders gets the reflex orders and streamed counts them', async () => {
   assert.deepEqual(seen, [{ cmd: 'a1' }]);
   assert.equal(r.streamed, 1);
   await callModel.close();
+});
+
+// F: the feedback layer — what the commander's own last set changed, and what it did to the reflex's orders.
+const spyReflex = () => { const seen = []; return { seen, fn: (packet, params) => ({ o: packet === 'X' ? 'fixed' : `${params.mode}${params.push}`, why: ['w'] }) }; };
+
+test('the first commander call sees F none', async () => {
+  const { callModel, calls } = mk();
+  assert.equal(callModel.feedback(), 'F none');
+  await callModel({ packet: 'P1' });
+  assert.equal(calls[0].packet, 'P1\nF none');
+  await callModel.close();
+});
+
+test('F reports the applied diff, the decisions in force and the orders it changed', async () => {
+  const { fn } = spyReflex();
+  const { callModel, clock, calls } = mk({ reflex: fn });
+  await callModel({ packet: 'P1' });
+  calls[0].resolve(plan({ mode: 'b', push: 4, n: null }));
+  await clock.advance(100);
+  await callModel({ packet: 'P2' });            // b4 vs a1: differs
+  await callModel({ packet: 'X' });             // same order under either set
+  await callModel({ packet: 'P3' });            // differs
+  await clock.advance(4900);
+  await callModel({ packet: 'P4' });
+  assert.equal(calls.length, 2);
+  assert.equal(calls[1].packet, 'P4\nF set 1 in force 3 decisions: mode a>b push 1>4 | orders differed 2/3 | last: b4 / was a1');
+  await callModel.close();
+});
+
+test('an answer that changes nothing reads unchanged', async () => {
+  const { callModel, clock, calls } = mk();
+  await callModel({ packet: 'P1' });
+  calls[0].resolve(plan({ mode: 'a', push: 1, n: null }));
+  await clock.advance(5000);
+  await callModel({ packet: 'P2' });
+  assert.equal(calls[1].packet, 'P2\nF set 1 in force 0 decisions: unchanged | orders differed 0/0');
+  await callModel.close();
+});
+
+test('the F line rides out on the summary and never reaches the reflex', async () => {
+  const seen = [];
+  const { callModel, clock, calls } = mk({ reflex: (packet, params) => { seen.push(packet); return { o: `${params.mode}${params.push}`, why: ['w'] }; } });
+  await callModel({ packet: 'P1' });
+  calls[0].resolve(plan({ mode: 'b', push: 4, n: null }));
+  await clock.advance(100);
+  const r = await callModel({ packet: 'P2' });
+  assert.equal(r.raw.commander.feedback, 'F none');
+  await callModel({ packet: 'P3' });
+  await clock.advance(4900);
+  await callModel({ packet: 'P4' });
+  assert.equal(calls[1].packet, 'P4\nF set 1 in force 2 decisions: mode a>b push 1>4 | orders differed 2/2 | last: b4 / was a1');
+  calls[1].resolve(plan({ mode: 'c', push: 4, n: null }));
+  await clock.advance(100);
+  const r3 = await callModel({ packet: 'P5' });
+  assert.equal(r3.raw.commander.feedback, calls[1].packet.split('\n').pop());
+  assert.deepEqual(seen.filter(t => t.includes('F ')), []);
+  assert.deepEqual([...new Set(seen)], ['P1', 'P2', 'P3', 'P4', 'P5']);
+  await callModel.close();
+});
+
+test('feedbackLayer prints null and caps the last part', () => {
+  assert.equal(feedbackLayer({ setSeq: 2, sinceN: 4, prev: { target: null, train: 'li' }, cur: { target: '3,4', train: 'li,hv' }, differed: 1, last: null }),
+    'F set 2 in force 4 decisions: target null>3,4 train li>li,hv | orders differed 1/4');
+  const long = feedbackLayer({ setSeq: 1, sinceN: 1, prev: { a: 1 }, cur: { a: 2 }, differed: 1, last: { o: 'x'.repeat(300), was: 'y' } });
+  assert.equal(long.split(' | ').pop().length, 200);
 });

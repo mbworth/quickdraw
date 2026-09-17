@@ -92,4 +92,4 @@ src/core` empty (X5 met).
 The engine bug + patch: stock CLIENT mode builds two type tables and compares unit types by identity, freezing every
 producer. `busy` excludes `TYPE_NONE` (`fillWithNones` hides real idleness). The engine allows one unit per
 destination cell, cancelling a second across cycles. An attack-move at an occupied cell (their base) stops one step
-short rather than completing. `bin/campaign.mjs` now counts a draw (`max_cycles`) as decided. Untested: `LightRush`, `HeavyRush`, `RangedRush`, `ai.coac.CoacAI`; model games in `games.md` (16–20).
+short rather than completing. `bin/campaign.mjs` now counts a draw (`max_cycles`) as decided. Script baseline (games 38–49, 100 ms): `LightRush` 1/3, `HeavyRush` 0/3, `RangedRush` 2/3, `ai.coac.CoacAI` 0/3; with `train` `hv` or `li,rg` (games 50–61) HeavyRush 1/3, CoacAI 0/3; model games in `games.md` (16–20).

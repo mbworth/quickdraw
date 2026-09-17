@@ -20,8 +20,9 @@
 // is the commander split's parameter set (policy/commander.mjs): DEFAULTS reproduces this file's old constants exactly.
 import { read } from '../read.mjs';
 
-const WK_COST = 1, BR_COST = 5, LI_COST = 2;
-export const DEFAULTS = { harvesters: 2, workers: 6, barracksAt: 3, defend: 6, panic: 2, pushLight: 3, pushWorkers: 6, post: 1, target: null };
+const WK_COST = 1, BR_COST = 5;
+const COST = { li: 2, hv: 3, rg: 2 };
+export const DEFAULTS = { harvesters: 2, workers: 6, barracksAt: 3, defend: 6, panic: 2, pushLight: 3, pushWorkers: 6, post: 1, target: null, train: 'li' };
 const MOBILE = new Set(['wk', 'li', 'hv', 'rg']);
 const d1 = (a, b) => Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
 const step = (from, to, n) => { const dx = to.x - from.x, dy = to.y - from.y, L = Math.abs(dx) + Math.abs(dy) || 1; return { x: Math.round(from.x + (n * dx) / L), y: Math.round(from.y + (n * dy) / L) }; };
@@ -31,7 +32,7 @@ const list = us => us.map(u => `#${u.id}`).join(',');
 export const decide = (text, params = DEFAULTS) => decideFacts(read(text), params);
 
 export function decideFacts(k, params = DEFAULTS) {
-  const { harvesters: HARV, workers: WK_CAP, barracksAt: BR_AT, defend: DEFEND, panic: PANIC, pushLight: PUSH_LI, pushWorkers: PUSH_WK, post: POST, target: TARGET } = params;
+  const { harvesters: HARV, workers: WK_CAP, barracksAt: BR_AT, defend: DEFEND, panic: PANIC, pushLight: PUSH_LI, pushWorkers: PUSH_WK, post: POST, target: TARGET, train: TRAIN } = params;
   const { h, p, e, a, b, x } = k;
   const why = [], orders = [];
   const base = b.find(c => c.type === 'ba') || null;
@@ -47,8 +48,10 @@ export function decideFacts(k, params = DEFAULTS) {
   if (!units.length) return { o: '-', why: ['dead'] };
 
   const theirBase = x.find(c => c.type === 'ba');
+  const theirBuilding = x.filter(c => !MOBILE.has(c.type) && c.type !== 'ba').sort((c1, c2) => (c1.dB ?? 1e9) - (c2.dB ?? 1e9))[0];
+  const enemyBuilding = theirBase || theirBuilding;
   const far = [...e].sort((n1, n2) => (n2.d ?? 0) - (n1.d ?? 0))[0];
-  const target = TARGET || (theirBase ? { x: theirBase.x, y: theirBase.y } : far ? { x: far.x, y: far.y } : null);
+  const target = TARGET || (theirBase ? { x: theirBase.x, y: theirBase.y } : theirBuilding ? { x: theirBuilding.x, y: theirBuilding.y } : far ? { x: far.x, y: far.y } : null);
   const post = target ? step(anchor, target, POST) : anchor;
 
   // Their base is on the packet (no fog on this map); the far nodes are where it stood if it has already fallen.
@@ -75,15 +78,26 @@ export function decideFacts(k, params = DEFAULTS) {
   const builder = units.find(u => u.state === 'p' && u.type === 'wk') || fighters.find(u => u.type === 'wk' && u.state === 'i') || fighters.find(u => u.type === 'wk') || null;
   const building = units.some(u => u.state === 'p');
   if (!barracks && builder && workers.length >= BR_AT && bank >= BR_COST && !building) { orders.push(`t #${builder.id} br 1`); bank -= BR_COST; why.push('buy:br'); }
-  if (barracks && bank >= LI_COST) { orders.push(`t ${barracks.id} li 5`); bank -= LI_COST; why.push('buy:li'); }
+  // A mix (`train: 'li,hv'`) cycles by what already exists plus the unit in production, one at a time; a single type keeps a count of 5 standing.
+  const types = (TRAIN || 'li').split(',').map(s => s.trim()).filter(t => COST[t]);
+  if (barracks) {
+    const producing = p.find(q => q.id === barracks.id)?.idle === false ? 1 : 0;
+    const type = types.length > 1 ? types[(army.length + producing) % types.length] : types[0] || 'li', cost = COST[type];
+    if (bank >= cost) { orders.push(`t ${barracks.id} ${type} ${types.length > 1 ? 1 : 5}`); bank -= cost; why.push(`buy:${type}`); }
+  }
   if (base && bank >= WK_COST && workers.length < WK_CAP) { orders.push(`t ${base.id} wk ${Math.min(5, WK_CAP - workers.length)}`); bank -= WK_COST; why.push('buy:wk'); }
   if (!why.some(w => w.startsWith('buy'))) why.push('buy:none');
 
   const free = us => us.filter(u => u.state !== 'p' && u.id !== builder?.id);
+  const noEnemyMobile = !x.some(c => MOBILE.has(c.type));
   if (raid) {
     const who = free(panic ? [...fighters, ...harvesters] : fighters);
     if (who.length) orders.push(`a ${list(who)} ${P(raid)}`);
     why.push(panic ? 'defend:panic' : 'defend');
+  } else if (noEnemyMobile && enemyBuilding && target) {
+    const who = free(fighters);
+    if (who.length) orders.push(`a ${list(who)} ${P(target)}`);
+    why.push('push:last');
   } else if (target && (army.length >= PUSH_LI || (!barracks && fighters.length >= PUSH_WK))) {
     const who = free(fighters);
     if (who.length) orders.push(`a ${list(who)} ${P(target)}`);

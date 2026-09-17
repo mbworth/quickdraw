@@ -64,8 +64,9 @@ not conclusions. Facts-only note (game04, `plan | doing | expect`): games 32–3
 **Commander split (2026-09-16, core M14): `--model commander:<policy>` — the script plays every packet at 0 ms from a parameter
 set; the API model (`--commander-model`, `--commander-every` ms) rewrites the parameters and its note in the background.**
 MicroRTS games 35–37 at the real 100 ms clock: 3 of 3 in 1:18–1:48, $0.08–0.10, reaction 0.5 s; commander 15–19 calls a game.
-The model alone at that clock was 0/4. Next: script campaigns vs `LightRush`, `HeavyRush`, `ai.coac.CoacAI` to find where the
-defaults lose, then the commander on exactly those (the only setting where its parameter changes can be measured); raise
+The model alone at that clock was 0/4. Script baseline vs the rest (games 38–49, $0): `LightRush` 1/3, `HeavyRush` 0/3, `RangedRush` 2/3,
+`CoacAI` 0/3 (`notes/microrts/games.md`). Next: the commander on LightRush and RangedRush, where a parameter change could
+plausibly flip the game; the `train` unit mix and the last-building push shipped (games 50–61: HeavyRush 1/3 with `hv` or `li,rg`, CoacAI still 0/3 — it wins on closing speed, not production; commander on those bots (games 62–67): 1/3 and 0/3, same as the script; it attacks where the script would hold, restates the rest, never counters a raid the script missed — see `notes/microrts/games.md`. Levers it lacks: a recall/push gate on an empty `defend` radius, `X` distance to the nearest unit not the centroid). `F` feedback layer + `commander02-sonnet.md` (cause/effect per parameter) replayed over 53 recorded calls at $0.32: 28/53 pick a different lever (`defend`/`target` drop, `hv` over a mix vs CoacAI), recall rule still not followed — live games next; raise
 `--decision-deadline` for the commander (one 6 s abort); Ashfall's `game38` policy has no params yet. Was: the commander split (script reflexes: harvesters, defence, build; the model sets plan
 parameters + note on a slow clock), then script campaigns vs LightRush/HeavyRush/CoacAI to find where the plan itself breaks.
 
@@ -115,7 +116,8 @@ The script plays the same line with `--model script:game38` and no `--prompt`/`-
 | `--ashfall-no-note` | schema without `note`; output 121 → 89 | game 23 |
 | `--memory <chars>` (core) | the model's `n` note fed back as layer `N` on the next packet; M12 | MicroRTS games 21+ |
 | `--journal N` `--log N` (core) | harness-kept history: last N decisions as `R`, last N game triggers as `G`; M13 | MicroRTS games 26+ |
-| `--model commander:<policy>` (core) | the policy answers every packet at 0 ms from a parameter set; an API model rewrites the set in the background every `--commander-every` ms (`--commander-model <id>`); M14 | new, untested |
+| `--model commander:<policy>` (core) | the policy answers every packet at 0 ms from a parameter set; an API model rewrites the set in the background every `--commander-every` ms (`--commander-model <id>`); packet to the commander carries `F` (its last parameter set, decisions in force, how many reflex orders it changed); M14 | MicroRTS games 35–37, 3/3 |
+| `--script-params <json>` (core) | overrides the policy's DEFAULTS for a script arm: a fixed commander setting at $0 | MicroRTS games 50+ |
 | `--microrts-foe-events` | a new enemy unit is an info event, so `G` carries their production | games 26+ |
 | `--ashfall-compact-buildings` | one always-on `B` line: ids, types, anchor positions, hp/bld only when hurt or unfinished | bench: equals the full packet at 39% of its tokens |
 | `--ashfall-keep-remembered` | `M` on every packet at army priority (game 25: the enemy base reached the model on 1 packet of 118) | trajectory: pushTarget 22/25 vs 1/14 |

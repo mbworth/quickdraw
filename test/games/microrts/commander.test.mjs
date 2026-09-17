@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { encode } from '../../../src/games/microrts/coder.mjs';
 import { read } from '../../../src/games/microrts/read.mjs';
 import { decide, decideFacts, DEFAULTS } from '../../../src/games/microrts/policy/rush.mjs';
-import { defaults, apply } from '../../../src/games/microrts/policy/commander.mjs';
+import { defaults, apply, tool } from '../../../src/games/microrts/policy/commander.mjs';
 import { assemble } from '../../../src/core/packet.mjs';
 import { tinySnap } from './helpers.mjs';
 
@@ -30,6 +30,21 @@ test('apply falls back to prev on missing/malformed fields; null target clears i
   assert.equal(apply({ target: '20,3' }, prev).target, prev.target);   // out of 0-15
   assert.equal(apply({ target: null }, prev).target, null);
   assert.equal(apply({ harvesters: 3.5 }, prev).harvesters, prev.harvesters);
+});
+
+test('apply normalizes train; garbage falls back to prev', () => {
+  const prev = { ...defaults, train: 'li' };
+  assert.equal(apply({ train: 'hv, rg' }, prev).train, 'hv,rg');
+  assert.equal(apply({ train: 'li,wat,hv' }, prev).train, 'li,hv');
+  assert.equal(apply({ train: 'wat' }, prev).train, prev.train);
+  assert.equal(apply({ train: '' }, prev).train, prev.train);
+  assert.equal(apply({ train: 7 }, prev).train, prev.train);
+  assert.equal(apply({}, prev).train, prev.train);
+});
+
+test('tool schema requires train', () => {
+  assert.ok(tool.required.includes('train'));
+  assert.equal(tool.properties.train.type, 'string');
 });
 
 // A packet with three idle workers and one node: harvesters:3 tops all three up, the default tops up only two.
