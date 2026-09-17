@@ -161,6 +161,9 @@ F set <n> in force <k> decisions: <param> <old>><new> ... | orders differed <x>/
 set. "orders differed 0/k" means the reflex has issued the same orders it would have under the old set every time
 since — your change hasn't shown up in play yet.
 
+When your newest set has not been played yet, `F` reports the set before it (the last one with decisions to count) and
+ends `| set <n> landed: <its changes>`.
+
 `plan` and `expect` are your own words from your last call, echoed back with what the packets since then measured:
 `MET t<cycle>` at the first packet the condition held, `MISSED (max <best>)` once the cycle passed `by` without it,
 `pending (max <best>, t<cycle>)` before the deadline, `expect: none` when you claimed nothing. The best value is the

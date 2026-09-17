@@ -250,7 +250,7 @@ test('an expect past its deadline reads MISSED and the verdict stands', async ()
   calls[1].resolve(plan({ mode: 'a', push: 1, n: null, plan: 'hold the post', expect: null }));   // a new answer replaces the verdict
   await clock.advance(5000);
   await callModel({ packet: '1500 1' });
-  assert.match(calls[2].packet, /\| plan: hold the post \| expect: none$/);
+  assert.match(calls[2].packet, /\| plan: hold the post \| expect: none \| set 2 landed: unchanged$/);
   await callModel.close();
 });
 
@@ -267,7 +267,7 @@ test('<= grades on the minimum seen and == on the last', async () => {
   calls[1].resolve(plan({ mode: 'a', push: 1, n: null, plan: 'two heavies', expect: { metric: 'hv', op: '==', value: 2, by: 2000 } }));
   await clock.advance(5000);
   await callModel({ packet: '1000 4' });
-  assert.match(calls[2].packet, /expect hv==2 by t2000: pending \(last 4, t1000\)$/);
+  assert.match(calls[2].packet, /expect hv==2 by t2000: pending \(last 4, t1000\) \| set 2 landed: unchanged$/);
   await callModel.close();
 });
 
@@ -367,4 +367,21 @@ test('feedbackLayer places the expect clause between the orders and the last pai
   const e = { plan: 'mass heavies', grade: { metric: 'hv', op: '>=', value: 3, by: 1300, met: null, best: 2, bestT: 1154, verdict: 'missed' } };
   assert.equal(feedbackLayer({ setSeq: 1, sinceN: 2, prev: { a: 1 }, cur: { a: 2 }, differed: 1, last: { o: 'x', was: 'y' }, expect: e }),
     'F set 1 in force 2 decisions: a 1>2 | orders differed 1/2 | plan: mass heavies | expect hv>=3 by t1300: MISSED (max 2) | last: x / was y');
+});
+
+test('expectTracker: a restated claim that already held stays MET, even past its deadline', () => {
+  const tr = expectTracker(p => p);
+  tr.set({ metric: 'hv', op: '>=', value: 3, by: 900 });
+  tr.see({ cycle: 873, hv: 3 }); tr.see({ cycle: 925, hv: 1 });
+  tr.set({ metric: 'hv', op: '>=', value: 3, by: 900 });
+  tr.see({ cycle: 930, hv: 1 });
+  const g = tr.read().grade;
+  assert.equal(g.verdict, 'met'); assert.equal(g.met, 873);
+  tr.set({ metric: 'hv', op: '>=', value: 4, by: 1000 });
+  assert.equal(tr.read().grade.verdict, 'pending');
+});
+
+test('feedbackLayer: a landed set with no decisions yet rides after the last window that had them', () => {
+  const F = feedbackLayer({ setSeq: 4, sinceN: 9, prev: { w: 6 }, cur: { w: 4 }, differed: 3, landed: { setSeq: 5, prev: { w: 4, d: 8 }, cur: { w: 4, d: 6 } } });
+  assert.equal(F, 'F set 4 in force 9 decisions: w 6>4 | orders differed 3/9 | set 5 landed: d 8>6');
 });
