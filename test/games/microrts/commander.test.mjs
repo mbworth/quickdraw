@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { encode } from '../../../src/games/microrts/coder.mjs';
 import { read } from '../../../src/games/microrts/read.mjs';
 import { decide, decideFacts, DEFAULTS } from '../../../src/games/microrts/policy/rush.mjs';
-import { defaults, apply, tool } from '../../../src/games/microrts/policy/commander.mjs';
+import { defaults, apply, tool, measure, METRICS } from '../../../src/games/microrts/policy/commander.mjs';
 import { assemble } from '../../../src/core/packet.mjs';
 import { tinySnap } from './helpers.mjs';
 
@@ -73,4 +73,46 @@ test('target overrides the push destination when the push condition holds', () =
   };
   assert.equal(decideFacts(k).o, 'a #1,#2,#3 10,10');
   assert.equal(decideFacts(k, { ...DEFAULTS, target: { x: 1, y: 14 } }).o, 'a #1,#2,#3 1,14');
+});
+
+// measure(): what `expect` is graded on, read off a real packet (runs/microrts-...-CoacAI-mu5fmewr.jsonl, t249).
+const PACKET = `H t249 r2 u5/2
+D +br#30 r-4
+T done br#30; IDLE #30; r li; r rg
+P ba#20 wk 36; br#30 IDLE
+E
+rs#16@0,0 o23 d4
+rs#17@0,1 o20 d3
+A
+wk x2@2,1 h #22,#25
+wk x1@2,3 i #26
+hv x2@3,3 a #28,#31
+B ba#20@2,2 hp7 br#30@1,3 hp4
+X
+ba x1@13,13 d22/20 #21
+wk x2@14,14 d24/22 #23,#24
+rg x3@13,15 d24/22 #27,#32,#33
+N none`;
+
+test('measure reads every metric off a packet', () => {
+  const m = measure(PACKET);
+  assert.deepEqual(m, { cycle: 249, bank: 2, base_hp: 7, br: 1, foe_br: 0, wk: 3, foe_wk: 2, li: 0, foe_li: 0, hv: 2, foe_hv: 0, rg: 0, foe_rg: 3, army: 2 });
+  assert.deepEqual(Object.keys(m).slice(1).sort(), [...METRICS].sort());
+  assert.deepEqual(measure(read(PACKET)), m);   // facts or text, same numbers
+});
+
+test('the expect field is optional, typed, and its metric enum is METRICS', () => {
+  const e = tool.properties.expect;
+  assert.deepEqual(e.type, ['object', 'null']);
+  assert.ok(tool.required.includes('expect') && tool.required.includes('plan'));
+  assert.deepEqual(e.properties.metric.enum, METRICS);
+  assert.deepEqual(e.required, ['metric', 'op', 'value', 'by']);
+  assert.equal(e.additionalProperties, false);
+  assert.deepEqual(e.properties.op.enum, ['>=', '<=', '==']);
+  assert.equal(METRICS.includes('ore'), false);   // a metric measure() cannot produce is not offerable
+});
+
+test('plan and expect are not reflex params: apply drops them', () => {
+  const p = apply({ plan: 'mass heavies', expect: { metric: 'hv', op: '>=', value: 3, by: 1300 } }, defaults);
+  assert.deepEqual(p, defaults);
 });

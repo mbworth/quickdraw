@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { commanderModel, feedbackLayer } from '../../src/core/commander.mjs';
+import { commanderModel, feedbackLayer, expectTracker } from '../../src/core/commander.mjs';
 import { virtualClock } from '../../src/core/clock.mjs';
 
 const usage = { input_tokens: 500, cache_creation_input_tokens: 0, cache_read_input_tokens: 4000, output_tokens: 40 };
@@ -206,4 +206,165 @@ test('feedbackLayer prints null and caps the last part', () => {
     'F set 2 in force 4 decisions: target null>3,4 train li>li,hv | orders differed 1/4');
   const long = feedbackLayer({ setSeq: 1, sinceN: 1, prev: { a: 1 }, cur: { a: 2 }, differed: 1, last: { o: 'x'.repeat(300), was: 'y' } });
   assert.equal(long.split(' | ').pop().length, 200);
+});
+
+// expect: the commander's own claim, graded by the game's measure() and reported back on F next to the plan it belongs to.
+const measure = packet => { const m = /^(\d+) (\d+)$/.exec(packet); if (!m) throw new Error('unmeasurable'); return { cycle: Number(m[1]), hv: Number(m[2]) }; };
+const mkE = (over = {}) => mk({ measure, ...over });
+
+test('an expect that comes true reads MET; the plan rides with it', async () => {
+  const { callModel, clock, calls } = mkE();
+  await callModel({ packet: '100 0' });
+  calls[0].resolve(plan({ mode: 'a', push: 1, n: null, plan: 'mass heavies', expect: { metric: 'hv', op: '>=', value: 3, by: 1300 } }));
+  await clock.advance(100);
+  await callModel({ packet: '1100 2' });
+  await callModel({ packet: '1210 3' });
+  await clock.advance(4900);
+  await callModel({ packet: '1250 3' });
+  assert.equal(calls[1].packet, '1250 3\nF set 1 in force 2 decisions: unchanged | orders differed 0/2 | plan: mass heavies | expect hv>=3 by t1300: MET t1210');
+  await callModel.close();
+});
+
+test('an expect still short of its deadline reads pending with the best seen', async () => {
+  const { callModel, clock, calls } = mkE();
+  await callModel({ packet: '100 0' });
+  calls[0].resolve(plan({ mode: 'a', push: 1, n: null, plan: 'mass heavies', expect: { metric: 'hv', op: '>=', value: 3, by: 1300 } }));
+  await clock.advance(100);
+  await callModel({ packet: '1154 2' });
+  await clock.advance(4900);
+  await callModel({ packet: '1200 1' });
+  assert.match(calls[1].packet, /\| plan: mass heavies \| expect hv>=3 by t1300: pending \(max 2, t1154\)$/);
+  await callModel.close();
+});
+
+test('an expect past its deadline reads MISSED and the verdict stands', async () => {
+  const { callModel, clock, calls } = mkE();
+  await callModel({ packet: '100 0' });
+  calls[0].resolve(plan({ mode: 'a', push: 1, n: null, plan: 'mass heavies', expect: { metric: 'hv', op: '>=', value: 3, by: 1300 } }));
+  await clock.advance(100);
+  await callModel({ packet: '1200 2' });
+  await callModel({ packet: '1400 1' });
+  await clock.advance(4900);
+  await callModel({ packet: '1450 1' });
+  assert.match(calls[1].packet, /\| expect hv>=3 by t1300: MISSED \(max 2\)$/);
+  calls[1].resolve(plan({ mode: 'a', push: 1, n: null, plan: 'hold the post', expect: null }));   // a new answer replaces the verdict
+  await clock.advance(5000);
+  await callModel({ packet: '1500 1' });
+  assert.match(calls[2].packet, /\| plan: hold the post \| expect: none$/);
+  await callModel.close();
+});
+
+test('<= grades on the minimum seen and == on the last', async () => {
+  const { callModel, clock, calls } = mkE();
+  await callModel({ packet: '100 5' });
+  calls[0].resolve(plan({ mode: 'a', push: 1, n: null, plan: 'trade down', expect: { metric: 'hv', op: '<=', value: 1, by: 900 } }));
+  await clock.advance(100);
+  await callModel({ packet: '800 3' });
+  await callModel({ packet: '950 4' });
+  await clock.advance(4900);
+  await callModel({ packet: '960 4' });
+  assert.match(calls[1].packet, /expect hv<=1 by t900: MISSED \(min 3\)$/);
+  calls[1].resolve(plan({ mode: 'a', push: 1, n: null, plan: 'two heavies', expect: { metric: 'hv', op: '==', value: 2, by: 2000 } }));
+  await clock.advance(5000);
+  await callModel({ packet: '1000 4' });
+  assert.match(calls[2].packet, /expect hv==2 by t2000: pending \(last 4, t1000\)$/);
+  await callModel.close();
+});
+
+test('no measure means no expect clause; no expect means expect: none; a metric the game does not measure is dropped', async () => {
+  const { callModel: plainModel, clock: c0, calls: plainCalls } = mk();   // no measure: F is unchanged
+  await plainModel({ packet: '100 1' });
+  plainCalls[0].resolve(plan({ mode: 'b', push: 2, n: null, plan: 'x', expect: { metric: 'hv', op: '>=', value: 1, by: 200 } }));
+  await c0.advance(5000);
+  await plainModel({ packet: '200 1' });
+  assert.equal(plainCalls[1].packet, '200 1\nF set 1 in force 0 decisions: mode a>b push 1>2 | orders differed 0/0');
+  await plainModel.close();
+
+  const { callModel, clock, calls } = mkE();
+  await callModel({ packet: '100 0' });
+  calls[0].resolve(plan({ mode: 'a', push: 1, n: null, plan: null, expect: { metric: 'ore', op: '>=', value: 9, by: 400 } }));
+  await clock.advance(100);
+  await callModel({ packet: '200 0' });
+  await clock.advance(4900);
+  await callModel({ packet: '300 0' });
+  assert.match(calls[1].packet, /\| expect: none$/);   // unknown metric and no plan: nothing but the verdict-free clause
+  await callModel.close();
+});
+
+test('an unreadable packet leaves the grade alone', async () => {
+  const { callModel, clock, calls } = mkE();
+  await callModel({ packet: '100 0' });
+  calls[0].resolve(plan({ mode: 'a', push: 1, n: null, plan: 'p', expect: { metric: 'hv', op: '>=', value: 2, by: 500 } }));
+  await clock.advance(100);
+  await callModel({ packet: 'junk' });
+  await clock.advance(4900);
+  await callModel({ packet: 'junk' });
+  assert.match(calls[1].packet, /\| plan: p \| expect hv>=2 by t500: pending$/);
+  await callModel.close();
+});
+
+// claim history: a new expect with the same metric/op as the one in force is the same claim, not a fresh one.
+test('expectTracker keeps since/best/moved/values across a same claim, resets on a different one', () => {
+  const t = expectTracker(measure);
+  t.set({ metric: 'hv', op: '>=', value: 3, by: 900 }, 'mass heavies');
+  t.see('100 1');
+  t.see('700 2');   // best 2 @700
+  t.set({ metric: 'hv', op: '>=', value: 4, by: 950 }, 'mass heavies');   // same claim: by moved, value moved
+  assert.deepEqual(t.read().grade, { metric: 'hv', op: '>=', value: 4, by: 950, met: null, best: 2, bestT: 700, since: 0, moved: 1, values: [3, 4], verdict: 'pending' });
+
+  t.see('800 3');   // best keeps accumulating under the same claim
+  t.set({ metric: 'hv', op: '>=', value: 4, by: 950 }, 'mass heavies');   // unchanged: no moved bump, no value bump
+  assert.equal(t.read().grade.moved, 1);
+  assert.deepEqual(t.read().grade.values, [3, 4]);
+  assert.equal(t.read().grade.best, 3);
+
+  t.set({ metric: 'foe_hv', op: '>=', value: 1, by: 1000 }, 'switch');   // different metric: fresh claim
+  const g = t.read().grade;
+  assert.equal(g.since, 800);   // the last packet seen when this claim was made
+  assert.equal(g.moved, 0);
+  assert.deepEqual(g.values, [1]);
+  assert.equal(g.best, null);
+});
+
+test('the expect text names the claim history when it exists, omits empty parts', () => {
+  const withBoth = { plan: 'mass heavies', grade: { metric: 'hv', op: '>=', value: 2, by: 1250, met: null, best: 2, bestT: 1154, since: 684, moved: 4, values: [3, 4, 3, 2], verdict: 'pending' } };
+  assert.equal(feedbackLayer({ setSeq: 5, sinceN: 1, prev: {}, cur: {}, differed: 0, last: null, expect: withBoth }).split('| ').slice(3).join('| '),
+    'expect hv>=2 by t1250: pending (max since t684 2, t1154); claim since t684, by moved 4x, value 3>4>3>2');
+
+  const movedOnly = { plan: 'p', grade: { metric: 'hv', op: '>=', value: 3, by: 950, met: null, best: 1, bestT: 900, since: 684, moved: 1, values: [3], verdict: 'pending' } };
+  assert.equal(feedbackLayer({ setSeq: 1, sinceN: 1, prev: {}, cur: {}, differed: 0, last: null, expect: movedOnly }).split('| ').slice(3).join('| '),
+    'expect hv>=3 by t950: pending (max since t684 1, t900); claim since t684, by moved 1x');
+
+  const valuesOnly = { plan: 'p', grade: { metric: 'hv', op: '>=', value: 2, by: 950, met: 900, best: 2, bestT: 900, since: 684, moved: 0, values: [3, 2], verdict: 'met' } };
+  assert.equal(feedbackLayer({ setSeq: 1, sinceN: 1, prev: {}, cur: {}, differed: 0, last: null, expect: valuesOnly }).split('| ').slice(3).join('| '),
+    'expect hv>=2 by t950: MET t900; claim since t684, value 3>2');
+
+  const noHistory = { plan: 'p', grade: { metric: 'hv', op: '>=', value: 2, by: 950, met: null, best: 1, bestT: 900, since: 0, moved: 0, values: [2], verdict: 'pending' } };
+  assert.equal(feedbackLayer({ setSeq: 1, sinceN: 1, prev: {}, cur: {}, differed: 0, last: null, expect: noHistory }).split('| ').slice(3).join('| '),
+    'expect hv>=2 by t950: pending (max 1, t900)');
+});
+
+test('a repeated claim carries its history onto F; a fresh claim starts clean', async () => {
+  const { callModel, clock, calls } = mkE();
+  await callModel({ packet: '100 0' });
+  calls[0].resolve(plan({ mode: 'a', push: 1, n: null, plan: 'mass heavies', expect: { metric: 'hv', op: '>=', value: 3, by: 900 } }));
+  await clock.advance(100);
+  await callModel({ packet: '700 2' });
+  await clock.advance(4900);
+  await callModel({ packet: '800 2' });   // second launch: first claim, no history yet
+  assert.match(calls[1].packet, /expect hv>=3 by t900: pending \(max 2, t700\)$/);
+
+  calls[1].resolve(plan({ mode: 'a', push: 1, n: null, plan: 'mass heavies', expect: { metric: 'hv', op: '>=', value: 4, by: 950 } }));   // same claim, by and value moved
+  await clock.advance(100);
+  await callModel({ packet: '900 3' });
+  await clock.advance(4900);
+  await callModel({ packet: '920 3' });
+  assert.match(calls[2].packet, /expect hv>=4 by t950: pending \(max since t0 3, t900\); claim since t0, by moved 1x, value 3>4$/);
+  await callModel.close();
+});
+
+test('feedbackLayer places the expect clause between the orders and the last pair', () => {
+  const e = { plan: 'mass heavies', grade: { metric: 'hv', op: '>=', value: 3, by: 1300, met: null, best: 2, bestT: 1154, verdict: 'missed' } };
+  assert.equal(feedbackLayer({ setSeq: 1, sinceN: 2, prev: { a: 1 }, cur: { a: 2 }, differed: 1, last: { o: 'x', was: 'y' }, expect: e }),
+    'F set 1 in force 2 decisions: a 1>2 | orders differed 1/2 | plan: mass heavies | expect hv>=3 by t1300: MISSED (max 2) | last: x / was y');
 });
