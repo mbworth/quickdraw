@@ -6,14 +6,14 @@ import { tinySnap, tiny } from './helpers.mjs';
 
 const v = (cmds, over) => validate(cmds, tinySnap(over));
 
-test('production: only what the building makes, only when free, only when affordable, only with a free cell', () => {
+test('production: only what the building makes, only when affordable, only with a free cell', () => {
   assert.equal(v([{ cmd: 'train', building: 2, type: 'Worker', count: 1 }]).keep.length, 1);
   assert.equal(v([{ cmd: 'train', building: 2, type: 'Light', count: 1 }]).dropped[0].reason, 'bad-type');
   assert.equal(v([{ cmd: 'train', building: 3, type: 'Worker', count: 1 }]).dropped[0].reason, 'bad-type');
   assert.equal(v([{ cmd: 'train', building: 3, type: 'Barracks', count: 1 }]).keep.length, 1, 'a worker produces a barracks');
   assert.equal(v([{ cmd: 'train', building: 99, type: 'Worker', count: 1 }]).dropped[0].reason, 'dead');
   const busy = tiny(); busy.units[1].busy = true; busy.units[1].make = 'Worker';
-  assert.equal(validate([{ cmd: 'train', building: 2, type: 'Worker', count: 1 }], { native: busy, header: {} }).dropped[0].reason, 'busy');
+  assert.equal(validate([{ cmd: 'train', building: 2, type: 'Worker', count: 1 }], { native: busy, header: {} }).keep.length, 1, 'a producing building keeps the order: the buffer replaces its standing goal');
   const walking = tiny(); walking.units[2].busy = true;   // a producer that is merely busy keeps the order: the buffer holds it
   assert.equal(validate([{ cmd: 'train', building: 3, type: 'Barracks', count: 1 }], { native: walking, header: {} }).keep.length, 1);
   assert.equal(v([{ cmd: 'train', building: 2, type: 'Worker', count: 1 }], { res: [0, 5] }).dropped[0].reason, 'poor');

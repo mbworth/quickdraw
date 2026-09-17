@@ -29,6 +29,8 @@ test('request shape per model', () => {
   const off = buildRequest({ ...base, model: 'claude-opus-5', thinking: 'off' });
   assert.deepEqual(off.thinking, { type: 'disabled' });
   assert.equal(off.output_config, undefined);
+  const fb = buildRequest({ ...base, model: 'claude-fable-5-1' });
+  assert.deepEqual(fb.tool_choice, { type: 'auto', disable_parallel_tool_use: true });
   const h = buildRequest({ ...base, model: 'claude-haiku-4-5' });
   assert.equal(h.thinking, undefined);
   assert.equal(h.output_config, undefined);

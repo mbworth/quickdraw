@@ -2,6 +2,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 
 export const isHaiku = model => /haiku/i.test(model);
+export const isFable = model => /fable/i.test(model);   // Fable rejects tool_choice tool/any; auto is the only forced-tool substitute
 
 export function buildRequest({ model, system, tool, toolName, toolDescription, thinking = 'adaptive', effort = 'low', reply = 'tool', stream = false, packet, maxTokens = 4096 }) {
   const req = {
@@ -12,7 +13,7 @@ export function buildRequest({ model, system, tool, toolName, toolDescription, t
   };
   if (reply !== 'text') {   // --reply text: no tool at all; the forced tool call costs ~29 output tokens of framing per call (measured 2026-09-14), the text costs only its own tokens
     req.tools = [{ name: toolName, description: toolDescription, input_schema: tool, strict: true, ...(stream ? { eager_input_streaming: true } : {}) }];   // --stream: partial tool input as it is generated, not buffered to valid JSON
-    req.tool_choice = { type: 'tool', name: toolName, disable_parallel_tool_use: true };
+    req.tool_choice = isFable(model) ? { type: 'auto', disable_parallel_tool_use: true } : { type: 'tool', name: toolName, disable_parallel_tool_use: true };
   }
   if (!isHaiku(model)) {
     if (thinking === 'off') req.thinking = { type: 'disabled' };

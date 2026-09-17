@@ -1,9 +1,9 @@
 // Legality against the newest state, pure, mirroring the engine's own rejections (Unit.getUnitActions +
 // GameState.issueSafe, which silently replaces an illegal action with an idle of the same duration — so an
 // order that slips through costs the unit its whole action, not nothing).
-// Deliberate exception to "drop busy units": a mobile unit is busy for 8-20 of every 10 cycles, so dropping
-// its orders would drop most of them. Mobile goals stand in the buffer until the unit is free (orders.mjs);
-// only production is dropped on busy, because a producing building genuinely cannot take another produce.
+// Busy units are never dropped: goals stand in the buffer until the unit is free (orders.mjs), which never
+// issues over an in-flight action. A train order to a producing building therefore replaces its standing goal
+// (the queued type changes) without cancelling the unit under way.
 import { inMap, wallAt, freeDir } from './rules.mjs';
 
 export function validate(cmds, state) {
@@ -19,10 +19,6 @@ export function validate(cmds, state) {
         const b = byId.get(c.building), t = b && n.tt[b.type];
         if (!b || b.player !== n.me || !t) { drop(c, 'dead'); continue; }
         if (!(t.makes || []).includes(c.type)) { drop(c, 'bad-type'); continue; }   // a Worker produces Base and Barracks: the producer need not be a building
-        // Only an in-flight *produce* is protected: issuing over it cancels it and burns the resources. A producer that is
-        // merely walking or swinging is fine to order — the goal stands in the buffer and starts the cycle it comes free,
-        // which is how a base keeps producing between decisions instead of idling until the next packet.
-        if (b.make) { drop(c, 'busy'); continue; }
         const cost = n.tt[c.type]?.cost ?? Infinity;
         if (res < cost) { drop(c, 'poor'); continue; }
         if (freeDir(n, b) < 0) { drop(c, 'boxed'); continue; }
