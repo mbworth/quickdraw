@@ -5,9 +5,9 @@ import { decide, decideFacts, DEFAULTS } from '../../../src/games/microrts/polic
 
 const BASE = { h: { r: 5 }, p: [], e: [], a: [], b: [{ type: 'ba', id: 20, x: 5, y: 5, hp: 10 }, { type: 'br', id: 30, x: 6, y: 5, hp: 4 }], x: [] };
 
-test('default train (li) is byte-identical to the old hardcoded barracks order', () => {
+test('default train (li) keeps the barracks order and a worker count of 1 once it stands', () => {
   const text = ['H t100 r5 u1/0', 'D none', 'T hb', 'P none', 'E none', 'A', 'li x1@5,5 i #1', 'B ba#20@5,5 hp10 br#30@6,5 hp4', 'X none', 'L none'].join('\n');
-  assert.equal(decide(text).o, 't 30 li 5; t 20 wk 5; a #1 5,5');
+  assert.equal(decide(text).o, 't 30 li 5; t 20 wk 1; a #1 5,5');
 });
 
 test('train with one type keeps count 5, regardless of army size', () => {

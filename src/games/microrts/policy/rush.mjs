@@ -62,11 +62,20 @@ export function decideFacts(k, params = DEFAULTS) {
   const panic = !!raid && raid.dB <= PANIC;                 // at the door: the harvesters drop their ore and fight too
   const nodes = e.filter(n => n.o > 0).sort((n1, n2) => (n1.d ?? 0) - (n2.d ?? 0) || n1.id - n2.id);
 
+  // 3-early: at barracksAt at or below harvesters the top-up would claim every worker, so pick the builder first (off a node if need be).
+  const building = units.some(u => u.state === 'p');
+  const canBuild = !barracks && !building && workers.length >= BR_AT && h.r >= BR_COST;
+  let brWorker = null;
+  if (canBuild && BR_AT <= HARV) {
+    brWorker = workers.find(u => u.state === 'p') || workers.find(u => u.state === 'i') || workers[0];
+  }
+  const minePool = brWorker ? workers.filter(u => u !== brWorker) : workers;
+
   // 1. two harvesters, chosen by what they are already doing: a worker in state h or r keeps its standing order and only
   //    the shortfall is topped up. Picking "the two nearest my base" every decision reassigned the pair every time one
   //    walked out to a node, so both dropped their ore and neither ever finished a trip (game 1: the bank stuck at 5).
-  const mining = panic || !nodes.length ? [] : workers.filter(u => u.state === 'h' || u.state === 'r');
-  const spare = workers.filter(u => !mining.includes(u) && u.state !== 'p');
+  const mining = panic || !nodes.length ? [] : minePool.filter(u => u.state === 'h' || u.state === 'r');
+  const spare = minePool.filter(u => !mining.includes(u) && u.state !== 'p');
   const topUp = panic || !nodes.length ? [] : spare.slice(0, Math.max(0, HARV - mining.length));
   topUp.forEach((u, i) => orders.push(`h #${u.id} ${nodes[Math.min(mining.length + i, nodes.length - 1)].id}`));
   const harvesters = [...mining, ...topUp];
@@ -75,19 +84,20 @@ export function decideFacts(k, params = DEFAULTS) {
   // 2-4. the purchase ladder, the bank threaded through it in plan order: tech, then army, then more workers. Counts are
   //    what keeps a producer busy between decisions: `t 20 wk 5` stands in the buffer and starts the next worker the cycle
   //    the last one pops, instead of idling until the next packet (game 2: 70 cycles a worker against their 50).
-  const fighters = [...spare.slice(topUp.length), ...army];
+  const fighters = brWorker ? [brWorker, ...spare.slice(topUp.length), ...army] : [...spare.slice(topUp.length), ...army];
   let bank = h.r;
-  const builder = units.find(u => u.state === 'p' && u.type === 'wk') || fighters.find(u => u.type === 'wk' && u.state === 'i') || fighters.find(u => u.type === 'wk') || null;
-  const building = units.some(u => u.state === 'p');
-  if (!barracks && builder && workers.length >= BR_AT && bank >= BR_COST && !building) { orders.push(`t #${builder.id} br 1`); bank -= BR_COST; why.push('buy:br'); }
+  const builder = brWorker || units.find(u => u.state === 'p' && u.type === 'wk') || fighters.find(u => u.type === 'wk' && u.state === 'i') || fighters.find(u => u.type === 'wk') || null;
+  if (canBuild && builder) { orders.push(`t #${builder.id} br 1`); bank -= BR_COST; why.push('buy:br'); }
   // A mix (`train: 'li,hv'`) cycles by what already exists plus the unit in production, one at a time; a single type keeps a count of 5 standing.
   const types = (TRAIN || 'li').split(',').map(s => s.trim()).filter(t => COST[t]);
+  let starve = false;   // an idle barracks short of a unit's cost keeps the bank: workers do not eat its ore
   if (barracks) {
     const producing = p.find(q => q.id === barracks.id)?.idle === false ? 1 : 0;
     const type = types.length > 1 ? types[(army.length + producing) % types.length] : types[0] || 'li', cost = COST[type];
     if (bank >= cost) { orders.push(`t ${barracks.id} ${type} ${types.length > 1 ? 1 : 5}`); bank -= cost; why.push(`buy:${type}`); }
+    else starve = !producing;
   }
-  if (base && bank >= WK_COST && workers.length < WK_CAP) { orders.push(`t ${base.id} wk ${Math.min(5, WK_CAP - workers.length)}`); bank -= WK_COST; why.push('buy:wk'); }
+  if (base && bank >= WK_COST && workers.length < WK_CAP && !starve) { orders.push(`t ${base.id} wk ${barracks ? 1 : Math.min(5, WK_CAP - workers.length)}`); bank -= WK_COST; why.push('buy:wk'); }
   if (!why.some(w => w.startsWith('buy'))) why.push('buy:none');
 
   const free = us => us.filter(u => u.state !== 'p' && u.id !== builder?.id);

@@ -47,7 +47,7 @@ test('tool schema requires train', () => {
   assert.equal(tool.properties.train.type, 'string');
 });
 
-// A packet with three idle workers and one node: harvesters:3 tops all three up, the default tops up only two.
+// A packet with three idle workers and one node: harvesters:3 tops all three up (barracksAt 4 so no worker builds), the default tops up only two.
 test('decide with harvesters:3 produces three harvest orders where the default produces two', () => {
   const W = (id, x, y) => ({ id, type: 'Worker', player: 0, x, y, hp: 1, carry: 0, busy: false, st: 'idle', eta: 0, idleFor: 0 });
   const inp = { state: tinySnap({ units: [
@@ -59,7 +59,7 @@ test('decide with harvesters:3 produces three harvest orders where the default p
   const text = assemble(encode(inp), { maxTokens: 400, divisor: 3.5 }).text;
   const count = o => (o.match(/^h /) ? o.split('; ').filter(c => c.startsWith('h ')).length : 0);
   assert.equal(count(decide(text).o), 2);
-  assert.equal(count(decide(text, { ...DEFAULTS, harvesters: 3 }).o), 3);
+  assert.equal(count(decide(text, { ...DEFAULTS, harvesters: 3, barracksAt: 4 }).o), 3);
   assert.deepEqual(decide(text, { ...DEFAULTS, harvesters: 3 }), decideFacts(read(text), { ...DEFAULTS, harvesters: 3 }));
 });
 

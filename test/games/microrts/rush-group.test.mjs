@@ -122,6 +122,30 @@ test('mop-up: no enemy buildings, army hunts the last enemy unit by id', () => {
   assert.equal(r.why.at(-1), 'push:hunt');
 });
 
+test('barracksAt 1: the only worker builds at t0 instead of harvesting', () => {
+  const k = {
+    h: { r: 5 }, p: [], b: [{ type: 'ba', id: 20, x: 2, y: 2, hp: 10 }],
+    e: [{ type: 'rs', id: 30, x: 0, y: 0, o: 25, d: null }, { type: 'rs', id: 31, x: 4, y: 4, o: 25, d: null }],
+    a: [{ type: 'wk', n: 1, x: 1, y: 1, state: 'i', ids: [22] }],
+    x: [],
+  };
+  const r = decideFacts(k, { ...DEFAULTS, barracksAt: 1 });
+  assert.ok(r.o.includes('t #22 br 1'));
+  assert.ok(!r.o.includes('h #22'));
+});
+
+test('barracksAt 3 (default): same facts still harvest, no barracks yet', () => {
+  const k = {
+    h: { r: 5 }, p: [], b: [{ type: 'ba', id: 20, x: 2, y: 2, hp: 10 }],
+    e: [{ type: 'rs', id: 30, x: 0, y: 0, o: 25, d: null }, { type: 'rs', id: 31, x: 4, y: 4, o: 25, d: null }],
+    a: [{ type: 'wk', n: 1, x: 1, y: 1, state: 'i', ids: [22] }],
+    x: [],
+  };
+  const r = decideFacts(k, { ...DEFAULTS, barracksAt: 3 });
+  assert.ok(r.o.includes('h #22'));
+  assert.ok(!r.o.includes('br'));
+});
+
 test('no army, workers only, raid: old behaviour preserved, free (non-builder) workers defend', () => {
   const k = {
     ...BASE,
