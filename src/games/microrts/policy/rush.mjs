@@ -11,9 +11,9 @@
 //      and takes four to die; it is worth two workers and change.
 //   5. Defence first: an enemy cluster within DEFEND of my base draws every fighter, and within PANIC the harvesters too.
 //      Outside panic, below ENGAGE free army units hold the post instead of sortieing solo (workers-only defence unchanged).
-//   6. Attack when PUSH_LI Light are out, or PUSH_WK fighters with no barracks coming: the core near the front
-//      (soldiers within GROUP of whoever leads toward the target) attacks, any straggler rejoins the core instead of
-//      recalling the whole front; below strength, everyone gathers at their own centroid first.
+//   6. Attack when PUSH_LI Light are out, or PUSH_WK fighters with no barracks coming: the core (the largest cluster
+//      of soldiers within GROUP of each other) attacks, any straggler rejoins the core instead of recalling the
+//      whole front; below strength, everyone gathers at their own centroid first.
 //   7. Otherwise fighters attack-move to the post, two steps from my base toward theirs, so the fight happens at home.
 //
 // decide(text, params) → {o, why}: `o` in the order language, `why` the lines that fired. No memory, no state, no map
@@ -91,24 +91,31 @@ export function decideFacts(k, params = DEFAULTS) {
   if (!why.some(w => w.startsWith('buy'))) why.push('buy:none');
 
   const free = us => us.filter(u => u.state !== 'p' && u.id !== builder?.id);
-  const noEnemyMobile = !x.some(c => MOBILE.has(c.type));
+  const enemyMobile = x.filter(c => MOBILE.has(c.type));
+  const noEnemyMobile = !enemyMobile.length;
+  // Mop-up: no building left to raze, but a unit is still hiding somewhere. Hunt it by id so the army stops
+  // attack-moving to a dead cell forever.
+  const huntCluster = enemyMobile.length ? [...enemyMobile].sort((c1, c2) => (c1.dB ?? 1e9) - (c2.dB ?? 1e9))[0] : null;
+  const huntTarget = huntCluster && (huntCluster.ids.length ? { x: huntCluster.x, y: huntCluster.y, id: huntCluster.ids[0] } : { x: huntCluster.x, y: huntCluster.y });
   const centroid = us => ({ x: Math.round(us.reduce((s, u) => s + u.x, 0) / us.length), y: Math.round(us.reduce((s, u) => s + u.y, 0) / us.length) });
-  // Push cohesion: recalling the whole front for one fresh spawn loses the push. Only the core near the front (within
-  // GROUP of whoever leads toward the target) advances; a straggler rejoins the core instead of the core waiting on it.
-  // Below strength (core short of PUSH_LI), everyone gathers at their own centroid first.
+  // Push cohesion: a lone soldier out front must not become the core with everyone else stragglers. Core = the
+  // largest cluster (any soldier as anchor, all within GROUP of it), ties broken by anchor nearest dest. A straggler
+  // rejoins the core instead of the core waiting on it. Below strength (core short of PUSH_LI), everyone gathers at their own centroid first.
   const pushOrder = (who, dest, tag) => {
+    const dp = dest.id != null ? `${dest.id}` : P(dest);
     const soldiers = who.filter(u => u.type !== 'wk');
     if (soldiers.length < 2) {
-      if (who.length) orders.push(`a ${list(who)} ${P(dest)}`);
+      if (who.length) orders.push(`a ${list(who)} ${dp}`);
       why.push(tag);
       return;
     }
-    const front = [...soldiers].sort((u, v) => d1(u, dest) - d1(v, dest))[0];
-    const core = soldiers.filter(u => d1(u, front) <= GROUP);
+    const groups = soldiers.map(anchor => ({ anchor, set: soldiers.filter(u => d1(u, anchor) <= GROUP) }));
+    groups.sort((g1, g2) => g2.set.length - g1.set.length || d1(g1.anchor, dest) - d1(g2.anchor, dest));
+    const core = groups[0].set;
     const need = Math.min(PUSH_LI, soldiers.length);
     if (core.length >= need) {
       const wk = who.filter(u => u.type === 'wk');
-      orders.push(`a ${list([...core, ...wk])} ${P(dest)}`);
+      orders.push(`a ${list([...core, ...wk])} ${dp}`);
       why.push(tag);
       const stragglers = soldiers.filter(u => !core.includes(u));
       if (stragglers.length) {
@@ -137,6 +144,8 @@ export function decideFacts(k, params = DEFAULTS) {
     }
   } else if (noEnemyMobile && enemyBuilding && target) {
     pushOrder(free(fighters), target, 'push:last');
+  } else if (!enemyBuilding && huntTarget) {
+    pushOrder(free(fighters), huntTarget, 'push:hunt');
   } else if (target && (army.length >= PUSH_LI || (!barracks && fighters.length >= PUSH_WK))) {
     pushOrder(free(fighters), target, 'push');
   } else {
