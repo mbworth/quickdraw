@@ -33,6 +33,8 @@ export const tool = Object.freeze({
     post: { ...CT(0, 6), description: 'steps from my base toward theirs where idle fighters hold ground (rule 7); default 1' },
     target: { type: ['string', 'null'], description: '"x,y" (0-15 each) to override the push/post destination in place of their base or the far node; null uses the computed one' },
     train: { type: 'string', description: 'unit types the barracks cycles through, comma-separated from li, hv, rg; default "li"' },
+    group: { ...CT(1, 16), description: 'push waits for stragglers within this distance; default 2' },
+    engage: { ...CT(0, 12), description: 'min army units to answer a raid outside panic; default 2' },
     plan: { type: 'string', description: 'your plan in one line, your own words, at most 120 characters' },
     expect: {
       type: ['object', 'null'],
@@ -47,7 +49,7 @@ export const tool = Object.freeze({
       additionalProperties: false,
     },
   },
-  required: ['harvesters', 'workers', 'barracksAt', 'defend', 'panic', 'pushLight', 'pushWorkers', 'post', 'target', 'train', 'plan', 'expect'],
+  required: ['harvesters', 'workers', 'barracksAt', 'defend', 'panic', 'pushLight', 'pushWorkers', 'post', 'target', 'train', 'group', 'engage', 'plan', 'expect'],
   additionalProperties: false,
 });
 
@@ -84,5 +86,7 @@ export function apply(input, prev = defaults) {
     post: clamp(i.post, 0, 6, prev.post),
     target: parseTarget(i.target, prev.target),
     train: parseTrain(i.train, prev.train),
+    group: clamp(i.group, 1, 16, prev.group),
+    engage: clamp(i.engage, 0, 12, prev.engage),
   };
 }

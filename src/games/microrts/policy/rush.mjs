@@ -10,8 +10,10 @@
 //   4. A finished barracks makes Light whenever it is IDLE and the bank covers one. One Light kills a worker a hit
 //      and takes four to die; it is worth two workers and change.
 //   5. Defence first: an enemy cluster within DEFEND of my base draws every fighter, and within PANIC the harvesters too.
-//   6. Attack when PUSH_LI Light are out, or PUSH_WK fighters with no barracks coming: everything but the harvesters
-//      attack-moves at their base.
+//      Outside panic, below ENGAGE free army units hold the post instead of sortieing solo (workers-only defence unchanged).
+//   6. Attack when PUSH_LI Light are out, or PUSH_WK fighters with no barracks coming: the core near the front
+//      (soldiers within GROUP of whoever leads toward the target) attacks, any straggler rejoins the core instead of
+//      recalling the whole front; below strength, everyone gathers at their own centroid first.
 //   7. Otherwise fighters attack-move to the post, two steps from my base toward theirs, so the fight happens at home.
 //
 // decide(text, params) → {o, why}: `o` in the order language, `why` the lines that fired. No memory, no state, no map
@@ -22,7 +24,7 @@ import { read } from '../read.mjs';
 
 const WK_COST = 1, BR_COST = 5;
 const COST = { li: 2, hv: 3, rg: 2 };
-export const DEFAULTS = { harvesters: 2, workers: 6, barracksAt: 3, defend: 6, panic: 2, pushLight: 3, pushWorkers: 6, post: 1, target: null, train: 'li' };
+export const DEFAULTS = { harvesters: 2, workers: 6, barracksAt: 3, defend: 6, panic: 2, pushLight: 3, pushWorkers: 6, post: 1, target: null, train: 'li', group: 2, engage: 2 };
 const MOBILE = new Set(['wk', 'li', 'hv', 'rg']);
 const d1 = (a, b) => Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
 const step = (from, to, n) => { const dx = to.x - from.x, dy = to.y - from.y, L = Math.abs(dx) + Math.abs(dy) || 1; return { x: Math.round(from.x + (n * dx) / L), y: Math.round(from.y + (n * dy) / L) }; };
@@ -32,7 +34,7 @@ const list = us => us.map(u => `#${u.id}`).join(',');
 export const decide = (text, params = DEFAULTS) => decideFacts(read(text), params);
 
 export function decideFacts(k, params = DEFAULTS) {
-  const { harvesters: HARV, workers: WK_CAP, barracksAt: BR_AT, defend: DEFEND, panic: PANIC, pushLight: PUSH_LI, pushWorkers: PUSH_WK, post: POST, target: TARGET, train: TRAIN } = params;
+  const { harvesters: HARV, workers: WK_CAP, barracksAt: BR_AT, defend: DEFEND, panic: PANIC, pushLight: PUSH_LI, pushWorkers: PUSH_WK, post: POST, target: TARGET, train: TRAIN, group: GROUP, engage: ENGAGE } = params;
   const { h, p, e, a, b, x } = k;
   const why = [], orders = [];
   const base = b.find(c => c.type === 'ba') || null;
@@ -90,18 +92,53 @@ export function decideFacts(k, params = DEFAULTS) {
 
   const free = us => us.filter(u => u.state !== 'p' && u.id !== builder?.id);
   const noEnemyMobile = !x.some(c => MOBILE.has(c.type));
+  const centroid = us => ({ x: Math.round(us.reduce((s, u) => s + u.x, 0) / us.length), y: Math.round(us.reduce((s, u) => s + u.y, 0) / us.length) });
+  // Push cohesion: recalling the whole front for one fresh spawn loses the push. Only the core near the front (within
+  // GROUP of whoever leads toward the target) advances; a straggler rejoins the core instead of the core waiting on it.
+  // Below strength (core short of PUSH_LI), everyone gathers at their own centroid first.
+  const pushOrder = (who, dest, tag) => {
+    const soldiers = who.filter(u => u.type !== 'wk');
+    if (soldiers.length < 2) {
+      if (who.length) orders.push(`a ${list(who)} ${P(dest)}`);
+      why.push(tag);
+      return;
+    }
+    const front = [...soldiers].sort((u, v) => d1(u, dest) - d1(v, dest))[0];
+    const core = soldiers.filter(u => d1(u, front) <= GROUP);
+    const need = Math.min(PUSH_LI, soldiers.length);
+    if (core.length >= need) {
+      const wk = who.filter(u => u.type === 'wk');
+      orders.push(`a ${list([...core, ...wk])} ${P(dest)}`);
+      why.push(tag);
+      const stragglers = soldiers.filter(u => !core.includes(u));
+      if (stragglers.length) {
+        orders.push(`a ${list(stragglers)} ${P(centroid(core))}`);
+        why.push('push:join');
+      }
+    } else {
+      if (who.length) orders.push(`a ${list(who)} ${P(centroid(soldiers))}`);
+      why.push('push:gather');
+    }
+  };
   if (raid) {
-    const who = free(panic ? [...fighters, ...harvesters] : fighters);
-    if (who.length) orders.push(`a ${list(who)} ${P(raid)}`);
-    why.push(panic ? 'defend:panic' : 'defend');
+    const freeFighters = free(fighters);
+    const freeArmy = freeFighters.filter(u => u.type !== 'wk');
+    if (panic) {
+      const who = free([...fighters, ...harvesters]);
+      if (who.length) orders.push(`a ${list(who)} ${P(raid)}`);
+      why.push('defend:panic');
+    } else if (freeArmy.length > 0 && freeArmy.length < ENGAGE) {
+      // Below strength: hold the post rather than sortie into a fight that loses the army one at a time.
+      if (freeFighters.length) orders.push(`a ${list(freeFighters)} ${P(post)}`);
+      why.push('defend:hold');
+    } else {
+      if (freeFighters.length) orders.push(`a ${list(freeFighters)} ${P(raid)}`);
+      why.push('defend');
+    }
   } else if (noEnemyMobile && enemyBuilding && target) {
-    const who = free(fighters);
-    if (who.length) orders.push(`a ${list(who)} ${P(target)}`);
-    why.push('push:last');
+    pushOrder(free(fighters), target, 'push:last');
   } else if (target && (army.length >= PUSH_LI || (!barracks && fighters.length >= PUSH_WK))) {
-    const who = free(fighters);
-    if (who.length) orders.push(`a ${list(who)} ${P(target)}`);
-    why.push('push');
+    pushOrder(free(fighters), target, 'push');
   } else {
     const who = free(fighters);
     if (who.length) orders.push(`a ${list(who)} ${P(post)}`);
