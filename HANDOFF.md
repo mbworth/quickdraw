@@ -2,12 +2,12 @@
 
 Where Quickdraw stands and what to do next. History lives in `notes/ashfall/games.md` (every game, one row, and what it taught), `docs/reviews/` (the four reviews and what they fixed) and `git log`. Nothing here repeats those.
 
-## Current aim (2026-09-17): a commander that plans, watches its plan, and leaves the script when the script is failing
+## Current aim (2026-09-21): a commander that plans, watches its plan, and leaves the script when the script is failing
 
 The script reflex is a fixed plan with parameters. It wins where its rules fit (WorkerRush 5/5) and loses where they do not
 (LightRush 1/3, HeavyRush 0–1/3, CoacAI 0/3). The commander's job is the part a script cannot do: read the opponent, hold a
 plan of its own, notice when that plan or the script's rule is not working, and change it. Everything below is measured against
-that, not against win rate alone. Full log: `notes/microrts/games.md` (games 38–87).
+that, not against win rate alone. Full log: `notes/microrts/games.md` (games 38–162).
 
 **What is settled.**
 - Speed: the reflex answers at 0 ms; the commander's set lands one model latency later (Sonnet ~4 s, Fable 5.1 ~15–20 s). The loop
@@ -28,10 +28,20 @@ that, not against win rate alone. Full log: `notes/microrts/games.md` (games 38�
   armies has made on CoacAI's base (10 → 6 hp). It still lost, at $1.98 a game vs $0.08.
 - The ceiling has moved from the commander to the reflex: the push leaves strung out over three tiles and every fighter dies alone; the base is
   sniped by Ranged at three tiles with nothing adjacent; there is no recall.
+- Reflex rules built since (games 86–156, $0): group push with a core of the largest cluster, engage gate, mop-up hunt by unit id, opening
+  fixes (`barracksAt` 2 / `workers` 2). Script ladder: WorkerRush 2/2, GuidedRojoA3N 3/3, LightRush 3/3 (tuned), HeavyRush 0/3, CoacAI 0/1.
+  No single parameter set is best everywhere, which is the commander's test.
+- Sonnet commander05 on defaults (games 157–162, $1.65): LightRush **3/3** by push-stage nudges (never touched the opening), GuidedRojoA3N
+  **0/3** where the script alone is 3/3: a stale `target` on the dead base's tile for 900 cycles (game 162), a target toggled between two
+  barracks, "never push" after both bases fell. The commander subtracted judgement.
+- Game 162 replayed: Fable retargets on the first packet after their base leaves `X`; Sonnet never does in 16 calls. Two Sonnet failings,
+  separated by replay: it does not read the absence of a thing, and it reads our `B` base line as theirs. `F` now carries the game's
+  `describe()` (what stands at the commander's own `target`, a fact) and `commander06-sonnet.md` labels `B` mine-only, `X` theirs and
+  `base_hp` mine: labels alone 0 → 11/16 retargets, with the clause 14/16, Fable 16/16 ($0.15 a replay). Legend, not judgement.
 
 **Open, in order.**
-1. Script rules the commander cannot express: a push that moves as a group, a recall/push gate on an empty `defend` radius. Held back so far on purpose
-   (the user wanted to see the commander adapt with the script as is); the live Fable game says they are now the binding constraint.
+1. commander06 live on GuidedRojoA3N (3 games, ~$1): does a Sonnet that reads the board keep the reflex's 3/3. Then Fable on the same ladder (~$2 a game).
+   The reflex stays as is: the user does not want a better scripted CoacAI; what the script cannot do is the commander's job.
 2. Whether a cheap model can be brought to revise: the grade reaches Sonnet and it still holds. Untried: a required self-grade field in the tool
    (`last_expect: met|missed|pending`, `trigger_reachable`), Opus 5 on the same replay, a two-step call (grade first, then set).
 3. Fable live at the real 100 ms clock needs overlapping commander calls (area of interest, not scheduled); until then a slower clock is the fair test.
@@ -41,7 +51,7 @@ that, not against win rate alone. Full log: `notes/microrts/games.md` (games 38�
 
 ## State
 
-M0–M14 built; Ashfall 55 live games (hub games 1–76), MicroRTS games 1–87 (script, model and commander; see Current aim); `npm test` 296 tests, 290 pass, 6 skipped without a key or `MICRORTS_LOCAL`, 7 s. The harness levers inside a call are spent: reaction p50 5.6 s (game 24) → 2.2 s (game 30) by the order language, two calls in flight, the event tick and streaming dispatch; output 101 → 38 tokens, of which 29 are the forced tool call's framing; every packet layer is read (sensitivity); a third slot and a reserved slot sit inside one game's noise. Win rate on the game38 prompt (2026-09-14 evening campaigns): **the script 10 of 11** (games 39–49, 4.5–7.1 min, $0), **the model 4 of 5** (games 50–54, 5.4–14.6 min, $6.90); game 38 was the model's earlier loss on a quiet-packet commit.
+M0–M14 built; Ashfall 55 live games (hub games 1–76), MicroRTS games 1–162 (script, model and commander; see Current aim); `npm test` 310 tests, 304 pass, 6 skipped without a key or `MICRORTS_LOCAL`, 7 s. The harness levers inside a call are spent: reaction p50 5.6 s (game 24) → 2.2 s (game 30) by the order language, two calls in flight, the event tick and streaming dispatch; output 101 → 38 tokens, of which 29 are the forced tool call's framing; every packet layer is read (sensitivity); a third slot and a reserved slot sit inside one game's noise. Win rate on the game38 prompt (2026-09-14 evening campaigns): **the script 10 of 11** (games 39–49, 4.5–7.1 min, $0), **the model 4 of 5** (games 50–54, 5.4–14.6 min, $6.90); game 38 was the model's earlier loss on a quiet-packet commit.
 
 **2026-09-14, late: the three-way split.** Every loss was ambiguous between the packet, the strategy and the model. Now `src/games/ashfall/policy/game38.mjs` plays the game38 prompt as code from the packet text alone (`src/games/ashfall/read.mjs` reads the packet back into facts, strict on the structured layers), through the same `callModel` seam as the API (`--model script:game38`, `scriptModel` in `src/core/model.mjs`, no key, $0). What it answers:
 - **Is the packet sufficient?** The script passes the bench 13/13 on the working config and reads every packet of every recording (6,561). Anything it cannot read throws (`stop: error:read`), never a silent `-`.

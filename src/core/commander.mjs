@@ -63,12 +63,13 @@ export function expectTracker(measure) {
 // F: what the commander's own last parameter set did — the diff it made, how long it has been in force, how many reflex orders it
 // actually changed (the reflex is re-run on the old set to compare), and how its `expect` graded. Params and metrics are opaque
 // here: no game knowledge. `expect` ({plan, grade}) null drops the clause entirely (no measure on this game).
-export function feedbackLayer({ setSeq = null, sinceN = 0, prev = null, cur = null, differed = 0, last = null, expect = null, landed = null } = {}) {
+export function feedbackLayer({ setSeq = null, sinceN = 0, prev = null, cur = null, differed = 0, last = null, expect = null, landed = null, at = null } = {}) {
   if (setSeq === null) return 'F none';
   const diffOf = (a, b) => [...new Set([...Object.keys(b || {}), ...Object.keys(a || {})])].filter(k => JSON.stringify(a?.[k]) !== JSON.stringify(b?.[k])).map(k => `${k} ${fmt(a?.[k])}>${fmt(b?.[k])}`);
   const diff = diffOf(prev, cur);
   let s = `F set ${setSeq} in force ${sinceN} decisions: ${diff.length ? diff.join(' ') : 'unchanged'} | orders differed ${differed}/${sinceN}`;
   if (expect) s += ` | ${expectText(expect)}`;
+  if (at) s += ` | ${at}`;
   if (last) s += ` | ${`last: ${last.o} / was ${last.was}`.slice(0, 200)}`;
   if (landed) { const d = diffOf(landed.prev, landed.cur); s += ` | set ${landed.setSeq} landed: ${d.length ? d.join(' ') : 'unchanged'}`; }
   return s;
@@ -78,13 +79,14 @@ export function feedbackLayer({ setSeq = null, sinceN = 0, prev = null, cur = nu
 // The cadence is checked on each reflex call (no timers of its own): a new commander call starts when none is in flight and either
 // this is the first call or everyMs has passed since the last one started. Its note, usage/cost and a small summary ride out on the
 // first reflex result after it lands.
-export function commanderModel({ reflex, decode, commander, params, apply, measure = null, everyMs = 5000, clock = { now: () => Date.now() }, log = () => {} }) {
-  let cur = params, inFlight = null, ac = null, seq = 0, reflexN = 0, lastStartT = null;
+export function commanderModel({ reflex, decode, commander, params, apply, measure = null, describe = null, everyMs = 5000, clock = { now: () => Date.now() }, log = () => {} }) {
+  let cur = params, inFlight = null, ac = null, seq = 0, reflexN = 0, lastStartT = null, lastPacket = null;
   let note = null, usage = zero(), spend = 0, summary = null;
   let prev = null, setSeq = null, sinceN = 0, differed = 0, last = null, closed = null;   // the F layer's state; closed = the last window that saw decisions
   const track = measure ? expectTracker(measure) : null;
+  const safe = fn => { try { return fn(); } catch { return null; } };
   // A set that has seen no decisions yet (the serial loop relaunches on the packet it landed on) says nothing: report the last window that did.
-  const feedback = () => feedbackLayer(sinceN === 0 && closed ? { ...closed, expect: track?.read() ?? null, landed: { setSeq, prev, cur } } : { setSeq, sinceN, prev, cur, differed, last, expect: track?.read() ?? null });
+  const feedback = () => feedbackLayer({ ...(sinceN === 0 && closed ? { ...closed, landed: { setSeq, prev, cur } } : { setSeq, sinceN, prev, cur, differed, last }), expect: track?.read() ?? null, at: describe ? safe(() => describe(lastPacket, cur)) : null });
 
   function launch(packet, atN) {
     const my = new AbortController(), n = ++seq, F = feedback();
@@ -113,6 +115,7 @@ export function commanderModel({ reflex, decode, commander, params, apply, measu
   async function callModel({ packet, signal, onOrders = null } = {}) {
     const t0 = clock.now(), n = ++reflexN;
     track?.see(packet);
+    lastPacket = packet;
     if (signal) signal.addEventListener('abort', () => ac?.abort(), { once: true });
     if (!inFlight && (lastStartT === null || clock.now() - lastStartT >= everyMs)) launch(packet, n);
     try {

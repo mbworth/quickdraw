@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { encode } from '../../../src/games/microrts/coder.mjs';
 import { read } from '../../../src/games/microrts/read.mjs';
 import { decide, decideFacts, DEFAULTS } from '../../../src/games/microrts/policy/rush.mjs';
-import { defaults, apply, tool, measure, METRICS } from '../../../src/games/microrts/policy/commander.mjs';
+import { defaults, apply, tool, measure, METRICS, describe } from '../../../src/games/microrts/policy/commander.mjs';
 import { assemble } from '../../../src/core/packet.mjs';
 import { tinySnap } from './helpers.mjs';
 
@@ -110,6 +110,12 @@ test('the expect field is optional, typed, and its metric enum is METRICS', () =
   assert.equal(e.additionalProperties, false);
   assert.deepEqual(e.properties.op.enum, ['>=', '<=', '==']);
   assert.equal(METRICS.includes('ore'), false);   // a metric measure() cannot produce is not offerable
+});
+
+test('describe reports what stands at the commander\'s own target', () => {
+  assert.equal(describe(PACKET, { target: { x: 13, y: 13 } }), 'at target 13,13: ba x1 wk x2 rg x3');
+  assert.equal(describe(PACKET, { target: { x: 1, y: 10 } }), 'at target 1,10: nothing within 2, nearest foe ba#21 d12 at 13,13');
+  assert.equal(describe(PACKET, { target: null }), null);
 });
 
 test('plan and expect are not reflex params: apply drops them', () => {

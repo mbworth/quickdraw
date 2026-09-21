@@ -19,6 +19,20 @@ export function measure(packet) {
   return m;
 }
 
+// describe(packet, params) → F's "at target" clause: what stands at the commander's own target, or null if it set none.
+export function describe(packet, params) {
+  if (params?.target == null) return null;
+  const T = params.target;
+  const k = typeof packet === 'string' ? read(packet) : packet;
+  const cheb = c => Math.max(Math.abs(c.x - T.x), Math.abs(c.y - T.y));
+  const at = k.x.filter(c => cheb(c) <= 2);
+  if (at.length) return `at target ${T.x},${T.y}: ${at.map(c => `${c.type} x${c.n}`).join(' ')}`;
+  if (!k.x.length) return `at target ${T.x},${T.y}: nothing within 2, no foe seen`;
+  const near = k.x.reduce((a, c) => (cheb(c) < cheb(a) ? c : a));
+  const d = cheb(near), id = near.ids[0] != null ? `#${near.ids[0]}` : '';
+  return `at target ${T.x},${T.y}: nothing within 2, nearest foe ${near.type}${id} d${d} at ${near.x},${near.y}`;
+}
+
 const CT = (lo, hi) => ({ type: 'integer', description: `${lo}-${hi}, clamped` });
 export const tool = Object.freeze({
   type: 'object',

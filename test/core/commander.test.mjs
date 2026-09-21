@@ -385,3 +385,18 @@ test('feedbackLayer: a landed set with no decisions yet rides after the last win
   const F = feedbackLayer({ setSeq: 4, sinceN: 9, prev: { w: 6 }, cur: { w: 4 }, differed: 3, landed: { setSeq: 5, prev: { w: 4, d: 8 }, cur: { w: 4, d: 6 } } });
   assert.equal(F, 'F set 4 in force 9 decisions: w 6>4 | orders differed 3/9 | set 5 landed: d 8>6');
 });
+
+test('feedbackLayer appends the at clause after expect and before last', () => {
+  const F = feedbackLayer({ setSeq: 1, sinceN: 1, prev: { a: 1 }, cur: { a: 2 }, differed: 0, last: { o: 'x', was: 'y' }, at: 'at target 1,1: x' });
+  assert.ok(F.includes(' | at target 1,1: x'));
+});
+
+test('commanderModel feeds the game\'s describe(lastPacket, params) into the packet the commander receives', async () => {
+  const { callModel, clock, calls } = mk({ describe: (packet, params) => `at target ${params.push},${packet}` });
+  await callModel({ packet: 'P1' });
+  calls[0].resolve(plan({ mode: 'a', push: 3, n: null }));
+  await clock.advance(5000);
+  await callModel({ packet: 'P2' });
+  assert.match(calls[1].packet, /\| at target 3,P2$/);
+  await callModel.close();
+});
