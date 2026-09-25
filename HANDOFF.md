@@ -40,6 +40,22 @@ that, not against win rate alone. Full log: `notes/microrts/games.md` (games 38�
   `base_hp` mine: labels alone 0 → 11/16 retargets, with the clause 14/16, Fable 16/16 ($0.15 a replay). Legend, not judgement.
 
 **Open, in order.**
+0. Classifiers (2026-09-23, built, untested live): `O` lines the harness computes for the commander, each a fact with numbers and no verdict, switched by
+   `--microrts-classifiers near,trig,reach,foe,fight,gone,econ|all` (`src/games/microrts/policy/observe.mjs`; prompt `commander07-sonnet.md` carries the legend).
+   Test each offline first: `bin/replay-commander.mjs <run> --prompt prompts/microrts/commander07-sonnet.md --at --classifiers <set>` on game 162's run
+   (`mub5ms7q`, retarget after t2018): corrected baseline 5/16, `gone` 16/16, `all` 15/16 (games.md, 2026-09-23). Game 164: `econ` moves `harvesters` 8/9 calls from t317 (0/9 without).
+   Game 80: `harvesters` 16/22 vs 5/22, but the plan is still held with the trigger's shortfall printed in `trig`. Live GuidedRojoA3N (games 166–171): `gone,econ` **3/3** (commander05/06 was 0/3),
+   `all` 1/3, both losses to worker raids on an undefended base with no recall (games.md). Ship `gone,econ` as the default set; `all` is not worth its tokens yet.
+   `guard` lever added (army units held at the post while the rest push; script guard 1 vs GuidedRojoA3N 3/3, faster). Fable game 80 replay with `all`:
+   nothing new but `harvesters` 100c earlier; `trig` moves neither model. `gone,econ` ladder (games 175–183): LightRush 2/3, HeavyRush 0/3, CoacAI 0/3,
+   all out-produced. Built and tested 2026-09-25: `barracks` lever (max count, every barracks trains; script `barracks 2` vs HeavyRush 0/3, the base
+   dies at t594 before a second barracks can stand) and `O home` (my army within `defend` of my base vs out; game 175 replay: Sonnet still never sets
+   `guard`). Both levers exist for the commander; neither changes the ladder. HeavyRush/CoacAI are lost by ~t600 on the opening's economy, which is
+   strategy, not harness (harness-not-strategy). The Sonnet commander's job on this ladder is done where reading was the failure (GuidedRojoA3N
+   0/3 → 3/3); what remains is a model that pulls an unused lever from a fact: Fable does (game 175 replay: recall via `defend` 10/13 on the first
+   `O home` line, garrison via `post`/`panic`/`pushLight`, `guard` once), Sonnet does not — model capability, same finding as plan revision.
+   Fable live vs LightRush (187–188, 400 ms clock): 1/2, $1.57/$2.35; in the win it set `guard` 2 → 1 → 0 with a reason each time and held the base at hp6.
+   The harness side is done for this aim; what is left is model choice (Sonnet $0.25 reads, Fable $2 acts) and the reflex's economy vs HeavyRush/CoacAI (strategy). Commit next.
 1. commander06 live on GuidedRojoA3N (3 games, ~$1): does a Sonnet that reads the board keep the reflex's 3/3. Then Fable on the same ladder (~$2 a game).
    The reflex stays as is: the user does not want a better scripted CoacAI; what the script cannot do is the commander's job.
 2. Whether a cheap model can be brought to revise: the grade reaches Sonnet and it still holds. Untried: a required self-grade field in the tool
@@ -185,6 +201,7 @@ The script plays the same line with `--model script:game38` and no `--prompt`/`-
 |---|---|---|
 | `bin/pace.mjs <run…>` (`--row N`) | pace, latency split, tokens, cache, cost; the games.md row | free |
 | `bin/replay.mjs <run> all` | encode is pure over the recorded refs (byte for byte) | free |
+| `bin/replay-commander.mjs <run> --prompt f [--dry-run]` | a commander run's launches replayed against a prompt/model: reconstructed F(+O) line, per-call param diffs, lever counts | free (`--dry-run`); ~model cost per call otherwise |
 | `bin/layers.mjs`, `bin/classes.mjs`, `bin/discipline.mjs <run…>` | tokens per layer; what each trigger class buys; rule adherence of a live game | free |
 | `bin/bench.mjs [arm] --repeats 5 --out a.json`; `--compare`; `--rescore` | decision quality on 13 fixed states (`test/games/ashfall/bench/cases.mjs`) | ~$0.20 an arm; `--model script:game38 --repeats 1` free |
 | `bin/trajectory.mjs <run> [--every k] [arm] --out a.json`; `--compare`; `--rescore` | a recording re-decided under one arm: agreement with the recording, ten per-decision rules; with `--model script:<name> --diff`: Buy/Army agreement per decision and every disagreement printed with its packet | ~$0.006 a decision; script free |

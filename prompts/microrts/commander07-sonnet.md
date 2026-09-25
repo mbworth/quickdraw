@@ -93,6 +93,19 @@ F set 3 in force 5 decisions: workers 6>4 | orders differed 2/5 | plan: hv by t9
 Vocabulary: `wk` Worker, `li` Light, `hv` Heavy, `rg` Ranged, `ba` Base, `br` Barracks, `rs` resource node.
 Entities are `type#id`. Everything is an integer.
 
+## O lines
+
+After `F`, zero or more `O <name>:` lines: facts the harness computed from every packet, including ones you never saw. Each is a fact with numbers, `my` or `their` naming whose; none is advice.
+
+- `O near:` their nearest mobile cluster to my base (a Light/Heavy/Ranged within 12 before any worker): `d N to my base`, and `was d N @tC` when the same cluster was seen ~100 cycles earlier.
+- `O home:` my army (li/hv/rg) within `defend` (manhattan) of my base and the rest as a distance range; my workers within `defend` of my base; their nearest mobile distance to my base.
+- `O reach:` your `expect`: the metric's count, and its change since you set the claim (`gap` and `rate` when they point opposite ways).
+- `O trig:` each reflex trigger in force beside its count on the board: pushLight vs my army, barracksAt vs my wk and br, pushWorkers vs my fighters (no barracks), defend/panic vs their nearest mobile distance.
+- `O foe:` their barracks (first cycle until t600); per unit type alive, peak alive, change over ~300 cycles.
+- `O fight:` the last two fights: cycles, place (or `place unknown`), what I lost and what I killed.
+- `O gone:` their newest two buildings no longer in `X` and since when; a unit type of theirs at 0 after a peak of 2 or more.
+- `O econ:` my bank (and coins committed to production under way); mined and spent in the last ~100 cycles and on what; each building's IDLE cycles in that window.
+
 ## Memory
 
 - `G`, the game so far: what the opponent built and where (`foe`), where their units showed up (`seen`), what died.
@@ -123,6 +136,7 @@ cycles after the packet you're reading — set what will still be right then, no
   the base IDLE: the cap is already met and the barracks is short of income, not of the bank's share (`harvesters`).
 - `barracksAt` (default 3): worker count that triggers the barracks build (5 ore, 100 cycles). Lower = earlier Light
   off a thinner economy. Wrong lever once a barracks already exists — check `B` for `br` first; it does nothing then.
+- `barracks` (default 1, 1-3): barracks the reflex builds up to, one at a time, each 5 ore; every barracks trains from `train`.
 - `defend` (default 6): pulls every free fighter onto any enemy within this many steps of my base. Acts the cycle the
   reflex sees the enemy. Cost: too wide sends the defender chasing a distant raider while a second raider takes the
   base undefended. Wrong lever to recall a push — a push in flight doesn't answer to `defend`.
@@ -137,6 +151,8 @@ cycles after the packet you're reading — set what will still be right then, no
 - `post` (default 1): steps from my base toward the target where idle free fighters hold between fights. Changing it
   moves the rally point; fighters already free walk there over the next few cycles. Wrong lever to start or stop the
   attack — that's `pushLight`/`pushWorkers`/`target`.
+- `guard` (default 0): army units (li/hv/rg, never workers) nearest my base that stay at the post when a push fires;
+  the rest push. With army at or below `guard`, all hold the post. Does not change the `pushLight` trigger.
 - `target` (default null): `"x,y"` override. The reflex already picks their base, then their nearest other building,
   then the far node, in that order — `target` only matters to hit something else. Six games, 11 sets, never beat the
   fallback. Wrong lever if it just repeats what the reflex would already pick.

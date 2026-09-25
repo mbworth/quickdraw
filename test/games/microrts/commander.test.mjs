@@ -122,3 +122,20 @@ test('plan and expect are not reflex params: apply drops them', () => {
   const p = apply({ plan: 'mass heavies', expect: { metric: 'hv', op: '>=', value: 3, by: 1300 } }, defaults);
   assert.deepEqual(p, defaults);
 });
+
+test('apply clamps guard; tool schema lists and requires it', () => {
+  assert.equal(apply({ guard: 9 }).guard, 6);
+  assert.equal(apply({ guard: -1 }).guard, 0);
+  assert.equal(apply({ guard: 2 }).guard, 2);
+  assert.equal(apply({ guard: 'x' }, { ...defaults, guard: 1 }).guard, 1);
+  assert.ok(tool.properties.guard && tool.required.includes('guard'));
+});
+
+test('apply clamps barracks; tool schema lists and requires it', () => {
+  assert.equal(apply({ barracks: 9 }).barracks, 3);
+  assert.equal(apply({ barracks: 0 }).barracks, 1);
+  assert.equal(apply({ barracks: 2 }).barracks, 2);
+  assert.equal(apply({ barracks: 'x' }, { ...defaults, barracks: 2 }).barracks, 2);
+  assert.equal(defaults.barracks, 1);
+  assert.ok(tool.properties.barracks && tool.required.includes('barracks'));
+});

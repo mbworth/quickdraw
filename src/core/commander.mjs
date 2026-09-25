@@ -48,14 +48,15 @@ export function expectTracker(measure) {
       exp = ne;
     },
     see(packet) {
-      if (!exp) return;
       let m; try { m = measure(packet); } catch { return; }
+      if (Number.isFinite(m?.cycle)) at = m.cycle;   // so a first claim's `since` is the cycle it was made at
+      if (!exp) return;
       const v = m?.[exp.metric];
       if (typeof v !== 'number') { exp = null; return; }   // a metric this game does not measure
-      at = m.cycle;
       if (best === null || exp.op === '==' || (exp.op === '<=' ? v < best : v > best)) { best = v; bestT = m.cycle; }
       if (met === null && OPS[exp.op](v, exp.value)) met = m.cycle;
     },
+    current: () => (exp ? { ...exp, since } : null),
     read: () => ({ plan, grade: !exp ? 'none' : { ...exp, met, best, bestT, since, moved, values: [...values], verdict: met !== null ? 'met' : at !== null && at > exp.by ? 'missed' : 'pending' } }),
   };
 }
@@ -75,11 +76,11 @@ export function feedbackLayer({ setSeq = null, sinceN = 0, prev = null, cur = nu
   return s;
 }
 
-// commanderModel({reflex, decode, commander, params, apply, everyMs, clock, log}) → callModel({packet, signal, onOrders})
+// commanderModel({reflex, decode, commander, params, apply, measure, describe, observe, everyMs, clock, log}); observe.read() lines ride after F. → callModel({packet, signal, onOrders})
 // The cadence is checked on each reflex call (no timers of its own): a new commander call starts when none is in flight and either
 // this is the first call or everyMs has passed since the last one started. Its note, usage/cost and a small summary ride out on the
 // first reflex result after it lands.
-export function commanderModel({ reflex, decode, commander, params, apply, measure = null, describe = null, everyMs = 5000, clock = { now: () => Date.now() }, log = () => {} }) {
+export function commanderModel({ reflex, decode, commander, params, apply, measure = null, describe = null, observe = null, everyMs = 5000, clock = { now: () => Date.now() }, log = () => {} }) {
   let cur = params, inFlight = null, ac = null, seq = 0, reflexN = 0, lastStartT = null, lastPacket = null;
   let note = null, usage = zero(), spend = 0, summary = null;
   let prev = null, setSeq = null, sinceN = 0, differed = 0, last = null, closed = null;   // the F layer's state; closed = the last window that saw decisions
@@ -89,25 +90,25 @@ export function commanderModel({ reflex, decode, commander, params, apply, measu
   const feedback = () => feedbackLayer({ ...(sinceN === 0 && closed ? { ...closed, landed: { setSeq, prev, cur } } : { setSeq, sinceN, prev, cur, differed, last }), expect: track?.read() ?? null, at: describe ? safe(() => describe(lastPacket, cur)) : null });
 
   function launch(packet, atN) {
-    const my = new AbortController(), n = ++seq, F = feedback();
+    const my = new AbortController(), n = ++seq, F = feedback(), O = observe ? safe(() => observe.read(cur, { expect: track?.current() ?? null })) : null;
     ac = my; lastStartT = clock.now();
     const p = (async () => {
       let res;
-      try { res = await commander({ packet: `${packet}\n${F}`, signal: my.signal }); }
-      catch (err) { summary = { seq: n, input: null, stop: 'error:unknown', error: String(err?.message || err), latencyMs: 0, apiPacketN: atN, feedback: F }; log('commander failed', err); return; }
+      try { res = await commander({ packet: `${packet}\n${F}${O ? `\n${O}` : ''}`, signal: my.signal }); }
+      catch (err) { summary = { seq: n, input: null, stop: 'error:unknown', error: String(err?.message || err), latencyMs: 0, apiPacketN: atN, feedback: F, ...(O ? { observe: O } : {}) }; log('commander failed', err); return; }
       add(usage, res.usage); spend += res.cost || 0;
       const input = answered(res.stop) ? toolInput(res) : null;
       if (!input || typeof input !== 'object') {
-        summary = { seq: n, input: null, stop: res.stop, error: res.error || (answered(res.stop) ? 'no tool_use' : undefined), latencyMs: res.latencyMs, apiPacketN: atN, feedback: F };
+        summary = { seq: n, input: null, stop: res.stop, error: res.error || (answered(res.stop) ? 'no tool_use' : undefined), latencyMs: res.latencyMs, apiPacketN: atN, feedback: F, ...(O ? { observe: O } : {}) };
         return;
       }
       const was = cur;
-      try { cur = apply(input, cur); } catch (err) { summary = { seq: n, input, stop: res.stop, error: `apply: ${err?.message || err}`, latencyMs: res.latencyMs, apiPacketN: atN, feedback: F }; return; }
+      try { cur = apply(input, cur); } catch (err) { summary = { seq: n, input, stop: res.stop, error: `apply: ${err?.message || err}`, latencyMs: res.latencyMs, apiPacketN: atN, feedback: F, ...(O ? { observe: O } : {}) }; return; }
       if (setSeq !== null && sinceN > 0) closed = { setSeq, sinceN, prev, cur: was, differed, last };
       prev = was; setSeq = n; sinceN = 0; differed = 0; last = null;
       track?.set(input.expect, input.plan);
       if (typeof input.n === 'string') note = input.n;
-      summary = { seq: n, input, stop: res.stop, latencyMs: res.latencyMs, apiPacketN: atN, feedback: F };
+      summary = { seq: n, input, stop: res.stop, latencyMs: res.latencyMs, apiPacketN: atN, feedback: F, ...(O ? { observe: O } : {}) };
     })().finally(() => { if (ac === my) { ac = null; inFlight = null; } });
     inFlight = p;
   }
@@ -115,6 +116,7 @@ export function commanderModel({ reflex, decode, commander, params, apply, measu
   async function callModel({ packet, signal, onOrders = null } = {}) {
     const t0 = clock.now(), n = ++reflexN;
     track?.see(packet);
+    observe?.see(packet);
     lastPacket = packet;
     if (signal) signal.addEventListener('abort', () => ac?.abort(), { once: true });
     if (!inFlight && (lastStartT === null || clock.now() - lastStartT >= everyMs)) launch(packet, n);

@@ -4,10 +4,10 @@
 //
 //   1. Two harvesters on the two nodes nearest my base; the moment one dies or idles, the next worker replaces it.
 //   2. The base makes a worker whenever it is IDLE and the bank covers one, up to WK_CAP.
-//   3. At BR_AT workers with the bank at BR_COST and no barracks, the free worker nearest my base builds one, early:
+//   3. At BR_AT workers with the bank at BR_COST and under BARRACKS barracks (none being built), the free worker nearest my base builds one, early:
 //      a Light kills a worker a hit and takes four to die, so the barracks is the whole game and every cycle it is late costs
 //      (a Worker produces Barracks: the producer need not be a building).
-//   4. A finished barracks makes Light whenever it is IDLE and the bank covers one. One Light kills a worker a hit
+//   4. Each finished barracks makes Light whenever it is IDLE and the bank covers one. One Light kills a worker a hit
 //      and takes four to die; it is worth two workers and change.
 //   5. Defence first: an enemy cluster within DEFEND of my base draws every fighter, and within PANIC the harvesters too.
 //      Outside panic, below ENGAGE free army units hold the post instead of sortieing solo (workers-only defence unchanged).
@@ -24,7 +24,7 @@ import { read } from '../read.mjs';
 
 const WK_COST = 1, BR_COST = 5;
 const COST = { li: 2, hv: 3, rg: 2 };
-export const DEFAULTS = { harvesters: 2, workers: 6, barracksAt: 3, defend: 6, panic: 2, pushLight: 3, pushWorkers: 6, post: 1, target: null, train: 'li', group: 2, engage: 2 };
+export const DEFAULTS = { harvesters: 2, workers: 6, barracksAt: 3, defend: 6, panic: 2, pushLight: 3, pushWorkers: 6, post: 1, target: null, train: 'li', group: 2, engage: 2, guard: 0, barracks: 1 };
 const MOBILE = new Set(['wk', 'li', 'hv', 'rg']);
 const d1 = (a, b) => Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
 const step = (from, to, n) => { const dx = to.x - from.x, dy = to.y - from.y, L = Math.abs(dx) + Math.abs(dy) || 1; return { x: Math.round(from.x + (n * dx) / L), y: Math.round(from.y + (n * dy) / L) }; };
@@ -34,11 +34,11 @@ const list = us => us.map(u => `#${u.id}`).join(',');
 export const decide = (text, params = DEFAULTS) => decideFacts(read(text), params);
 
 export function decideFacts(k, params = DEFAULTS) {
-  const { harvesters: HARV, workers: WK_CAP, barracksAt: BR_AT, defend: DEFEND, panic: PANIC, pushLight: PUSH_LI, pushWorkers: PUSH_WK, post: POST, target: TARGET, train: TRAIN, group: GROUP, engage: ENGAGE } = params;
+  const { harvesters: HARV, workers: WK_CAP, barracksAt: BR_AT, defend: DEFEND, panic: PANIC, pushLight: PUSH_LI, pushWorkers: PUSH_WK, post: POST, target: TARGET, train: TRAIN, group: GROUP, engage: ENGAGE, guard: GUARD = 0, barracks: BARRACKS = 1 } = params;
   const { h, p, e, a, b, x } = k;
   const why = [], orders = [];
   const base = b.find(c => c.type === 'ba') || null;
-  const barracks = b.find(c => c.type === 'br') || null;
+  const barracksList = b.filter(c => c.type === 'br');
   const idle = id => p.find(q => q.id === id)?.idle ?? false;
 
   // Every mobile unit of mine, flattened out of A: ids are what an order can name, clusters are only how they are printed.
@@ -64,7 +64,7 @@ export function decideFacts(k, params = DEFAULTS) {
 
   // 3-early: at barracksAt at or below harvesters the top-up would claim every worker, so pick the builder first (off a node if need be).
   const building = units.some(u => u.state === 'p');
-  const canBuild = !barracks && !building && workers.length >= BR_AT && h.r >= BR_COST;
+  const canBuild = barracksList.length < BARRACKS && !building && workers.length >= BR_AT && h.r >= BR_COST;
   let brWorker = null;
   if (canBuild && BR_AT <= HARV) {
     brWorker = workers.find(u => u.state === 'p') || workers.find(u => u.state === 'i') || workers[0];
@@ -91,13 +91,14 @@ export function decideFacts(k, params = DEFAULTS) {
   // A mix (`train: 'li,hv'`) cycles by what already exists plus the unit in production, one at a time; a single type keeps a count of 5 standing.
   const types = (TRAIN || 'li').split(',').map(s => s.trim()).filter(t => COST[t]);
   let starve = false;   // an idle barracks short of a unit's cost keeps the bank: workers do not eat its ore
-  if (barracks) {
-    const producing = p.find(q => q.id === barracks.id)?.idle === false ? 1 : 0;
-    const type = types.length > 1 ? types[(army.length + producing) % types.length] : types[0] || 'li', cost = COST[type];
-    if (bank >= cost) { orders.push(`t ${barracks.id} ${type} ${types.length > 1 ? 1 : 5}`); bank -= cost; why.push(`buy:${type}`); }
-    else starve = !producing;
+  const busy = br => p.find(q => q.id === br.id)?.idle === false;
+  let queued = barracksList.filter(busy).length;
+  for (const br of barracksList) {
+    const type = types.length > 1 ? types[(army.length + queued) % types.length] : types[0] || 'li', cost = COST[type];
+    if (bank >= cost) { orders.push(`t ${br.id} ${type} ${types.length > 1 ? 1 : 5}`); bank -= cost; queued++; why.push(`buy:${type}`); }
+    else if (!busy(br)) starve = true;
   }
-  if (base && bank >= WK_COST && workers.length < WK_CAP && !starve) { orders.push(`t ${base.id} wk ${barracks ? 1 : Math.min(5, WK_CAP - workers.length)}`); bank -= WK_COST; why.push('buy:wk'); }
+  if (base && bank >= WK_COST && workers.length < WK_CAP && !starve) { orders.push(`t ${base.id} wk ${barracksList.length ? 1 : Math.min(5, WK_CAP - workers.length)}`); bank -= WK_COST; why.push('buy:wk'); }
   if (!why.some(w => w.startsWith('buy'))) why.push('buy:none');
 
   const free = us => us.filter(u => u.state !== 'p' && u.id !== builder?.id);
@@ -137,6 +138,17 @@ export function decideFacts(k, params = DEFAULTS) {
       why.push('push:gather');
     }
   };
+  // Guard: the GUARD free army units nearest my base hold the post while the rest push.
+  const guarded = (who, dest, tag) => {
+    const guards = who.filter(u => u.type !== 'wk').slice(0, GUARD);
+    if (guards.length && guards.length >= who.filter(u => u.type !== 'wk').length) {
+      orders.push(`a ${list(who)} ${P(post)}`);
+      why.push('guard');
+      return;
+    }
+    pushOrder(who.filter(u => !guards.includes(u)), dest, tag);
+    if (guards.length) { orders.push(`a ${list(guards)} ${P(post)}`); why.push('guard'); }
+  };
   if (raid) {
     const freeFighters = free(fighters);
     const freeArmy = freeFighters.filter(u => u.type !== 'wk');
@@ -153,11 +165,11 @@ export function decideFacts(k, params = DEFAULTS) {
       why.push('defend');
     }
   } else if (noEnemyMobile && enemyBuilding && target) {
-    pushOrder(free(fighters), target, 'push:last');
+    guarded(free(fighters), target, 'push:last');
   } else if (!enemyBuilding && huntTarget) {
-    pushOrder(free(fighters), huntTarget, 'push:hunt');
-  } else if (target && (army.length >= PUSH_LI || (!barracks && fighters.length >= PUSH_WK))) {
-    pushOrder(free(fighters), target, 'push');
+    guarded(free(fighters), huntTarget, 'push:hunt');
+  } else if (target && (army.length >= PUSH_LI || (!barracksList.length && fighters.length >= PUSH_WK))) {
+    guarded(free(fighters), target, 'push');
   } else {
     const who = free(fighters);
     if (who.length) orders.push(`a ${list(who)} ${P(post)}`);

@@ -359,7 +359,7 @@ test('a repeated claim carries its history onto F; a fresh claim starts clean', 
   await callModel({ packet: '900 3' });
   await clock.advance(4900);
   await callModel({ packet: '920 3' });
-  assert.match(calls[2].packet, /expect hv>=4 by t950: pending \(max since t0 3, t900\); claim since t0, by moved 1x, value 3>4$/);
+  assert.match(calls[2].packet, /expect hv>=4 by t950: pending \(max since t100 3, t900\); claim since t100, by moved 1x, value 3>4$/);
   await callModel.close();
 });
 
@@ -399,4 +399,27 @@ test('commanderModel feeds the game\'s describe(lastPacket, params) into the pac
   await callModel({ packet: 'P2' });
   assert.match(calls[1].packet, /\| at target 3,P2$/);
   await callModel.close();
+});
+
+test('observe: see() on every packet, O after F with the live expect; absent when observe is null or read() is null', async () => {
+  const seen = [], reads = [];
+  const observe = { see: p => seen.push(p), read: (params, { expect }) => { reads.push(expect); return seen.length > 1 ? `O x: ${params.push}` : null; } };
+  const { callModel, clock, calls } = mk({ observe, measure: p => ({ cycle: Number(p.slice(1)), push: 0 }) });
+  await callModel({ packet: 'P1' });
+  assert.equal(calls[0].packet, 'P1\nF none');
+  calls[0].resolve(plan({ mode: 'a', push: 3, expect: { metric: 'push', op: '>=', value: 2, by: 9 } }));
+  await clock.advance(5000);
+  await callModel({ packet: 'P2' });
+  assert.deepEqual(seen, ['P1', 'P2']);
+  assert.match(calls[1].packet, /^P2\nF set 1 .*\nO x: 3$/);
+  assert.deepEqual(reads[1], { metric: 'push', op: '>=', value: 2, by: 9, since: 1 });
+  calls[1].resolve(plan({ mode: 'a', push: 3 }));
+  await clock.advance(10);
+  const r = await callModel({ packet: 'P3' });
+  assert.equal(r.raw.commander.observe, 'O x: 3');
+  await callModel.close();
+  const plain = mk();
+  await plain.callModel({ packet: 'P1' });
+  assert.equal(plain.calls[0].packet, 'P1\nF none');
+  await plain.callModel.close();
 });

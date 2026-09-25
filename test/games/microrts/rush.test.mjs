@@ -71,3 +71,56 @@ test('push target: no base on X falls to their other building, not the far node'
   assert.equal(r.o, 'a #1,#2,#3 12,12');
   assert.equal(r.why.at(-1), 'push');
 });
+
+const GB = { h: { r: 0 }, p: [], e: [], b: [{ type: 'ba', id: 20, x: 5, y: 5, hp: 10 }], x: [{ type: 'ba', n: 1, x: 15, y: 15, dB: null, dA: null, ids: [] }] };
+const LI3 = [
+  { type: 'li', n: 1, x: 7, y: 5, state: 'i', ids: [1] },
+  { type: 'li', n: 1, x: 6, y: 5, state: 'i', ids: [2] },
+  { type: 'li', n: 1, x: 8, y: 5, state: 'i', ids: [3] },
+];
+
+test('guard 0 matches the defaults exactly', () => {
+  const k = { ...GB, a: LI3 };
+  assert.deepEqual(decideFacts(k, { ...DEFAULTS, guard: 0 }), decideFacts(k, DEFAULTS));
+  assert.equal(decideFacts(k, DEFAULTS).o, 'a #2,#1,#3 15,15');
+});
+
+test('guard 1 with 3 li pushing: the li nearest my base holds the post, 2 push', () => {
+  const r = decideFacts({ ...GB, a: LI3 }, { ...DEFAULTS, guard: 1 });
+  assert.equal(r.o, 'a #1,#3 15,15; a #2 6,6');
+  assert.deepEqual(r.why.slice(-2), ['push:last', 'guard']);
+});
+
+test('guard at or above army: everyone holds the post', () => {
+  const r = decideFacts({ ...GB, a: LI3 }, { ...DEFAULTS, guard: 3 });
+  assert.equal(r.o, 'a #2,#1,#3 6,6');
+  assert.equal(r.why.at(-1), 'guard');
+});
+
+test('guard never picks a worker', () => {
+  const k = { ...GB, a: [{ type: 'wk', n: 2, x: 5, y: 4, state: 'i', ids: [8, 9] }, ...LI3] };
+  const r = decideFacts(k, { ...DEFAULTS, harvesters: 0, workers: 1, guard: 1 });
+  assert.equal(r.o, 'a #1,#3,#9 15,15; a #2 6,6');
+});
+
+const WK3 = [{ type: 'wk', n: 3, x: 5, y: 6, state: 'i', ids: [1, 2, 3] }];
+const BR2 = [...BASE.b, { type: 'br', id: 31, x: 4, y: 5, hp: 4 }];
+
+test('barracks 1 matches the defaults exactly', () => {
+  for (const k of [BASE, { ...BASE, a: WK3 }, { ...BASE, b: BR2, h: { r: 4 }, a: WK3 }]) assert.deepEqual(decideFacts(k, { ...DEFAULTS, barracks: 1 }), decideFacts(k, DEFAULTS));
+});
+
+test('barracks 2 with one br standing, 3 workers, bank 5: a second barracks', () => {
+  const k = { ...BASE, a: WK3 };
+  assert.match(decideFacts(k, { ...DEFAULTS, barracks: 2 }).o, /^t #\d+ br 1/);
+  assert.doesNotMatch(decideFacts(k, DEFAULTS).o, /br 1/);
+});
+
+test('barracks 2 with two br standing: no build', () => {
+  assert.doesNotMatch(decideFacts({ ...BASE, b: BR2, a: WK3 }, { ...DEFAULTS, barracks: 2 }).o, /br 1/);
+});
+
+test('two idle br, bank 4, train li: both train', () => {
+  const r = decideFacts({ ...BASE, b: BR2, h: { r: 4 }, a: WK3 }, { ...DEFAULTS, barracks: 2 });
+  assert.equal(r.o, 't 30 li 5; t 31 li 5; a #2,#3 5,5');
+});

@@ -2,6 +2,7 @@
 // is the commander's side of that contract — the schema it fills, and apply() turning its answer into the next params.
 import { DEFAULTS } from './rush.mjs';
 import { read } from '../read.mjs';
+export { createObserver, CLASSIFIERS } from './observe.mjs';
 
 export const defaults = { ...DEFAULTS, target: null };
 
@@ -40,6 +41,7 @@ export const tool = Object.freeze({
     harvesters: { ...CT(0, 6), description: 'workers kept mining at once (rule 1); default 2' },
     workers: { ...CT(1, 12), description: 'worker cap: the base stops producing more once this many are alive (rule 2); default 6' },
     barracksAt: { ...CT(1, 12), description: 'worker count that triggers the barracks build, bank permitting (rule 3); default 3' },
+    barracks: { ...CT(1, 3), description: 'barracks the reflex builds up to, bank permitting; default 1' },
     defend: { ...CT(0, 16), description: 'distance to my base that pulls every free fighter onto an enemy (rule 5); default 6' },
     panic: { ...CT(0, 16), description: 'distance inside defend that also pulls the harvesters off their nodes to fight (rule 5); default 2, at most defend' },
     pushLight: { ...CT(1, 10), description: 'Light count that triggers the attack on their base (rule 6); default 3' },
@@ -49,6 +51,7 @@ export const tool = Object.freeze({
     train: { type: 'string', description: 'unit types the barracks cycles through, comma-separated from li, hv, rg; default "li"' },
     group: { ...CT(1, 16), description: 'push waits for stragglers within this distance; default 2' },
     engage: { ...CT(0, 12), description: 'min army units to answer a raid outside panic; default 2' },
+    guard: { ...CT(0, 6), description: 'army units held at the post while the rest push; default 0' },
     plan: { type: 'string', description: 'your plan in one line, your own words, at most 120 characters' },
     expect: {
       type: ['object', 'null'],
@@ -63,7 +66,7 @@ export const tool = Object.freeze({
       additionalProperties: false,
     },
   },
-  required: ['harvesters', 'workers', 'barracksAt', 'defend', 'panic', 'pushLight', 'pushWorkers', 'post', 'target', 'train', 'group', 'engage', 'plan', 'expect'],
+  required: ['harvesters', 'workers', 'barracksAt', 'barracks', 'defend', 'panic', 'pushLight', 'pushWorkers', 'post', 'target', 'train', 'group', 'engage', 'guard', 'plan', 'expect'],
   additionalProperties: false,
 });
 
@@ -93,6 +96,7 @@ export function apply(input, prev = defaults) {
     harvesters: clamp(i.harvesters, 0, 6, prev.harvesters),
     workers: clamp(i.workers, 1, 12, prev.workers),
     barracksAt: clamp(i.barracksAt, 1, 12, prev.barracksAt),
+    barracks: clamp(i.barracks, 1, 3, prev.barracks),
     defend,
     panic: clamp(i.panic, 0, defend, prev.panic),
     pushLight: clamp(i.pushLight, 1, 10, prev.pushLight),
@@ -102,5 +106,6 @@ export function apply(input, prev = defaults) {
     train: parseTrain(i.train, prev.train),
     group: clamp(i.group, 1, 16, prev.group),
     engage: clamp(i.engage, 0, 12, prev.engage),
+    guard: clamp(i.guard, 0, 6, prev.guard),
   };
 }

@@ -51,7 +51,7 @@ export async function main(argv = process.argv.slice(2)) {
   const unguard = guardExit(rec, { onSignal: () => { if (stopper.signal.aborted) { rec.flushAndClose(); process.exit(130); } stopper.abort(); } });
 
   const keepAlive = setInterval(() => {}, 1 << 30);   // core timers are unref'd; the run itself keeps the loop alive
-  const callModel = cfg.model === 'none' ? nullModel() : await modelFor({ adapter, game, model: cfg.model, system, thinking: cfg.thinking, effort: cfg.effort, reply: cfg.reply, stream: cfg.stream, memory: cfg.memory, decisionDeadlineMs: cfg.decisionDeadline, clock, opts: { commanderModel: cfg.commanderModel, commanderEveryMs: cfg.commanderEveryMs, scriptParams: cfg.scriptParams } });
+  const callModel = cfg.model === 'none' ? nullModel() : await modelFor({ adapter, game, model: cfg.model, system, thinking: cfg.thinking, effort: cfg.effort, reply: cfg.reply, stream: cfg.stream, memory: cfg.memory, decisionDeadlineMs: cfg.decisionDeadline, clock, opts: { commanderModel: cfg.commanderModel, commanderEveryMs: cfg.commanderEveryMs, scriptParams: cfg.scriptParams, classifiers: gameOpts.classifiers } });
   const out = await runPilot({ adapter, callModel, clock, record: rec, log: (...a) => console.error(...a), stop: stopper.signal, opts: {
     heartbeatMs: cfg.heartbeat, deadlineMarginMs: cfg.deadlineMargin, packetMax: cfg.packetMax, divisor, fullEvery: cfg.fullEvery, staleAfterMs: cfg.staleAfter, maxInFlight: cfg.overlap, eventTick: cfg.eventTick, stream: cfg.stream, reserveFor: cfg.reserveFor, memoryMax: cfg.memory, journalN: cfg.journal, logN: cfg.log,
     maxUsd: cfg.maxUsd, maxDecisions: cfg.maxDecisions, concedeOn: cfg.concedeOn, stopFile: cfg.stopFile,

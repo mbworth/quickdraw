@@ -53,7 +53,7 @@ export async function modelFor({ adapter, game, model, system, thinking = 'adapt
       decode: input => ({ act: false, orders: [], note: typeof input.n === 'string' ? input.n : null }),
       thinking: String(thinking), effort, reply: 'tool', decisionDeadlineMs, prices: prices(), clock,
     });
-    return commanderModel({ reflex: decide, decode: adapter.decode, commander: call, params: commander.defaults, apply: commander.apply, measure: commander.measure ?? null, describe: commander.describe ?? null, everyMs: opts.commanderEveryMs ?? 5000, clock });
+    return commanderModel({ reflex: decide, decode: adapter.decode, commander: call, params: commander.defaults, apply: commander.apply, measure: commander.measure ?? null, describe: commander.describe ?? null, observe: commander.createObserver && opts.classifiers ? commander.createObserver({ classifiers: opts.classifiers }) : null, everyMs: opts.commanderEveryMs ?? 5000, clock });
   }
   const { default: Anthropic } = await import('@anthropic-ai/sdk');
   return createModel({ client: new Anthropic(), model, system, tool: adapter.tool, toolName: adapter.meta.toolName, toolDescription: adapter.meta.toolDescription, decode: adapter.decode, thinking: String(thinking), effort, reply: String(reply), stream: !!stream, memory: Number(memory) || 0, decisionDeadlineMs, prices: prices(), clock });
