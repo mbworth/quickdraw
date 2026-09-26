@@ -1,13 +1,18 @@
 // Harness-computed facts for the commander: `O <name>: ...` lines, numbers with a my/their subject, never a verdict.
 // see() on every reflex packet, read() at each commander launch. Each classifier is switched on by name.
+// events() → the transitions see() noticed since the last events() call, `<classifier>: <fact>`, each once per transition.
 import { read as readPacket } from '../read.mjs';
 import { measure } from './commander.mjs';
 
-export const CLASSIFIERS = ['near', 'home', 'reach', 'trig', 'foe', 'fight', 'gone', 'econ'];
+export const CLASSIFIERS = ['near', 'home', 'reach', 'trig', 'foe', 'fight', 'gone', 'econ', 'units'];
+// Standard microRTS UnitTypeTable (basic mod); not carried by any packet, so hardcoded here.
+const UTT = { li: { cost: 2, hp: 4, dmg: 2, pt: 80 }, hv: { cost: 3, hp: 8, dmg: 4, pt: 120 }, rg: { cost: 2, hp: 1, dmg: 1, pt: 100, rng: 3 } };
+const TARGETS = [['wk', 1], ['li', 4], ['hv', 8], ['rg', 1]];
 const MOBILE = ['wk', 'li', 'hv', 'rg'];
 const COMBAT = new Set(['li', 'hv', 'rg']);
 const BLD = new Set(['ba', 'br']);
 const COST = { wk: 1, li: 2, hv: 3, rg: 2, br: 5, ba: 10 };
+const IDLE_W = 100, EV_MAX = 50, BANK_HI = 10, HOME_MIN = 3;
 const W = 100, FOE_W = 300, HIST_W = 300, NEAR_COMBAT = 12, SAME_R = 3;
 const FIGHT_W = 30, FIGHT_R = 4, POS_FRESH = 20, FORGET = 500, MLOG_MAX = 2000;
 
@@ -39,6 +44,8 @@ export function createObserver({ classifiers = [] } = {}) {
   const peak = {}, zeroT = {};
   const myBld = new Set();
   let firstBr = null, prevT = null;
+  const evs = [], ev = { gone: [], seen: new Set(), idle: new Map(), out: null, inside: null, above: null, pushLight: null };
+  const fire = (name, s) => { if (on.has(name)) { evs.push(`${name}: ${s}`); if (evs.length > EV_MAX) evs.shift(); } };
 
   const at = (arr, t) => { let h = arr[arr.length - 1]; for (let i = arr.length - 1; i >= 0 && arr[i].t >= t; i--) h = arr[i]; return h; };
 
@@ -56,6 +63,7 @@ export function createObserver({ classifiers = [] } = {}) {
     if (!f) {
       f = { t0: t, t1: t, x: p ? p.x : null, y: p ? p.y : null, k: 0, lost: {}, killed: {} };
       fights.push(f); if (fights.length > 2) fights.shift();
+      fire('fight', `new fight t${t}${p ? ` @${p.x},${p.y}` : ''}: ${mine ? 'lost my' : 'killed their'} ${type}`);
     }
     f.t1 = t;
     if (p) { f.x = (f.x * f.k + p.x) / (f.k + 1); f.y = (f.y * f.k + p.y) / (f.k + 1); f.k++; }
@@ -76,16 +84,54 @@ export function createObserver({ classifiers = [] } = {}) {
         else { const key = `${c.type}@${c.x},${c.y}`; present.add(key); bld.set(key, { label: key, type: c.type, x: c.x, y: c.y, goneT: null }); }
       }
     }
-    for (const [key, b] of bld) if (!present.has(key) && b.goneT === null) b.goneT = t;
+    for (const [key, b] of bld) if (!present.has(key) && b.goneT === null) { b.goneT = t; ev.gone.push(`their ${b.label} gone t${t}`); }
     for (const ty of MOBILE) {
       const n = foe[ty] || 0;
       if (n > 0) { zeroT[ty] = null; peak[ty] = Math.max(peak[ty] || 0, n); }
-      else if (peak[ty] > 0 && zeroT[ty] == null) zeroT[ty] = t;
+      else if (peak[ty] > 0 && zeroT[ty] == null) { zeroT[ty] = t; if (peak[ty] >= 2) ev.gone.push(`their ${ty} 0 t${t} (peak ${peak[ty]})`); }
     }
     return foe;
   }
 
-  function see(packet) {
+  // Transitions between the previous hist entry and the new one; the first packet only sets the baseline.
+  function detect(now, prior, params) {
+    const t = now.t, R = params?.defend ?? 6, first = !prior;
+    for (const s of ev.gone.splice(0)) if (!first) fire('gone', s);
+    for (const ty of [...MOBILE, 'br']) if (now.foe[ty] > 0 && !ev.seen.has(ty)) { ev.seen.add(ty); if (!first) fire('foe', `their ${ty} first seen t${t}`); }
+    if (prior?.base && !now.base) fire('home', `my base lost t${t}`);
+    const army = now.a.filter(c => COMBAT.has(c.type)), n = army.reduce((s, c) => s + c.n, 0);
+    if (now.base && n >= HOME_MIN) {   // a lone sortie is the reflex's push, not an event
+      const far = army.filter(c => d1(c, now.base) > R + 2), k = far.reduce((s, c) => s + c.n, 0);
+      const allIn = army.every(c => d1(c, now.base) <= R);
+      let out = ev.out;
+      if (k > n / 2) out = true; else if (allIn) out = false;
+      if (ev.out !== null && out !== ev.out) fire('home', out ? `my army ${n}: ${k} past d${R + 2} of my base t${t}` : `my army ${n}: all within d${R} of my base t${t}`);
+      ev.out = out;
+    }
+    const cs = now.mob.filter(c => COMBAT.has(c.type) && c.dB != null), c = cs.length ? cs.reduce((a, o) => (o.dB < a.dB ? o : a)) : null;
+    let inside = ev.inside;
+    if (c && c.dB <= R) inside = true; else if (!c || c.dB > R + 2) inside = false;
+    if (ev.inside !== null && inside !== ev.inside) fire('near', inside ? `their ${c.type} x${c.n} @${c.x},${c.y} d${c.dB} to my base, inside d${R} t${t}` : `their combat units none within d${R} of my base t${t}${c ? ` (nearest d${c.dB})` : ''}`);
+    ev.inside = inside;
+    const P = params?.pushLight;
+    if (Number.isFinite(P)) {
+      const above = now.m.army >= P;
+      if (ev.above !== null && ev.pushLight === P && above !== ev.above) fire('trig', `my army ${now.m.army} ${above ? 'at or above' : 'below'} pushLight ${P} t${t}`);
+      ev.above = above; ev.pushLight = P;
+    }
+    const idleKeys = [];
+    for (const p of now.prod) {
+      if (!p.idle || now.bank < 2) { ev.idle.delete(p.key); continue; }
+      idleKeys.push(p.key);
+      const s = ev.idle.get(p.key) ?? { t0: t, fired: false };
+      ev.idle.set(p.key, s);
+      if (!s.fired && t - s.t0 >= IDLE_W) { s.fired = true; fire('econ', `my ${p.key} idle ${t - s.t0}c, bank ${now.bank} t${t}`); }
+    }
+    for (const key of ev.idle.keys()) if (!now.prod.some(p => p.key === key)) ev.idle.delete(key);
+    if (prior && prior.bank < BANK_HI && now.bank >= BANK_HI && idleKeys.length) fire('econ', `my bank ${now.bank} crossed ${BANK_HI}, ${idleKeys.join(', ')} idle t${t}`);
+  }
+
+  function see(packet, params = null) {
     let k, m;
     try { k = typeof packet === 'string' ? readPacket(packet) : packet; m = measure(k); } catch { return; }
     const t = k.h.t, has = L => !k.layers || k.layers.has(L), hasX = has('X');
@@ -105,6 +151,7 @@ export function createObserver({ classifiers = [] } = {}) {
     const foe = hasX ? seeX(k, t) : prior?.foe ?? {};
     const mob = hasX ? k.x.filter(c => MOBILE.includes(c.type)) : prior?.mob ?? [];
     hist.push({ t, bank: k.h.r, m, base: has('B') ? k.b.find(c => c.type === 'ba') ?? null : prior?.base ?? null, a: has('A') ? k.a : prior?.a ?? [], mob, foe, near: hasX ? nearest(k.x) : prior?.near ?? null, prod: has('P') ? k.p.map(p => ({ key: `${p.type}#${p.id}`, idle: p.idle, make: p.make, eta: p.eta })) : prior?.prod ?? [], built: k.b.filter(c => !myBld.has(c.id)).map(c => (myBld.add(c.id), c.type)) });
+    detect(hist[hist.length - 1], prior, params);
     while (hist.length > 1 && t - hist[1].t >= HIST_W) hist.shift();
     mlog.push({ t, m }); if (mlog.length > MLOG_MAX) mlog.shift();
     prevT = t;
@@ -209,10 +256,26 @@ export function createObserver({ classifiers = [] } = {}) {
       const prod = now.prod.map(p => `${p.key} idle ${idle[p.key] || 0}/${span}c`);
       return prod.length ? `${s}; ${prod.join(', ')}` : s;
     },
+    units() {
+      const m = hist[hist.length - 1].m, mine = {}, theirs = {};
+      for (const ty of ['li', 'hv', 'rg']) { if (m[ty]) mine[ty] = m[ty]; if (m[`foe_${ty}`]) theirs[ty] = m[`foe_${ty}`]; }
+      let labeled = false;
+      const stat = ty => {
+        const u = UTT[ty];
+        const kills = TARGETS.map(([t, hp]) => {
+          const n = Math.ceil(hp / u.dmg);
+          if (labeled) return `${t} ${n}`;
+          labeled = true; return `${t} ${n} swing`;
+        }).join(', ');
+        return `${ty} ${u.hp}hp ${u.dmg}dmg${u.rng ? ` range ${u.rng}` : ''} cost ${u.cost} ${u.pt}c: kills ${kills}`;
+      };
+      return [`my ${counts(mine) || 'none'} vs their ${counts(theirs) || 'none'}`, stat('li'), stat('hv'), stat('rg')].join(' | ');
+    },
   };
 
   return {
     see,
+    events: () => evs.splice(0),
     read(params, { expect = null } = {}) {
       if (!on.size || !hist.length) return null;
       const out = [];

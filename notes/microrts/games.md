@@ -195,6 +195,10 @@ Local engine, `maps/16x16/basesWorkers16x16.xml` against `ai.abstraction.WorkerR
 | 186 | basesWorkers16x16-HeavyRush-muhclsp6 | script:rush, quickdraw | loss | 1:30 | campaign 3/3: 63 decisions (41.7/min), reaction p50 0.5 s / p90 0.5 s (wait 0 s), model p50 0 s, 0 out tokens, packet null real, 0 timeouts, kept 80.4%, 18 rejected, cache null%, $0 |
 | 187 | basesWorkers16x16-LightRush-muhd5yk4 | commander:rush, quickdraw | loss | 9:18 | campaign 1/2: 243 decisions (26.2/min), reaction p50 0.4 s / p90 0.8 s (wait 0 s), model p50 0 s, 0 out tokens, packet 713 real, 0 timeouts, kept 88.3%, 45 rejected, cache 100%, $1.5744 |
 | 188 | basesWorkers16x16-LightRush-muhdhzk1 | commander:rush, quickdraw | **win** | 16:54 | campaign 2/2: 452 decisions (26.8/min), reaction p50 0.4 s / p90 0.8 s (wait 0 s), model p50 0 s, 0 out tokens, packet 758 real, 0 timeouts, kept 91.5%, 76 rejected, cache 100%, $2.3459 |
+| 189 | basesWorkers16x16-LightRush-muidm03r | commander:rush, quickdraw | **win** | 18:49 | events gate, Fable 5.1, `gone,econ,home`, 400 ms clock: 496 decisions, 29 launches (17 answered, 12 timeouts at 30 s, latency p50 26 s), reasons home 21 / expect 11 / heartbeat 6 / gone 5 / econ 1, cache 94.1%, $1.40 |
+| 190 | basesWorkers16x16-LightRush-muiewpyq | commander:rush, quickdraw | **win** | 18:06 | events gate v2 (home needs 3 units + band, heartbeat 120 s), Fable 5.1, `gone,econ,home`, 400 ms clock: 489 decisions, 17 launches (14 answered, 3 timeouts, latency p50 24 s), reasons expect 8 / econ 5 / home 3 / heartbeat 2 / gone 1, out 1200 tok/launch, cache 92.9%, $1.25 |
+| 191 | basesWorkers16x16-LightRush-muij50zm | commander:rush, quickdraw | loss | 7:50 | events gate v2, **Opus 5.5** (tool_choice auto, like Fable), `gone,econ,home`, 400 ms clock: 201 decisions, 10 launches (0 timeouts, latency p50 10.6 s / max 13.8 s), reasons expect 6 / econ 1 / home 1 / heartbeat 1, out 890 tok/launch, cache 90%, $0.26 |
+| 192 | basesWorkers16x16-LightRush-muikiznv | commander:rush, quickdraw | loss | 11:01 | events gate, Opus 5.5, `gone,econ,home,units`, 400 ms clock: 292 decisions, 13 launches (0 timeouts, latency p50 9.9 s), reasons expect 7 / heartbeat 3 / econ 1 / home 1, out 951 tok/launch, $0.31 |
 
 **Campaign 1 (`script:rush` vs `ai.abstraction.WorkerRush`, 2026-09-15): 5 of 5**, every game 2:24–2:36, 55–60
 decisions a minute, reaction p50 0.4–0.5 s (one `refreshMs`: the floor for a 500 ms state cadence), $0.
@@ -489,3 +493,57 @@ already standing at the post. Games 38–49: LightRush 1/3, HeavyRush 0/3, Range
 **Game 175 replay under Fable 5.1 with `gone,econ,home` (seq 10–30, 18 calls, $1.83).** First call (t584, `O home: my army 3: 3 within d8 …; their nearest mobile d12`): "Pull the 3-li push home via defend 10, fight their 4 li at my base with workers", `defend` 8>10, `train hv`; t699 `defend` 13 "recall the 4-li push"; t1214 "hold 3 li at post 3, defend 8 so all fight together vs their 4 li"; from t1494 on, base hp2, "hold base: both li at post 1, workers join at panic 3, no push" with `pushLight` 6–9; `guard` 0>2 once, at t1669. So Fable garrisons from the same facts Sonnet ignored, and it does it with the levers it already knows (`defend`, `post`, `panic`, `pushLight` as a "no push" switch), reaching for `guard` only at the end. `guard` is not needed by the model that would use it and not used by the one that needs it; it stays at default 0. Whether Fable's recall would have saved game 175 is untested (replays do not act). Session spend $6.07 of $50.
 
 **Fable 5.1 live vs LightRush, `gone,econ,home`, 400 ms clock, 30 s deadline, medium (games 187–188, $3.92).** 187: loss, $1.57, 21 sets landed, 2 timeouts; not the garrison shape: "hold 4li+1hv at post vs 6 foe li", the army was home at `defend 6` and their six Lights took the base t1003–1044; out-produced, LightRush's usual. 188: **win** 16:54 wall, $2.35, 31 sets, 10 timeouts (latency p50 ~23 s). The `guard` lever used live as designed: t1251 "push of 5 li continues to 13,13; new li from br#29 hold post 1 as home guard vs foe li#48/#51" (`guard` 2), t1469 held all 5 at home to kill split raiders "with numbers", t1922 "push 3 li straight onto ba 13,13; #45 guards base hp6" (`guard` 1), t2477 "guard 0 releases #70 #72; rs#16 o4 so no more units coming". Base held at hp6 from t1458 to the end. So the lever a fact could not get Sonnet to touch, Fable set, held and released with a reason each time. Sonnet on this opponent with the same set: 2/3 at $0.20–0.25. Session spend $9.99 of $50.
+
+**Events gate live, Fable 5.1 vs LightRush (game 189, $1.40).** Win at 18:49 wall; 29 launches against game 188's 31 sets, so the gate cut cost 40% ($2.35 → $1.40)
+but not calls: `home` fired 21 times, one Light crossing d7 in or out on nearly every packet, and the 60 s heartbeat added 6 at this clock. 12 of 29 calls timed out at
+30 s (latency p50 26 s), each still billed. Fable used the reasons: `gone: their li 0` → `pushLight` 1 onto br#25, `gone: their br#25` → target null onto ba#21, `home` →
+"kill li#34,#36 at 2,7 with 5 li, then push". Next: `home` on a majority-out flip with a 2-tile band, heartbeat 120 s or off; the timeouts are the latency problem, not the gate's.
+
+**Events gate v2, Fable 5.1 vs LightRush (game 190, $1.25).** Win at 18:06. `home` with a 3-unit floor and a 2-tile band fired 3 times (21 in game 189), launches 29 → 17,
+timeouts 12 → 3. Cost fell only $1.40 → $1.25: output tokens per launch rose 793 → 1200 and the game's total output barely moved (23.0k → 20.4k). At Fable's price the
+bill is output tokens, and Fable spends about the same thinking per game whether it is asked 29 times or 17; aborted calls bill what they generated. The gate removed the
+noise calls and the timeouts, not the thinking. Fable read the reasons again: `econ` idle → "switch br to hv (1 hv beats 2 li)", built 7 Heavies, one push took the base.
+Next cost lever is output per call (effort low, or a max_tokens cap on the commander), not call count.
+
+**Opus 5.5 as commander, same setup as game 190 (game 191, $0.26).** Loss at 7:50; base lost t917. Latency p50 10.6 s against Fable's 24 s, no timeouts, a fifth of the
+cost. But the plan shape was Sonnet's, not Fable's: "hold post, push at 3" → "push at 5" (t500, their 3 li vs our 2) → "push at 6" (t889, 4 li at home vs 4 foe li at
+d7–8), Light stream throughout, never `train hv`, never `guard`, never `defend` past 6; at t912 "4 li defend base hp4 vs 3 foe li at d4" and the base still fell. Fable in
+game 190 on the same fact at the same moment (seq 4, "foe 3 li vs my 2") switched the barracks to Heavy and won. Ten calls, every one a restatement with the trigger raised.
+Same reading as games 80/162/175: the fast cheap model holds, Fable revises. Opus 5.5 rejects `tool_choice: tool`; `isFable` in model.mjs now covers it (auto).
+
+**Why the prediction gets edited (games 190 vs 191, call by call, $0).** The decisive Fable change (190 seq 4, t534: `train hv`, "1 hv beats 2 li") came on a MET grade,
+not a MISSED one; Opus at the same moment (191 seq 4, t500, same fact "foe 3 li vs our 2", same MET) wrote "hold, push at 5, keep making li". So the expect grade is not
+where the two diverge. Both write production milestones early (li>=1, army>=2, army>=3), all MET. The difference is what an opponent fact is taken to be: Fable reads
+"their 3 li vs my 2" as evidence about the unit choice; Opus and Sonnet read it as an input to their own threshold and raise the number. When Opus finally got a MISSED
+(seq 8, "win the defense fight", foe_li<=2 missed min 4) it did change levers, all in the same direction (pushLight 6, workers 2), and retreated to `base_hp>=1` as the next
+claim, which graded MET at hp4 with the base falling. After a miss the cheap models weaken the claim; Fable keeps an outcome claim (foe_br==0, foe_li<=3) and changes the lever.
+Candidate causes, each one replay: (a) forward reasoning from the plan ("what do I need") not backward from the foe ("what beats that"): two-step call, grade the matchup first;
+(b) anchoring on the echoed plan: replay with the plan echo and memory stripped; (c) the plan's own grammar "<hold> until <N>" makes N the only visible edit.
+
+**Two-step test on game 191 call 4 (t473, "their 3 li vs my 2", the moment Fable switched to Heavy), replay, $1.07 total.** New replay flag `--pre "<question>"`:
+a plain call first ("One line: my army vs theirs by type and count. Who wins the next fight, and why?"), its answer appended as Q/A to the tool call. Calls 3–8 once
+per arm, then call 4 eight times per arm. `train hv` at call 4: **Opus plain 4/9, Opus with the question 2/9, Sonnet with the question 0/8**; Fable live 1/1. Every
+call in every arm raised `pushLight` (3 → 4 or 5). The question is refuted as a lever: both models answer it in counts ("they outnumber 3v2", "even at 3 each") and
+never by unit type, and the answer does not move the set. What separates an Opus hv call from an Opus hold call is one retrieved fact: the hv runs all say "Heavies,
+1 swing kills li" (the prompt's unit table); the hold runs never mention Heavy. So at this call Opus retrieves the counter about 40% of the time, Sonnet never, Fable
+always. Game 191's loss is that coin landing on hold, not a fixed Opus ceiling; Sonnet's is fixed. Untested: (b) anchoring on the echoed plan, (c) the "<hold> until N"
+grammar. Note for `--pre`: 300 max_tokens with adaptive thinking returned an empty answer on 2 of 6 calls.
+
+**`O units` line, game 191 call 4, eight samples per model, $0.32.** New classifier `units`: my/their combat counts plus the li/hv/rg table (hp, dmg, cost, build
+time, swings to kill each type), numbers only. `train hv` at call 4: **Opus 8/8** (was 4/9 plain, 2/9 with the matchup question), every plan naming "1 swing kills li";
+**Sonnet 0/8** (was 0/8), every call `pushLight` 3 → 4 with "outnumbered, wait for the 4th". So the gap is retrieval for Opus and reasoning for Sonnet: the facts were
+in the prompt all along, Opus acts on them when they sit next to the counts in the packet, Sonnet reads the same line and edits the number. Next: Opus live with
+`gone,econ,home,units` (~$0.30 a game) to see whether the Fable shape holds over a whole game at a fifth of the price.
+
+**Opus 5.5 with `units` live (game 192, $0.31).** Loss, base lost t1517. The replay prediction held at the call it was made for: t502 "foe 3 li to my 2: switch
+barracks to hv". Then it flipped: t585 "bank 2 buys a Light now" (li), t859 hv again vs 6 li, t910 "barracks back on cheaper li"; `pushLight` walked 3 → 4 → 6 → 8.
+Fable in 190 set hv once and never revisited. Reading the prompt against this: it carries "if `G` shows `foe li`, raise `pushLight` and `defend`" (the threshold edit,
+prescribed), an Early Light starting point that names no unit change while the counter table says Heavy beats two Lights, and a bank rule ("0–2 means the barracks
+starves, act") that contradicts a 3-ore Heavy on every call with 2 in the bank. `commander08-sonnet.md` drops the raise line and makes the Early Light entry defer to the
+unit table; tested on call 4 below.
+
+**commander08 (raise-`pushLight` line dropped, Early Light entry defers to the unit table), game 191 call 4, eight samples per model, no `units` line, $0.33.**
+`train hv`: **Opus 6/8** (4/9 on commander07), **Sonnet 0/8**. `pushLight`: Opus raised it 3 → 4/5 on 8/8 with the line gone, so that edit is its own judgement;
+Sonnet went from "3 → 4" on 8/8 to `none` on 8/8, "hold until 3 then push". So the prescribed line was what moved Sonnet's number, and without it Sonnet holds the
+default and still never reaches for Heavy. Prompt conflicts explain Sonnet's threshold edits and part of Opus's flip-flop; they do not explain Sonnet's wall. Standing
+picture at this call: Fable 1/1 live, Opus 4/9 → 6/8 (prompt) → 8/8 (`units`), Sonnet 0/24 across every arm.

@@ -7,7 +7,10 @@
 //
 // Usage: node bin/replay-commander.mjs <run.jsonl> --prompt <file> [--model claude-sonnet-5] [--effort low]
 //        [--from-seq n] [--to-seq n] [--budget 1.0] [--at] [--classifiers near,reach,trig,foe,fight,gone,econ|all]
-//        [--out <base>] [--dry-run]
+//        [--out <base>] [--dry-run] [--gate [--max-every ms]] [--pre "question"]
+// --gate keeps only the recorded launches the events gate (commanderModel gate 'events') would have made: the first at or after
+// each observer event or recorded-expect MET/MISSED, plus heartbeats; each kept call carries its `E` line.
+// --pre: each call becomes two — a plain text question first, its answer folded into the message (Q:/A:) before the tool call.
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -17,7 +20,7 @@ import { readRun } from '../src/core/record.mjs';
 import { feedbackLayer, expectTracker } from '../src/core/commander.mjs';
 import { withMemory, buildRequest, cost, pickUsage } from '../src/core/model.mjs';
 
-const BOOL = ['at', 'dry-run'];
+const BOOL = ['at', 'dry-run', 'gate'];
 
 const cycleOf = packet => (/^H t(\d+)/m.exec(packet) || [])[1] ?? '?';
 const diffParams = (a, b) => {
@@ -36,7 +39,8 @@ function policyOf(cfg) {
 // oldInput, fb, oldExpect, since, packet, cycle, curBefore}, mirroring commanderModel: fb is the feedbackLayer args the launch saw
 // (a closed window + landed when the set in force has seen no decisions), oldExpect the recorded model's own plan/grade (measure given),
 // since the packets after the prior launch up to this one, curBefore the params in force at launch.
-export function simulate(rows, { apply, decide, DEFAULTS, measure = null, fromSeq = 0, toSeq = Infinity } = {}) {
+// gate {observer, maxEveryMs} (needs measure): each result also gets `why`, the events-gate reasons, or null if the gate skips it.
+export function simulate(rows, { apply, decide, DEFAULTS, measure = null, fromSeq = 0, toSeq = Infinity, gate = null } = {}) {
   const calls = rows.filter(r => r.kind === 'call').sort((a, b) => a.n - b.n);
   const ok = c => c?.input && !c.error;
   const byApiPacketN = new Map();
@@ -44,7 +48,7 @@ export function simulate(rows, { apply, decide, DEFAULTS, measure = null, fromSe
   const track = measure ? expectTracker(measure) : null;
   let cur = DEFAULTS, prev = null, setSeq = null, sinceN = 0, differed = 0, last = null, closed = null, prevLaunch = 0;
   const results = [];
-  let pending = [];
+  let pending = [], pend = [], verdict = null, keptT = null, events = 0;
   for (const R of calls) {
     const landing = R.raw?.commander;
     if (ok(landing)) {
@@ -56,10 +60,21 @@ export function simulate(rows, { apply, decide, DEFAULTS, measure = null, fromSe
     }
     track?.see(R.packet);
     pending.push(R.packet);
+    if (gate) {
+      gate.observer.see(R.packet, cur);
+      const ev = gate.observer.events(), v = track?.read().grade.verdict ?? null;
+      if (v !== verdict && (v === 'met' || v === 'missed')) ev.push(`expect ${v.toUpperCase()}`);
+      verdict = v; events += ev.length; pend.push(...ev);
+    }
     const launched = byApiPacketN.get(R.n);
     if (launched) {
       const fb = sinceN === 0 && closed ? { ...closed, landed: { setSeq, prev, cur } } : { setSeq, sinceN, prev, cur, differed, last };
-      results.push({ seq: launched.seq, apiPacketN: R.n, prevApiPacketN: prevLaunch, oldInput: launched.input, fb, oldExpect: track?.read() ?? null, since: pending, packet: R.packet, cycle: cycleOf(R.packet), curBefore: cur });
+      let why;
+      if (gate) {
+        why = [keptT === null ? 'first call' : null, ...pend, keptT !== null && gate.maxEveryMs > 0 && R.t - keptT >= gate.maxEveryMs ? `heartbeat ${Math.round(gate.maxEveryMs / 1000)} s` : null].filter(Boolean);
+        if (why.length) { pend = []; keptT = R.t; } else why = null;
+      }
+      results.push({ seq: launched.seq, apiPacketN: R.n, prevApiPacketN: prevLaunch, oldInput: launched.input, fb, oldExpect: track?.read() ?? null, since: pending, packet: R.packet, cycle: cycleOf(R.packet), curBefore: cur, ...(gate ? { why } : {}) });
       pending = []; prevLaunch = R.n;
     }
     if (setSeq !== null) {
@@ -71,7 +86,20 @@ export function simulate(rows, { apply, decide, DEFAULTS, measure = null, fromSe
       }
     }
   }
-  return results.filter(r => r.seq >= fromSeq && r.seq <= toSeq).sort((a, b) => a.seq - b.seq);
+  const out = results.filter(r => r.seq >= fromSeq && r.seq <= toSeq).sort((a, b) => a.seq - b.seq);
+  if (gate) out.events = events;
+  return out;
+}
+
+// gated(calls) → the kept calls only; a skipped call's packets ride into the next kept one's `since`.
+export function gated(calls) {
+  const kept = [];
+  let carry = null;
+  for (const c of calls) {
+    carry = carry ? { prevApiPacketN: carry.prevApiPacketN, since: [...carry.since, ...c.since] } : { prevApiPacketN: c.prevApiPacketN, since: c.since };
+    if (c.why) { kept.push({ ...c, ...carry }); carry = null; }
+  }
+  return kept;
 }
 
 // splitArgs(argv, booleans) → {flagArgs, positional}: flags first (a non-boolean flag takes the next token), the rest positional.
@@ -86,7 +114,7 @@ export function splitArgs(argv, booleans = []) {
   return { flagArgs, positional };
 }
 
-async function callNew({ client, model, system, tool, toolDescription, effort, message, price }) {
+export async function callNew({ client, model, system, tool, toolDescription, effort, message, price }) {
   const req = buildRequest({ model, system, tool, toolName: 'plan', toolDescription, thinking: 'adaptive', effort, reply: 'tool', packet: message });
   const res = await client.messages.create(req);
   const tu = (res.content || []).find(b => b.type === 'tool_use');
@@ -94,10 +122,21 @@ async function callNew({ client, model, system, tool, toolDescription, effort, m
   return { input: tu?.input ?? null, usage, spend: cost(usage, price) };
 }
 
+// callPre: the plain pre-question call — buildRequest's reply:'text' path already omits tools/tool_choice (so Fable/Opus-5-5 need no
+// special-casing), same system/model/effort/thinking; capped at 300 output tokens.
+export async function callPre({ client, model, system, effort, message, pre, price }) {
+  const req = buildRequest({ model, system, thinking: 'adaptive', effort, reply: 'text', packet: `${message}\n\n${pre}` });
+  req.max_tokens = 300;
+  const res = await client.messages.create(req);
+  const answer = (res.content || []).filter(b => b.type === 'text').map(b => b.text).join('');
+  const usage = pickUsage(res.usage);
+  return { answer, usage, spend: cost(usage, price) };
+}
+
 async function main() {
   const { flagArgs, positional } = splitArgs(process.argv.slice(2), BOOL);
   const file = positional[0];
-  if (!file) { console.error('usage: replay-commander <run.jsonl> --prompt <file> [--model M] [--effort E] [--from-seq n] [--to-seq n] [--budget 1.0] [--at] [--classifiers a,b|all] [--out base] [--dry-run]'); process.exit(64); }
+  if (!file) { console.error('usage: replay-commander <run.jsonl> --prompt <file> [--model M] [--effort E] [--from-seq n] [--to-seq n] [--budget 1.0] [--at] [--classifiers a,b|all] [--out base] [--dry-run] [--gate [--max-every ms]] [--pre "question"]'); process.exit(64); }
   const { flags } = await boot(flagArgs, { booleans: BOOL });
   if (!flags.prompt) throw new Error('--prompt is required');
 
@@ -124,7 +163,10 @@ async function main() {
     observer = cmd.createObserver({ classifiers: String(flags.classifiers) });
   }
 
-  const calls = simulate(rows, { apply, decide, DEFAULTS, fromSeq: flags.fromSeq ?? 0, toSeq: flags.toSeq ?? Infinity });
+  const gate = flags.gate ? { observer: cmd.createObserver({ classifiers: String(flags.classifiers || '') }), maxEveryMs: Number(flags.maxEvery ?? 0) } : null;
+  const all = simulate(rows, { apply, decide, DEFAULTS, measure: gate ? measure : null, fromSeq: flags.fromSeq ?? 0, toSeq: flags.toSeq ?? Infinity, gate });
+  const calls = gate ? gated(all) : all;
+  if (gate) console.log(`gate: ${all.events} events, ${calls.length} of ${all.length} recorded launches kept`);
   const track = expectTracker(measure);
   if (calls.length) for (const R of rows) if (R.kind === 'call' && R.packet && R.n <= calls[0].prevApiPacketN) { track.see(R.packet); observer?.see(R.packet); }   // history before --from-seq
   process.stderr.write(`${path.basename(file)}: ${calls.length} commander calls to replay\n`);
@@ -156,11 +198,22 @@ async function main() {
     const F = feedbackLayer({ ...c.fb, expect: track.read(), at });
     let O = null;
     if (observer) { try { O = observer.read(mine, { expect: track.current?.() ?? null }); } catch { O = null; } }
-    const message = `${c.packet}\n${F}${O ? `\n${O}` : ''}`;
+    const E = c.why ? `E ${c.why.join('; ')}` : null;
+    let message = [c.packet, F, O, E].filter(Boolean).join('\n');
 
     if (dryRun) {
-      console.log(`--- seq${c.seq} t${c.cycle}\nF: ${F}${O ? `\nO: ${O}` : ''}\n`);
+      console.log(`--- seq${c.seq} t${c.cycle}\nF: ${F}${O ? `\nO: ${O}` : ''}${E ? `\n${E}` : ''}${flags.pre ? `\nQ: ${flags.pre}` : ''}\n`);
       continue;
+    }
+
+    let preRec = null;
+    if (flags.pre) {
+      let preRes;
+      try { preRes = await callPre({ client, model, system, effort, message, pre: flags.pre, price }); }
+      catch (err) { process.stderr.write(`seq ${c.seq}: ERROR (pre) ${err.message}\n`); continue; }
+      totalSpend += preRes.spend;
+      preRec = { q: flags.pre, a: preRes.answer, spend: preRes.spend };
+      message = `${message}\nQ: ${flags.pre}\nA: ${preRes.answer}`;
     }
 
     let res;
@@ -171,7 +224,7 @@ async function main() {
     const newParams = res.input ? apply(res.input, c.curBefore) : null;
     if (newParams) mine = newParams;
     const rec = {
-      seq: c.seq, cycle: c.cycle, F, O,
+      seq: c.seq, cycle: c.cycle, F, O, ...(E ? { E } : {}), ...(preRec ? { pre: preRec } : {}),
       oldDiff: diffParams(oldParams, c.curBefore), newDiff: newParams ? diffParams(newParams, c.curBefore) : ['NO ANSWER'],
       oldPlan: c.oldInput.plan ?? null, newPlan: res.input?.plan ?? null,
       usage: res.usage, spend: res.spend, cumSpend: totalSpend,
@@ -187,7 +240,8 @@ async function main() {
   console.log(`\nreplayed ${results.length} calls, total spend $${totalSpend.toFixed(3)}\n`);
   for (const r of results) {
     console.log(`--- seq${r.seq} t${r.cycle}`);
-    console.log(`F: ${r.F}${r.O ? `\nO: ${r.O}` : ''}`);
+    console.log(`F: ${r.F}${r.O ? `\nO: ${r.O}` : ''}${r.E ? `\n${r.E}` : ''}`);
+    if (r.pre) console.log(`A: ${r.pre.a}`);
     console.log(`old diff: ${r.oldDiff.join(' ') || 'none'}   | old plan: ${r.oldPlan}`);
     console.log(`new diff: ${r.newDiff.join(' ') || 'none'}   | new plan: ${r.newPlan}`);
   }

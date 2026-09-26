@@ -423,3 +423,50 @@ test('observe: see() on every packet, O after F with the live expect; absent whe
   assert.equal(plain.calls[0].packet, 'P1\nF none');
   await plain.callModel.close();
 });
+
+test('gate events: first call, then only on an event, an expect flip or the heartbeat, never under everyMs; reasons ride as E and why', async () => {
+  const q = [];
+  const observe = { see() {}, read: () => null, events: () => q.splice(0) };
+  const { callModel, clock, calls } = mkE({ observe, gate: 'events', maxEveryMs: 60000 });
+  await callModel({ packet: '100 0' });
+  assert.equal(calls[0].packet, '100 0\nF none\nE first call');
+  calls[0].resolve(plan({ mode: 'a', push: 1, expect: { metric: 'hv', op: '>=', value: 3, by: 1300 } }));
+  await clock.advance(6000);
+  const r = await callModel({ packet: '200 0' });
+  assert.deepEqual(r.raw.commander.why, ['first call']);
+  assert.equal(calls.length, 1);   // floor passed, no reason
+  q.push('gone: their ba#21 gone t250');
+  await clock.advance(1000);
+  await callModel({ packet: '250 0' });
+  assert.equal(calls.length, 2);
+  assert.match(calls[1].packet, /\nE gone: their ba#21 gone t250$/);
+  q.push('econ: my ba#20 idle 100c, bank 4 t300');   // lands while the call is in flight and under the floor: kept
+  await callModel({ packet: '300 0' });
+  calls[1].resolve(plan({ mode: 'a', push: 1, expect: { metric: 'hv', op: '>=', value: 3, by: 1300 } }));
+  await clock.advance(100);
+  await callModel({ packet: '1400 0' });   // MISSED while under the floor
+  assert.equal(calls.length, 2);
+  await clock.advance(4900);
+  await callModel({ packet: '1450 0' });
+  assert.match(calls[2].packet, /\nE econ: my ba#20 idle 100c, bank 4 t300; expect MISSED$/);
+  calls[2].resolve(plan({ mode: 'a', push: 1 }));
+  await clock.advance(59999);
+  await callModel({ packet: '1500 0' });
+  assert.equal(calls.length, 3);
+  await clock.advance(1);
+  await callModel({ packet: '1510 0' });
+  assert.match(calls[3].packet, /\nE heartbeat 60 s$/);
+  await callModel.close();
+});
+
+test('gate timer ignores events; an unknown gate throws', async () => {
+  const observe = { see() {}, read: () => null, events: () => ['gone: x'] };
+  const { callModel, clock, calls } = mk({ observe });
+  await callModel({ packet: 'P1' });
+  await clock.advance(5000);
+  await callModel({ packet: 'P2' });
+  assert.equal(calls.length, 1);   // P1 still in flight
+  assert.equal(calls[0].packet, 'P1\nF none');
+  await callModel.close();
+  assert.throws(() => mk({ gate: 'sometimes' }), /gate: timer or events/);
+});

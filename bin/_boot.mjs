@@ -32,7 +32,7 @@ const policyOf = async (adapter, game, model, prefix) => {
 };
 // --model script:<name>: src/games/<game>/policy/<name>.mjs plays instead of the API (no key, no prompt, $0); needs the order language decode.
 // --model commander:<name>: that policy is the reflex (0 ms, every packet) and policy/commander.mjs's schema is the API model's
-// parameter set, rewritten in the background every --commander-every ms.
+// parameter set, rewritten in the background every --commander-every ms (--commander-gate events: only when something happened).
 // --script-params '{"train":"hv"}' overrides the policy's DEFAULTS for a script arm (a fixed commander setting at $0).
 export async function modelFor({ adapter, game, model, system, thinking = 'adaptive', effort = 'low', reply = 'tool', stream = false, memory = 0, decisionDeadlineMs, clock, opts = {} }) {
   if (isScript(model)) {
@@ -53,7 +53,7 @@ export async function modelFor({ adapter, game, model, system, thinking = 'adapt
       decode: input => ({ act: false, orders: [], note: typeof input.n === 'string' ? input.n : null }),
       thinking: String(thinking), effort, reply: 'tool', decisionDeadlineMs, prices: prices(), clock,
     });
-    return commanderModel({ reflex: decide, decode: adapter.decode, commander: call, params: commander.defaults, apply: commander.apply, measure: commander.measure ?? null, describe: commander.describe ?? null, observe: commander.createObserver && opts.classifiers ? commander.createObserver({ classifiers: opts.classifiers }) : null, everyMs: opts.commanderEveryMs ?? 5000, clock });
+    return commanderModel({ reflex: decide, decode: adapter.decode, commander: call, params: commander.defaults, apply: commander.apply, measure: commander.measure ?? null, describe: commander.describe ?? null, observe: commander.createObserver && opts.classifiers ? commander.createObserver({ classifiers: opts.classifiers }) : null, everyMs: opts.commanderEveryMs ?? 5000, gate: opts.commanderGate ?? 'timer', maxEveryMs: opts.commanderMaxEveryMs ?? 0, clock });
   }
   const { default: Anthropic } = await import('@anthropic-ai/sdk');
   return createModel({ client: new Anthropic(), model, system, tool: adapter.tool, toolName: adapter.meta.toolName, toolDescription: adapter.meta.toolDescription, decode: adapter.decode, thinking: String(thinking), effort, reply: String(reply), stream: !!stream, memory: Number(memory) || 0, decisionDeadlineMs, prices: prices(), clock });

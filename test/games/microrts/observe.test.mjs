@@ -12,14 +12,14 @@ const pk = ({ t, r = 0, d = 'none', tr = 'none', p = 'ba#20 IDLE', a = [], b = '
 const feed = (o, packets) => { for (const q of packets) o.see(pk(q)); return o; };
 const line = (o, name, { expect = null, params = null } = {}) => o.read(params, { expect })?.split('\n').find(l => l.startsWith(`O ${name}:`)) ?? null;
 const BANNED = /\b(afford|should|build|counter|recommend|attack|rush|reachable|unreachable|holds|crossing|gain|now)/i;
-const FORMAT = /^O (near|home|reach|foe|fight|gone|econ|trig): /;
+const FORMAT = /^O (near|home|reach|foe|fight|gone|econ|trig|units): /;
 
 test('no classifiers: read() is null; all enables every one; commander.mjs re-exports it', () => {
   assert.equal(feed(createObserver(), [{ t: 0 }]).read(null), null);
   const o = feed(createObserver({ classifiers: 'all' }), [{ t: 0 }]);
-  assert.match(o.read(DEFAULTS), /^O near: their mobile none\nO home: my army 0; my wk 0 at base; their nearest mobile none\nO trig: .*\nO econ: my bank 0$/);
+  assert.match(o.read(DEFAULTS), /^O near: their mobile none\nO home: my army 0; my wk 0 at base; their nearest mobile none\nO trig: .*\nO econ: my bank 0\nO units: my none vs their none \| li 4hp 2dmg cost 2 80c: kills wk 1 swing, li 2, hv 4, rg 1 \| hv 8hp 4dmg cost 3 120c: kills wk 1, li 1, hv 2, rg 1 \| rg 1hp 1dmg range 3 cost 2 100c: kills wk 1, li 4, hv 8, rg 1$/);
   assert.equal(fromCommander, createObserver);
-  assert.deepEqual(CLASSIFIERS, ['near', 'home', 'reach', 'trig', 'foe', 'fight', 'gone', 'econ']);
+  assert.deepEqual(CLASSIFIERS, ['near', 'home', 'reach', 'trig', 'foe', 'fight', 'gone', 'econ', 'units']);
 });
 
 test('validation: an unknown name or a non-string/non-array throws', () => {
@@ -147,7 +147,17 @@ test('econ: bank, committed, mined and spent by charge, idle per building', () =
   assert.equal(line(o, 'econ'), 'O econ: my bank 1 (2 committed); mined +6/100c, spent 8/100c (wk 1, li 1, br 1); ba#20 idle 40/100c, br#40 idle 40/100c');
 });
 
-test('recorded run: every line is a fact in the O format, under 60 words, no verdict words', t => {
+test('units: my/their combat counts, li/hv/rg stats, swing labeled once', () => {
+  const o = feed(createObserver({ classifiers: ['units'] }), [
+    { t: 300, a: ['li x2@10,12 i #1,#2'], x: ['li x3@6,6 d8/4'] },
+  ]);
+  assert.equal(line(o, 'units'),
+    'O units: my li x2 vs their li x3 | li 4hp 2dmg cost 2 80c: kills wk 1 swing, li 2, hv 4, rg 1 | hv 8hp 4dmg cost 3 120c: kills wk 1, li 1, hv 2, rg 1 | rg 1hp 1dmg range 3 cost 2 100c: kills wk 1, li 4, hv 8, rg 1');
+  const none = feed(createObserver({ classifiers: ['units'] }), [{ t: 0 }]);
+  assert.match(line(none, 'units'), /^O units: my none vs their none \|/);
+});
+
+test('recorded run: every line is a fact in the O format, under 60 words (units: 80, it always carries the full li/hv/rg table), no verdict words', t => {
   const file = path.join(ROOT, 'runs/microrts-basesWorkers16x16-GuidedRojoA3N-mub5ms7q.jsonl');
   if (!fs.existsSync(file)) return t.skip('run file absent');
   const rows = fs.readFileSync(file, 'utf8').split('\n').filter(Boolean).map(JSON.parse).filter(r => r.kind === 'call' && r.packet);
@@ -159,9 +169,86 @@ test('recorded run: every line is a fact in the O format, under 60 words, no ver
     for (const l of (o.read(DEFAULTS, { expect }) || '').split('\n').filter(Boolean)) {
       n++;
       assert.match(l, FORMAT);
-      assert.ok(l.split(/\s+/).length <= 60, l);
+      assert.ok(l.split(/\s+/).length <= (l.startsWith('O units:') ? 80 : 60), l);
       assert.doesNotMatch(l, BANNED, l);
     }
   }
   assert.ok(n > rows.length * 4);
+});
+
+const evFeed = (classifiers, packets, params = DEFAULTS) => { const o = createObserver({ classifiers }); const out = []; for (const q of packets) { o.see(pk(q), params); out.push(...o.events()); } return { o, out }; };
+
+test('events: gone once per building and per mobile type at 0 after peak 2; the first packet is the baseline; events() clears', () => {
+  const { o, out } = evFeed('gone', [
+    { t: 100, x: ['ba x1@13,13 d22/20 #21', 'li x2@10,10 d16/12'] },
+    { t: 200, x: ['ba x1@13,13 d22/20 #21'] },
+    { t: 210, x: ['ba x1@13,13 d22/20 #21'] },
+    { t: 300, x: ['wk x1@12,12 d20/18 #9'] },
+    { t: 310, x: ['wk x1@12,12 d20/18 #9'] },
+  ]);
+  assert.deepEqual(out, ['gone: their li 0 t200 (peak 2)', 'gone: their ba#21 gone t300']);
+  assert.deepEqual(o.events(), []);
+  assert.deepEqual(evFeed('econ', [{ t: 100, x: ['ba x1@13,13 d22/20 #21'] }, { t: 200 }]).out, []);   // off: silent
+});
+
+test('events: home needs 3 units, a majority past defend+2 to leave, all within defend to return; an oscillating minority and a lone sortie stay silent; base lost still fires', () => {
+  const { out } = evFeed('home', [
+    { t: 100, a: ['li x3@3,3 i #1,#2,#3'] },                              // all d2: baseline in
+    { t: 110, a: ['li x2@3,3 i #1,#2', 'li x1@2,9 i #3'] },               // one at d7 (defend+1): not majority, not all-in — holds
+    { t: 120, a: ['li x3@3,3 i #1,#2,#3'] },                              // back together — holds
+    { t: 130, a: ['li x1@3,3 i #1', 'li x2@2,11 i #2,#3'] },              // two of three at d9: majority past defend+2 — fires out
+    { t: 140, a: ['li x1@3,3 i #1', 'li x2@2,11 i #2,#3'] },              // still out — holds
+    { t: 150, a: ['li x3@3,3 i #1,#2,#3'] },                              // all back within defend — fires in
+    { t: 160, a: ['li x1@2,11 i #1'] },                                   // lone sortie — silent
+    { t: 170 },                                                           // army 0 — silent
+    { t: 180, b: 'none' },                                                // base lost — fires
+  ]);
+  assert.deepEqual(out, [
+    'home: my army 3: 2 past d8 of my base t130',
+    'home: my army 3: all within d6 of my base t150',
+    'home: my base lost t180',
+  ]);
+});
+
+test('events: near enters at defend, holds through the buffer band, leaves only past defend+2 or none', () => {
+  const { out } = evFeed('near', [
+    { t: 100, x: ['li x1@20,20 d20/5 #9'] },   // far: baseline out
+    { t: 110, x: ['li x1@10,13 d7/5 #9'] },    // d7 (defend+1): not <= defend — holds out
+    { t: 120, x: ['li x1@5,5 d6/5 #9'] },      // d6 (<=defend) — fires in
+    { t: 130, x: ['li x1@10,13 d7/5 #9'] },    // back to d7 — holds in (not past defend+2)
+    { t: 140, x: ['li x1@11,13 d8/5 #9'] },    // d8 (defend+2, not past it) — holds in
+    { t: 150, x: ['li x1@12,13 d9/5 #9'] },    // d9 (past defend+2) — fires out
+    { t: 160 },                                // no enemy mobile — holds out
+  ]);
+  assert.deepEqual(out, [
+    'near: their li x1 @5,5 d6 to my base, inside d6 t120',
+    'near: their combat units none within d6 of my base t150 (nearest d9)',
+  ]);
+});
+
+test('events: foe first sightings, fight starts, trig crossings (a pushLight change is silent)', () => {
+  const li = n => Array.from({ length: n }, (_, i) => `li x1@3,${i} i #${100 + i}`);
+  const { o, out } = evFeed('foe,fight,trig', [
+    { t: 100, a: li(1), x: ['wk x2@13,13 d22/20'] },
+    { t: 110, a: li(3), x: ['wk x2@13,13 d22/20', 'br x1@14,12 d22/20 #40'] },
+    { t: 120, a: li(3), x: ['wk x2@13,13 d22/20', 'br x1@14,12 d22/20 #40', 'li x1@12,12 d20/18 #50'] },
+    { t: 130, a: li(2), d: '-li#102', tr: 'lost li#102' },
+  ]);
+  assert.deepEqual(out, ['foe: their br first seen t110', 'trig: my army 3 at or above pushLight 3 t110', 'foe: their li first seen t120', 'fight: new fight t130 @3,2: lost my li', 'trig: my army 2 below pushLight 3 t130']);
+  o.see(pk({ t: 140, a: li(2) }), { ...DEFAULTS, pushLight: 2 });
+  assert.deepEqual(o.events(), []);
+});
+
+test('events: econ once per idle stretch with bank >= 2, and bank crossing 10 while a producer idles', () => {
+  const { out } = evFeed('econ', [
+    { t: 100, r: 3, p: 'ba#20 IDLE' },
+    { t: 150, r: 3, p: 'ba#20 IDLE' },
+    { t: 200, r: 4, p: 'ba#20 IDLE' },
+    { t: 250, r: 9, p: 'ba#20 IDLE' },
+    { t: 260, r: 11, p: 'ba#20 IDLE' },
+    { t: 270, r: 11, p: 'ba#20 wk 40' },
+    { t: 300, r: 11, p: 'ba#20 IDLE' },
+    { t: 400, r: 11, p: 'ba#20 IDLE' },
+  ]);
+  assert.deepEqual(out, ['econ: my ba#20 idle 100c, bank 4 t200', 'econ: my bank 11 crossed 10, ba#20 idle t260', 'econ: my ba#20 idle 100c, bank 11 t400']);
 });
