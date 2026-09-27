@@ -222,3 +222,24 @@ export const levers = [
   { name: 'l-between-means', sections: ['Tokens', 'O lines', 'Your call'], q: 'In `O push`, which kinds of reflex order show as `between`?' },
   { name: 'l-between-gather', sections: ['Tokens', 'O lines', 'Your call'], q: 'The reflex orders your army to gather. Under which `O push` label is that packet counted? Answer with the label.', expect: /between/i },
 ];
+
+// Economy facts: base hp in O home, O mine.
+const HB = 'O home: my base hp4, was hp10 @t369; my army 2: 2 within d6 of my base; my wk 4 at base; their nearest mobile d12';
+const M2 = 'O mine: harvesters 2: 1st rs#17 d3 o10; 2nd rs#16 d4 o17; next 3rd rs#18 d25 o11, d3 from their ba';
+const M4 = 'O mine: harvesters 4: 1st rs#17 d3 o10; 2nd rs#16 d4 o17; 3rd rs#18 d25 o11, d3 from their ba; 4th rs#19 d26 o25, d4 from their ba';
+const OY = ['Tokens', 'O lines', 'Your call'];
+export const econ = [
+  { name: 'e-hp-now', sections: OL, q: carry(HB, 'What is your base hp now?'), expect: n(4) },
+  { name: 'e-hp-was', sections: OL, q: carry(HB, 'What was your base hp about 100 cycles earlier?'), expect: n(10) },
+  { name: 'e-hp-fell', sections: OL, q: carry(HB, 'Did your base lose hp in the window? Answer yes or no.'), expect: YES },
+  { name: 'e-hp-army', sections: OL, q: carry(HB, 'How many army units do you have?'), expect: n(2) },
+  { name: 'e-mine-next', sections: OL, q: carry(M2, 'Which node would one more harvester take? Answer with its token and id.'), expect: /rs#?18/i },
+  { name: 'e-mine-next-far', sections: OL, q: carry(M2, 'How many steps from your base is the node one more harvester would take?'), expect: n(25) },
+  { name: 'e-mine-next-theirs', sections: OL, q: carry(M2, 'How many steps from their base is the node one more harvester would take?'), expect: n(3) },
+  { name: 'e-mine-next-side', sections: OL, q: carry(M2, 'Is the node one more harvester would take nearer your base or their base? Answer `mine` or `theirs`.'), expect: /their/i },
+  { name: 'e-mine-ore', sections: OL, q: carry(M2, 'How much ore is left in `rs#16`?'), expect: n(17) },
+  { name: 'e-mine-count-near', sections: OL, q: carry(M4, 'How many of the listed nodes lie nearer their base than yours?'), expect: /(^|\D)2(\D|$)|two/i },
+  { name: 'e-mine-fourth', sections: OL, q: carry(M4, 'Which node does the fourth harvester take? Answer with its token and id.'), expect: /rs#?19/i },
+  { name: 'e-harv-order', sections: YC, q: 'Which node does the first harvester take: the nearest to your base or the farthest?', expect: /near/i },
+  { name: 'e-harv-third', sections: OY, q: carry(M2, 'You set `harvesters` to 3. Which node does the third harvester take? Answer with its token and id.'), expect: /rs#?18/i },
+];

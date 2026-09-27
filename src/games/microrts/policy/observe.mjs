@@ -4,7 +4,7 @@
 import { read as readPacket } from '../read.mjs';
 import { measure } from './commander.mjs';
 
-export const CLASSIFIERS = ['near', 'home', 'reach', 'trig', 'foe', 'fight', 'gone', 'econ', 'units', 'match', 'push'];
+export const CLASSIFIERS = ['near', 'home', 'reach', 'trig', 'foe', 'fight', 'gone', 'econ', 'units', 'match', 'push', 'mine'];
 // Standard microRTS UnitTypeTable (basic mod); not carried by any packet, so hardcoded here.
 const UTT = { li: { cost: 2, hp: 4, dmg: 2, pt: 80 }, hv: { cost: 3, hp: 8, dmg: 4, pt: 120 }, rg: { cost: 2, hp: 1, dmg: 1, pt: 100, rng: 3 } };
 const TARGETS = [['wk', 1], ['li', 4], ['hv', 8], ['rg', 1]];
@@ -222,7 +222,7 @@ export function createObserver({ classifiers = [] } = {}) {
     const foe = hasX ? seeX(k, t) : prior?.foe ?? {};
     const base = has('B') ? k.b.find(c => c.type === 'ba') ?? null : prior?.base ?? null, a = has('A') ? k.a : prior?.a ?? [];
     const mob = hasX ? k.x.filter(c => MOBILE.includes(c.type)) : prior?.mob ?? [];
-    hist.push({ t, bank: k.h.r, m, base, a, mob, foe, near: hasX ? nearest(k.x) : prior?.near ?? null, prod: has('P') ? k.p.map(p => ({ key: `${p.type}#${p.id}`, idle: p.idle, make: p.make, eta: p.eta })) : prior?.prod ?? [], built: k.b.filter(c => !myBld.has(c.id)).map(c => (myBld.add(c.id), c.type)), push: has('L') ? orders(k.l, a, base, params) : null });
+    hist.push({ t, bank: k.h.r, m, base, a, mob, foe, near: hasX ? nearest(k.x) : prior?.near ?? null, prod: has('P') ? k.p.map(p => ({ key: `${p.type}#${p.id}`, idle: p.idle, make: p.make, eta: p.eta })) : prior?.prod ?? [], built: k.b.filter(c => !myBld.has(c.id)).map(c => (myBld.add(c.id), c.type)), push: has('L') ? orders(k.l, a, base, params) : null, nodes: has('E') ? k.e : prior?.nodes ?? null });
     detect(hist[hist.length - 1], prior, params);
     while (hist.length > 1 && t - hist[1].t >= HIST_W) hist.shift();
     mlog.push({ t, m }); if (mlog.length > MLOG_MAX) mlog.shift();
@@ -264,7 +264,8 @@ export function createObserver({ classifiers = [] } = {}) {
       const n = sum(army);
       if (!now.base) return `my base gone; my army ${n}; my wk ${sum(wk)}; ${foe}`;
       const inR = cs => cs.filter(c => d1(c, now.base) <= R), out = army.filter(c => d1(c, now.base) > R);
-      let s = `my army ${n}`;
+      const then = at(hist, now.t - W), was = then.base && then.t < now.t && then.base.hp !== now.base.hp ? `, was hp${then.base.hp} @t${then.t}` : '';
+      let s = `my base hp${now.base.hp}${was}; my army ${n}`;
       if (n) {
         s += `: ${sum(inR(army))} within d${R} of my base`;
         if (out.length) {
@@ -368,6 +369,19 @@ export function createObserver({ classifiers = [] } = {}) {
       const ord = ['their ba', 'their br', 'their unit', 'between', 'my base'].filter(c => cnt[c]).map(c => `${cnt[c]} ${c === 'between' ? c : `at ${c}`}`);
       return `my army ${n} nearest d${dist(army, tgt)} to their ${tgt.type}@${tgt.x},${tgt.y}${was.length ? `, was d${dist(was, tgt)} @t${then.t}` : ''}; orders last ${now.t - then.t}c: ${ord.join(', ') || 'none'}`;
     },
+    // Nodes the k-th harvester takes (the reflex's order: d, then id), then the next one; d from their ba when nearer theirs.
+    mine(params) {
+      const nodes = hist[hist.length - 1].nodes, H = params?.harvesters ?? 2;
+      if (!nodes) return null;
+      const ore = nodes.filter(n => n.o > 0).sort((a, b) => (a.d ?? 0) - (b.d ?? 0) || a.id - b.id);
+      if (!ore.length) return `harvesters ${H}: no node with ore`;
+      const ba = [...bld.values()].find(b => b.type === 'ba' && b.goneT === null);
+      const fmt = n => `${n.type}#${n.id} d${n.d} o${n.o}${ba && d1(n, ba) < (n.d ?? Infinity) ? `, d${d1(n, ba)} from their ba` : ''}`;
+      const ord = i => `${i + 1}${['st', 'nd', 'rd'][i] ?? 'th'}`;   // the model miscounts entries; number them
+      const parts = ore.slice(0, H).map((n, i) => `${ord(i)} ${fmt(n)}`);
+      if (H > ore.length) parts.push(`${H - ore.length} more share ${ore.at(-1).type}#${ore.at(-1).id}`);
+      return `harvesters ${H}: ${parts.join('; ') || 'none'}${H >= 0 && H < ore.length ? `; next ${ord(H)} ${fmt(ore[H])}` : ''}`;
+    },
   };
 
   return {
@@ -378,7 +392,7 @@ export function createObserver({ classifiers = [] } = {}) {
       const out = [];
       for (const name of CLASSIFIERS) {
         if (!on.has(name)) continue;
-        const v = name === 'reach' ? lines.reach(expect) : name === 'trig' || name === 'home' ? lines[name](params) : lines[name]();   // every call restates: the model is stateless
+        const v = name === 'reach' ? lines.reach(expect) : name === 'trig' || name === 'home' || name === 'mine' ? lines[name](params) : lines[name]();   // every call restates: the model is stateless
         if (v) out.push(`O ${name}: ${v}`);
       }
       return out.length ? out.join('\n') : null;

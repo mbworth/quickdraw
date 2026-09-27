@@ -102,7 +102,7 @@ Layers come in this order, one letter each. `H D T P B L N F` are one line. `E A
 After `F`, zero or more `O <name>:` lines: facts the harness computed from every packet, including ones you never saw. Each is a fact with numbers, `my` (yours) or `their` naming whose; none is advice.
 
 - `O near:` their nearest mobile cluster to your base (a Light/Heavy/Ranged within 12 before any worker): `d N to my base`, and `was d N @tC` when the same cluster was seen ~100 cycles earlier.
-- `O home:` your army (li/hv/rg) within `defend` (manhattan) of your base and the rest as a distance range; your workers within `defend` of your base; their nearest mobile distance to your base. It opens with `my base gone` when your base no longer stands, and then gives counts only.
+- `O home:` `my base hp<n>` and, when it changed, `was hp<n> @t<cycle>` its hp ~100 cycles earlier. Then your army (li/hv/rg) within `defend` (manhattan) of your base and the rest as a distance range; your workers within `defend` of your base; their nearest mobile distance to your base. It opens with `my base gone` when your base no longer stands, and then gives counts only.
 - `O reach:` your `expect`: the metric's count, and its change since you set the claim (`gap` and `rate` when they point opposite ways).
 - `O trig:` each reflex trigger in force beside its count on the board: pushLight vs your army, barracksAt vs your wk and br, pushWorkers vs your fighters (no barracks), defend/panic vs their nearest mobile distance, then which side of them it is: `inside panic`, `inside defend`, `outside defend`.
 - `O foe:` their barracks (first cycle until t600); per unit type alive, peak alive, change over ~300 cycles.
@@ -111,6 +111,7 @@ After `F`, zero or more `O <name>:` lines: facts the harness computed from every
 - `O econ:` your bank (and coins committed to production under way); mined and spent in the last ~100 cycles and on what; each building's IDLE cycles in that window, and `most idle <building>` when one idled more than the rest.
 - `O match:` a calculation, not advice. First your combat units against theirs as seen now, and who is left if they met. Then one entry per type your barracks can build: `+6 ore <type> x<n> (<cycles>c) = my <army>` is what 6 ore buys, the cycles until one barracks has built it, and the army you would then have, counting what you have now. `(<cycles>c at +<n>/<span>c)` means your bank is short of 6 and the cycles include mining the rest at that measured income. `no income` means you mined nothing in the window, and the entries then show only what your bank buys. After the colon, who is left if that army met theirs: `I keep ...` only yours survive, `they keep ...` only theirs, `none left` neither. Who lands the first hit often decides a fight and cannot be known in advance, so when it changes the result both are given: `I strike first: ... / they strike first: ...`. Workers, positions and their future production are not counted.
 - `O push:` your army's count and the distance from your nearest army unit to their building, `was d<n> @t<cycle>` the same distance ~100 cycles earlier. Then `orders last <span>c:` the reflex packets in that window by where they sent your army: `at their ba`, `at their br`, `at their unit`, `between` (a point that is neither), `at my base`. A gather or join order (see `group`) goes to a point, not a building, so it counts as `between`.
+- `O mine:` the node each harvester takes under your `harvesters` value, one entry per node: which harvester (`1st`, `2nd`, ...), node id, steps from your base, ore left. `next` is the node one more harvester would take. `d<n> from their ba` follows a node that lies nearer their base than yours.
 - `O units:` your combat units by type vs theirs, then for each of `li` `hv` `rg`: hp, dmg, range, cost, build cycles, and swings to kill each target type.
 
 ## Memory
@@ -131,7 +132,7 @@ The reflex plays seven numbered rules each packet: 1 harvest, 2 buy workers, 3 b
 You set the whole parameter set the reflex plays until your next call. Every parameter has a default; the tool call
 always carries every field. Your answer lands about 45 cycles after the packet you're reading.
 
-- `harvesters` (default 2): workers kept mining, topped up each decision (rule 1). A worker already mining keeps its trip;
+- `harvesters` (default 2): workers kept mining, topped up each decision (rule 1). The first harvester takes the node nearest your base, each further harvester the next nearest node. A worker already mining keeps its trip;
   only the shortfall changes, so the bank effect shows over several cycles. Each harvester is a worker not fighting or building.
 - `workers` (default 6): worker cap (rule 2). The base trains a worker whenever the bank covers one and count < cap, and it
   runs before the barracks: the barracks gets the bank only if it covers both.

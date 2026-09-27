@@ -6,7 +6,7 @@
 // own config line, so any commander:<policy> run replays, not just microrts.
 //
 // Usage: node bin/replay-commander.mjs <run.jsonl> --prompt <file> [--model claude-sonnet-5] [--effort low]
-//        [--from-seq n] [--to-seq n] [--budget 1.0] [--at] [--classifiers near,reach,trig,foe,fight,gone,econ,units,match,push|all]
+//        [--from-seq n] [--to-seq n] [--budget 1.0] [--at] [--classifiers near,reach,trig,foe,fight,gone,econ,units,match,push,mine|all]
 //        [--out <base>] [--dry-run] [--gate [--max-every ms]] [--pre "question"]
 // --gate keeps only the recorded launches the events gate (commanderModel gate 'events') would have made: the first at or after
 // each observer event or recorded-expect MET/MISSED, plus heartbeats; each kept call carries its `E` line.
