@@ -254,7 +254,10 @@ export function createObserver({ classifiers = [] } = {}) {
       const st = Object.entries(started).map(([t, n]) => `${t} ${n}`).join(', ');
       s += `; mined ${sgn(mined)}/${span}c, spent ${spent}/${span}c${st ? ` (${st})` : ''}`;
       const prod = now.prod.map(p => `${p.key} idle ${idle[p.key] || 0}/${span}c`);
-      return prod.length ? `${s}; ${prod.join(', ')}` : s;
+      if (!prod.length) return s;
+      const top = [...now.prod].sort((x, y) => (idle[y.key] || 0) - (idle[x.key] || 0));
+      const most = top.length > 1 && (idle[top[0].key] || 0) > (idle[top[1].key] || 0) ? `; most idle ${top[0].key}` : '';   // the model compares badly once it knows which is the barracks
+      return `${s}; ${prod.join(', ')}${most}`;
     },
     units() {
       const m = hist[hist.length - 1].m, mine = {}, theirs = {};

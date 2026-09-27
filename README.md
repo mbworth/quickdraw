@@ -36,12 +36,19 @@ node bin/layers.mjs runs/ashfall-<id>.jsonl               # tokens per packet la
 node bin/discipline.mjs runs/ashfall-<id>.jsonl           # rule adherence of a live game
 node bin/bench.mjs --repeats 5 [arm flags] --out arm.json # decision quality of a config on fixed states (~$0.20); --compare, --rescore
 node bin/sensitivity.mjs [arm flags] --repeats 5 --out dir      # the bench with each packet layer removed vs a control: which layers decisions read (~$1.30 at 5 repeats)
+node bin/comprehend.mjs --prompt prompts/microrts/commander08-sonnet.md --cases test/prompts/microrts/comprehension.mjs [--set composite] [--context case|front|back|all] [--why]   # does the model read the prompt: one fact per call, section by section, then halves, then whole (~$0.25 a rung at 8 repeats)
 node bin/classes.mjs runs/ashfall-48.jsonl                        # per trigger class: calls, no-ops, orders that took, reaction, fired/coalesced/cooldown (free)
 node bin/campaign.mjs --games 20 --ab reserve=danger,contact,loss -- <pilot flags>   # N live games in a row, A/B flag alternating on/off, resumable state file, games.md rows, per-arm win rate (~$1 a game)
 node bin/trajectory.mjs runs/ashfall-<id>.jsonl --every 3 [arm flags] --out arm.json   # replay a recorded game under a config (~$0.006/decision)
 node bin/snapshot.mjs runs/ashfall-<id>.jsonl --n 191 --out fixture.json               # a scrubbed fixture from a recorded state
 node bin/oracle.mjs runs/ashfall-*.jsonl [--diff] [--every k]     # fidelity: the script decides from each recorded packet and from its raw state; agreement is what the packet kept (free)
 ```
+
+## Prompt comprehension
+
+A model reads the system prompt once, under a live packet, with no second pass. Before a prompt goes live it is proven readable, one fact at a time, by `bin/comprehend.mjs`: each case sends a slice of the prompt as the system prompt, asks one question with a single checkable answer, and scores N samples. The ladder is section alone (`--context case`), then the section inside its half of the prompt (`front`, `back`), then the whole prompt (`all`). A case that passes alone and fails with context has found interference, and `--why` asks the model to cite the line it used. Cases live in `test/prompts/<game>/comprehension.mjs`; they ask for reading, never arithmetic (the harness computes counts, sums and grades and prints them as `O` lines).
+
+What the ladder found on `commander08` (2026-09-26, Sonnet, `notes/microrts/games.md`): a swings-to-kill grid read wrong once the token table was present; two representations of one fact (a units table with hp/dmg beside a swings list) made the model compute the wrong direction; a paragraph defining three tokens was answered with the wrong token; naming `ba`/`br` made the model answer "barracks" over the numbers. Fixes were format and harness lines, not instructions: tokens defined first, one sentence per fact, one definition per line, the harness stating the comparison (`most idle ba#20`). Final: 416/416 by halves, 410/416 whole.
 
 The working configuration and the order of experiments are in `HANDOFF.md`.
 

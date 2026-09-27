@@ -261,6 +261,7 @@ calibrating it needs `messages.countTokens` and a key (P2).
 - X1. Iterate on within-game proxies with many samples per game: reaction time p50/p90, model latency, orders kept/dropped/rejected, no-op share, idle-production seconds, bank integral, cost. Win rate is confirmed once, on the final configuration, over ≥ 20 games.
 - X2. One variable per game, in this order: output length (thinking off vs low effort, order cap, drop `note`), then decision deadline, then heartbeat, then packet budget 600 → 400 → 300, then `--full-every`, then model, then prompt. Streaming per-cmd dispatch after that.
 - X3. Prompts are `prompts/<game>/gameNN-<model>.md`; the run records the prompt and schema shas; changing either between compared games is itself a variable.
+- X6. A prompt is proven readable before it plays: `bin/comprehend.mjs` with cases in `test/prompts/<game>/comprehension.mjs`, section alone, then inside its half, then whole, 8 samples a case. Cases ask for reading, not arithmetic; a comparison the model gets wrong under context becomes a harness line. A prompt edit re-runs the rung it touches.
 - X4. Stop shrinking the packet when orders-kept share or no-op share moves over three games; keep the last size that held.
 - X5. A second game is the proof of generality: added with zero changes under `src/core/`. **Met 2026-09-15**: the
   MicroRTS adapter (§9b) is 13 files under `src/games/microrts/` with `git diff src/core` empty. Three `bin/` tools turned

@@ -83,7 +83,7 @@ defend within 6 of base (harvesters within 2), attack at three Light. 5/5 vs `Wo
 `--model commander:rush`: the script plays every packet at 0 ms; the model sets its parameters, a one-line `plan` and a gradable
 `expect` every few seconds, and `F` hands back what the last set did and how the plan graded. Prompts: `commander01` (levers),
 `02` (cause/effect per lever + F), `03` (unit table, counters, timings, openings), `04` (03 + a think-hard prod, no effect),
-`05` (03 + graded plan, no prescribed response; current). Aim and findings: `HANDOFF.md` "Current aim"; per-game log: `games.md`.
+`05` (03 + graded plan, no prescribed response), `06` (B mine / X theirs labels), `07` (O line legend), `08` (prescriptions dropped, then 2026-09-26 combed: tokens first, second person, no advice, one sentence per fact, proven by `bin/comprehend.mjs`; current). Aim and findings: `HANDOFF.md` "Current aim"; per-game log: `games.md`.
 Record vs CoacAI: 0 wins in 15 valid commander games (62–87); best game Fable 5.1 on a 400 ms clock (game 87: 5 Heavies, their base to 6 hp, loss t1301).
 Fable needs `--commander-model claude-fable-5-1 --decision-deadline 30000` and a slower `--microrts-cycle-ms` (its calls take 15–20 s).
 
