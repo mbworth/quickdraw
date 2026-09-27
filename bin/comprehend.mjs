@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Comprehension bench: does the model understand one section of a prompt at a time? One text-reply call per question.
 // node bin/comprehend.mjs --prompt prompts/microrts/commander08-sonnet.md --cases test/prompts/microrts/comprehension.mjs
-//                         [--model claude-sonnet-5] [--effort low] [--thinking off|adaptive] [--repeats 8] [--set default|composite] [--context case|front|back|all|A,B,...] [--only name] [--why] [--out runs/comprehend-<ts>.jsonl] [--dry-run]
+//                         [--model claude-sonnet-5] [--effort low] [--thinking off|adaptive] [--repeats 8] [--set default|composite] [--context case|front|back|all|A,B,...] [--only name] [--why] [--message file] [--out runs/comprehend-<ts>.jsonl] [--dry-run]
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -69,6 +69,7 @@ async function main() {
   const thinking = flags.thinking || 'off';
   const repeats = Number(flags.repeats ?? 8);
   const ctx = String(flags.context || 'case');
+  const preface = flags.message ? fs.readFileSync(path.resolve(String(flags.message)), 'utf8').trim() + '\n\nQuestion: ' : '';
 
   if (flags.dryRun) {
     for (const c of cases) {
@@ -94,12 +95,13 @@ async function main() {
   for (const c of cases) {
     const names = contextFor(sections, c.sections, ctx);
     const system = systemFor(sections, names);
-    const question = `${c.q}\n${flags.why ? 'Answer with the value asked for, then one sentence saying which line of the system prompt gave it to you.' : 'Answer with only the value asked for, no explanation.'}`;
+    const free = !('expect' in c);   // a probe: no scorer, answers printed
+    const question = `${c.q}\n${free ? 'Answer in one or two sentences.' : flags.why ? 'Answer with the value asked for, then one sentence saying which line of the system prompt gave it to you.' : 'Answer with only the value asked for, no explanation.'}`;
     let correct = 0, spend = 0;
     const wrong = [];
     await pool(Array.from({ length: repeats }, (_, i) => i), CONCURRENCY, async i => {
-      const req = buildRequest({ model, system, thinking, effort, reply: 'text', packet: question });
-      req.max_tokens = thinking === 'off' ? (flags.why ? 300 : 200) : 2000;
+      const req = buildRequest({ model, system, thinking, effort, reply: 'text', packet: preface + question });
+      req.max_tokens = thinking === 'off' ? (flags.why || free ? 300 : 200) : 2000;
       let answer = '', usage = null, spent = 0, error = null;
       try {
         const res = await client.messages.create(req);
@@ -108,7 +110,7 @@ async function main() {
         spent = cost(usage, price);
       } catch (err) { error = String(err?.message || err); }
       spend += spent; totalSpend += spent;
-      const ok = !error && checkExpect(c.expect, answer);
+      const ok = free ? null : !error && checkExpect(c.expect, answer);
       if (ok) correct++; else wrong.push(answer || `ERROR ${error}`);
       out.write(JSON.stringify({ case: c.name, sections: names, i, q: c.q, answer, ok, usage, spend: spent, error }) + '\n');
     });

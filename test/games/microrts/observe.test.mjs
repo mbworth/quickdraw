@@ -2,24 +2,24 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { createObserver, CLASSIFIERS } from '../../../src/games/microrts/policy/observe.mjs';
+import { createObserver, CLASSIFIERS, fight, matchLine } from '../../../src/games/microrts/policy/observe.mjs';
 import { createObserver as fromCommander } from '../../../src/games/microrts/policy/commander.mjs';
 import { DEFAULTS } from '../../../src/games/microrts/policy/rush.mjs';
 import { ROOT } from '../../../bin/_boot.mjs';
 
-const pk = ({ t, r = 0, d = 'none', tr = 'none', p = 'ba#20 IDLE', a = [], b = 'ba#20@2,2 hp10', x = [] }) =>
-  [`H t${t} r${r} u${a.length}/${x.length}`, `D ${d}`, `T ${tr}`, `P ${p}`, 'E none', a.length ? `A\n${a.join('\n')}` : 'A none', `B ${b}`, x.length ? `X\n${x.join('\n')}` : 'X none', 'L none'].join('\n');
+const pk = ({ t, r = 0, d = 'none', tr = 'none', p = 'ba#20 IDLE', a = [], b = 'ba#20@2,2 hp10', x = [], l = 'none' }) =>
+  [`H t${t} r${r} u${a.length}/${x.length}`, `D ${d}`, `T ${tr}`, `P ${p}`, 'E none', a.length ? `A\n${a.join('\n')}` : 'A none', `B ${b}`, x.length ? `X\n${x.join('\n')}` : 'X none', `L ${l}`].join('\n');
 const feed = (o, packets) => { for (const q of packets) o.see(pk(q)); return o; };
 const line = (o, name, { expect = null, params = null } = {}) => o.read(params, { expect })?.split('\n').find(l => l.startsWith(`O ${name}:`)) ?? null;
 const BANNED = /\b(afford|should|build|counter|recommend|attack|rush|reachable|unreachable|holds|crossing|gain|now)/i;
-const FORMAT = /^O (near|home|reach|foe|fight|gone|econ|trig|units): /;
+const FORMAT = /^O (near|home|reach|foe|fight|gone|econ|trig|units|match|push): /;
 
 test('no classifiers: read() is null; all enables every one; commander.mjs re-exports it', () => {
   assert.equal(feed(createObserver(), [{ t: 0 }]).read(null), null);
   const o = feed(createObserver({ classifiers: 'all' }), [{ t: 0 }]);
-  assert.match(o.read(DEFAULTS), /^O near: their mobile none\nO home: my army 0; my wk 0 at base; their nearest mobile none\nO trig: .*\nO econ: my bank 0\nO units: my none vs their none \| li 4hp 2dmg cost 2 80c: kills wk 1 swing, li 2, hv 4, rg 1 \| hv 8hp 4dmg cost 3 120c: kills wk 1, li 1, hv 2, rg 1 \| rg 1hp 1dmg range 3 cost 2 100c: kills wk 1, li 4, hv 8, rg 1$/);
+  assert.match(o.read(DEFAULTS), /^O near: their mobile none\nO home: my army 0; my wk 0 at base; their nearest mobile none\nO trig: .*\nO econ: my bank 0\nO units: my none vs their none \| li 4hp 2dmg cost 2 80c: kills wk 1 swing, li 2, hv 4, rg 1 \| hv 8hp 4dmg cost 3 120c: kills wk 1, li 1, hv 2, rg 1 \| rg 1hp 1dmg range 3 cost 2 100c: kills wk 1, li 4, hv 8, rg 1\nO match: my none vs their none$/);
   assert.equal(fromCommander, createObserver);
-  assert.deepEqual(CLASSIFIERS, ['near', 'home', 'reach', 'trig', 'foe', 'fight', 'gone', 'econ', 'units']);
+  assert.deepEqual(CLASSIFIERS, ['near', 'home', 'reach', 'trig', 'foe', 'fight', 'gone', 'econ', 'units', 'match', 'push']);
 });
 
 test('validation: an unknown name or a non-string/non-array throws', () => {
@@ -59,7 +59,7 @@ test('home: army within defend of my base vs the rest as a range; workers at bas
   assert.equal(line(o, 'home'), 'O home: my army 3: 0 within d6 of my base, 3 at d18-20; my wk 3 at base; their nearest mobile d8');
   assert.equal(line(o, 'home', { params: { ...DEFAULTS, defend: 18 } }), 'O home: my army 3: 2 within d18 of my base, 1 at d20; my wk 5 at base; their nearest mobile d8');
   const nb = feed(createObserver({ classifiers: 'home' }), [{ t: 300, a, b: 'none', x: ['li x1@6,6 d-/4 #9'] }]);
-  assert.equal(line(nb, 'home'), 'O home: my army 3: no base; my wk 5; their nearest mobile none');
+  assert.equal(line(nb, 'home'), 'O home: my base gone; my army 3; my wk 5; their nearest mobile none');
   const nx = feed(createObserver({ classifiers: 'home' }), [{ t: 300, a: ['li x1@3,3 i #1', 'wk x1@2,3 h #4'], x: ['ba x1@13,13 d22/20 #21'] }]);
   assert.equal(line(nx, 'home'), 'O home: my army 1: 1 within d6 of my base; my wk 1 at base; their nearest mobile none');
 });
@@ -82,7 +82,7 @@ test('trig: the reflex triggers in force against the board', () => {
     { t: 400, a: ['wk x4@1,1 h #1,#2,#3,#4', 'li x1@3,3 i #5'], x: ['wk x1@6,6 d8/5 #9'] },
   ]);
   assert.equal(line(o, 'trig', { params: DEFAULTS }),
-    'O trig: pushLight 3: my army 1 (+1 in last 100c); barracksAt 3: my wk 4, br 0; pushWorkers 6: my fighters 3; defend 6/panic 2: their nearest mobile d8');
+    'O trig: pushLight 3: my army 1 (+1 in last 100c); barracksAt 3: my wk 4, br 0; pushWorkers 6: my fighters 3; defend 6/panic 2: their nearest mobile d8, outside defend');
   assert.equal(line(o, 'trig'), null);
 });
 
@@ -157,7 +157,44 @@ test('units: my/their combat counts, li/hv/rg stats, swing labeled once', () => 
   assert.match(line(none, 'units'), /^O units: my none vs their none \|/);
 });
 
-test('recorded run: every line is a fact in the O format, under 60 words (units: 80, it always carries the full li/hv/rg table), no verdict words', t => {
+test('fight: UTT model, rg gets 2 free ranged rounds before melee closes', () => {
+  // li 4hp 2dmg vs li: both sides focus-fire the front unit each round; 2 mine die outright, 3 theirs whittle to 2 survivors
+  assert.deepEqual(fight({ li: 2 }, { li: 3 }), { mine: {}, theirs: { li: 2 } });
+  // symmetric 3v3 li: both sides trade down to 0 together by round 5
+  assert.deepEqual(fight({ li: 3 }, { li: 3 }), { mine: {}, theirs: {} });
+  // 2 hv (8hp 4dmg) one-shot a li each per round; 3 li (2dmg) need 4 hits to kill a hv (8/2)
+  assert.deepEqual(fight({ hv: 2 }, { li: 3 }), { mine: { hv: 1 }, theirs: {} });
+  // hv front-load kills, li mop up the last li; mine lose 1 li, keep the rest
+  assert.deepEqual(fight({ li: 2, hv: 2 }, { li: 3 }), { mine: { li: 1, hv: 2 }, theirs: {} });
+  // rg (1hp 1dmg range 3) get 2 free rounds of chip damage before li close in and kill all 3 rg
+  assert.deepEqual(fight({ rg: 3 }, { li: 3 }), { mine: {}, theirs: { li: 1 } });
+  // no enemy: no rounds run
+  assert.deepEqual(fight({ li: 1 }, {}), { mine: { li: 1 }, theirs: {} });
+});
+
+test('matchLine: current fight plus what +6 ore of each type would buy', () => {
+  assert.equal(matchLine({ li: 2 }, { li: 3 }),
+    'my li x2 vs their li x3: I strike first: none left / they strike first: they keep li x3 | +6 ore li x3 (240c) = my li x5: I strike first: I keep li x5 / they strike first: I keep li x2 | +6 ore hv x2 (240c) = my li x2 hv x2: I strike first: I keep li x2 hv x2 / they strike first: I keep hv x2 | +6 ore rg x3 (300c) = my li x2 rg x3: I strike first: I keep li x2 rg x2 / they strike first: they keep li x1');
+  assert.equal(matchLine({}, {}), 'my none vs their none');
+});
+
+test('matchLine: bank below ore waits on measured income, or spends the bank with no income', () => {
+  const rows = o => matchLine({ li: 2 }, { li: 3 }, o).split(' | ').map(r => r.split(' = ')[0]);
+  assert.equal(matchLine({ li: 2 }, { li: 3 }, { bank: 9, rate: 0 }), matchLine({ li: 2 }, { li: 3 }));
+  assert.deepEqual(rows({ bank: 2, rate: 0.02 }).slice(1), ['+6 ore li x3 (280c at +2/100c)', '+6 ore hv x2 (320c at +2/100c)', '+6 ore rg x3 (300c at +2/100c)']);
+  assert.deepEqual(rows({ bank: 2, rate: 0 }).slice(1), ['+2 ore li x1 (80c)', '+2 ore rg x1 (100c)', 'no income']);
+  assert.deepEqual(rows({ bank: 0, rate: 0 }).slice(1), ['no income']);
+});
+
+test('match: the units/fight classifier through the observer', () => {
+  const o = feed(createObserver({ classifiers: ['match'] }), [{ t: 300, a: ['li x2@10,12 i #1,#2'], x: ['li x3@6,6 d8/4'] }]);
+  assert.equal(line(o, 'match'),
+    'O match: my li x2 vs their li x3: I strike first: none left / they strike first: they keep li x3 | +6 ore li x3 (240c) = my li x5: I strike first: I keep li x5 / they strike first: I keep li x2 | +6 ore hv x2 (240c) = my li x2 hv x2: I strike first: I keep li x2 hv x2 / they strike first: I keep hv x2 | +6 ore rg x3 (300c) = my li x2 rg x3: I strike first: I keep li x2 rg x2 / they strike first: they keep li x1');
+  const none = feed(createObserver({ classifiers: ['match'] }), [{ t: 0 }]);
+  assert.equal(line(none, 'match'), 'O match: my none vs their none');
+});
+
+test('recorded run: every line is a fact in the O format, under 60 words (units 80, match 140: a row per unit type, both first-strike cases), no verdict words', t => {
   const file = path.join(ROOT, 'runs/microrts-basesWorkers16x16-GuidedRojoA3N-mub5ms7q.jsonl');
   if (!fs.existsSync(file)) return t.skip('run file absent');
   const rows = fs.readFileSync(file, 'utf8').split('\n').filter(Boolean).map(JSON.parse).filter(r => r.kind === 'call' && r.packet);
@@ -169,7 +206,7 @@ test('recorded run: every line is a fact in the O format, under 60 words (units:
     for (const l of (o.read(DEFAULTS, { expect }) || '').split('\n').filter(Boolean)) {
       n++;
       assert.match(l, FORMAT);
-      assert.ok(l.split(/\s+/).length <= (l.startsWith('O units:') ? 80 : 60), l);
+      assert.ok(l.split(/\s+/).length <= (l.startsWith('O match:') ? 140 : l.startsWith('O units:') ? 80 : 60), l);
       assert.doesNotMatch(l, BANNED, l);
     }
   }
@@ -251,4 +288,22 @@ test('events: econ once per idle stretch with bank >= 2, and bank crossing 10 wh
     { t: 400, r: 11, p: 'ba#20 IDLE' },
   ]);
   assert.deepEqual(out, ['econ: my ba#20 idle 100c, bank 4 t200', 'econ: my bank 11 crossed 10, ba#20 idle t260', 'econ: my ba#20 idle 100c, bank 11 t400']);
+});
+
+test('push: distance to their base, was, order destinations by packet over ~100c; ba gone falls back to the nearest building; null cases', () => {
+  const x = ['ba x1@13,13 d22/20 #21', 'br x1@14,12 d22/20 #40'], li = at => [`li x3@${at} a #1,#2,#3`, 'wk x1@2,3 a #9'];
+  const o = createObserver({ classifiers: 'push' });
+  const see = q => o.see(pk({ x, ...q }), { defend: 6 });
+  see({ t: 100, a: li('3,3'), l: 'a #1,#2,#3 13,13 ok' });
+  assert.equal(line(o, 'push'), 'O push: my army 3 nearest d20 to their ba@13,13; orders last 0c: 1 at their ba');
+  see({ t: 150, a: li('8,8'), l: 'a #1,#2 #40 ok' });
+  assert.equal(line(o, 'push'), 'O push: my army 3 nearest d10 to their ba@13,13, was d20 @t100; orders last 50c: 1 at their br');
+  see({ t: 200, a: li('7,7'), l: 'a #1,#2,#3 7,6 ok; a #9 13,13 ok' });
+  see({ t: 210, a: li('6,6'), l: 'a #1 3,4 ok; a #2 #77 ok' });
+  see({ t: 220, a: li('6,6'), l: 'a #9 13,13 ok' });
+  assert.equal(line(o, 'push'), 'O push: my army 3 nearest d14 to their ba@13,13, was d10 @t150; orders last 70c: 1 at their unit, 1 between, 1 at my base');
+  o.see(pk({ t: 230, a: li('6,6'), x: ['br x1@14,12 d22/20 #40', 'br x1@6,9 d11/3 #41'] }));
+  assert.equal(line(o, 'push'), 'O push: my army 3 nearest d3 to their br@6,9, was d3 @t150; orders last 80c: 1 at their unit, 1 between, 1 at my base');
+  assert.equal(line(feed(createObserver({ classifiers: 'push' }), [{ t: 100, a: ['wk x2@3,3 i #1,#2'], x }]), 'push'), null);
+  assert.equal(line(feed(createObserver({ classifiers: 'push' }), [{ t: 100, a: ['li x1@3,3 i #1'], x: ['li x1@9,9 d14/12 #7'] }]), 'push'), null);
 });

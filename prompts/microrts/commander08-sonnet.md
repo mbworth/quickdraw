@@ -102,13 +102,15 @@ Layers come in this order, one letter each. `H D T P B L N F` are one line. `E A
 After `F`, zero or more `O <name>:` lines: facts the harness computed from every packet, including ones you never saw. Each is a fact with numbers, `my` (yours) or `their` naming whose; none is advice.
 
 - `O near:` their nearest mobile cluster to your base (a Light/Heavy/Ranged within 12 before any worker): `d N to my base`, and `was d N @tC` when the same cluster was seen ~100 cycles earlier.
-- `O home:` your army (li/hv/rg) within `defend` (manhattan) of your base and the rest as a distance range; your workers within `defend` of your base; their nearest mobile distance to your base.
+- `O home:` your army (li/hv/rg) within `defend` (manhattan) of your base and the rest as a distance range; your workers within `defend` of your base; their nearest mobile distance to your base. It opens with `my base gone` when your base no longer stands, and then gives counts only.
 - `O reach:` your `expect`: the metric's count, and its change since you set the claim (`gap` and `rate` when they point opposite ways).
-- `O trig:` each reflex trigger in force beside its count on the board: pushLight vs your army, barracksAt vs your wk and br, pushWorkers vs your fighters (no barracks), defend/panic vs their nearest mobile distance.
+- `O trig:` each reflex trigger in force beside its count on the board: pushLight vs your army, barracksAt vs your wk and br, pushWorkers vs your fighters (no barracks), defend/panic vs their nearest mobile distance, then which side of them it is: `inside panic`, `inside defend`, `outside defend`.
 - `O foe:` their barracks (first cycle until t600); per unit type alive, peak alive, change over ~300 cycles.
 - `O fight:` the last two fights: cycles, place (or `place unknown`), what you lost and what you killed.
 - `O gone:` their newest two buildings no longer in `X` and since when; a unit type of theirs at 0 after a peak of 2 or more.
 - `O econ:` your bank (and coins committed to production under way); mined and spent in the last ~100 cycles and on what; each building's IDLE cycles in that window, and `most idle <building>` when one idled more than the rest.
+- `O match:` a calculation, not advice. First your combat units against theirs as seen now, and who is left if they met. Then one entry per type your barracks can build: `+6 ore <type> x<n> (<cycles>c) = my <army>` is what 6 ore buys, the cycles until one barracks has built it, and the army you would then have, counting what you have now. `(<cycles>c at +<n>/<span>c)` means your bank is short of 6 and the cycles include mining the rest at that measured income. `no income` means you mined nothing in the window, and the entries then show only what your bank buys. After the colon, who is left if that army met theirs: `I keep ...` only yours survive, `they keep ...` only theirs, `none left` neither. Who lands the first hit often decides a fight and cannot be known in advance, so when it changes the result both are given: `I strike first: ... / they strike first: ...`. Workers, positions and their future production are not counted.
+- `O push:` your army's count and the distance from your nearest army unit to their building, `was d<n> @t<cycle>` the same distance ~100 cycles earlier. Then `orders last <span>c:` the reflex packets in that window by where they sent your army: `at their ba`, `at their br`, `at their unit`, `between` (a point that is neither), `at my base`. A gather or join order (see `group`) goes to a point, not a building, so it counts as `between`.
 - `O units:` your combat units by type vs theirs, then for each of `li` `hv` `rg`: hp, dmg, range, cost, build cycles, and swings to kill each target type.
 
 ## Memory
@@ -146,6 +148,8 @@ always carries every field. Your answer lands about 45 cycles after the packet y
   already free walk to a new post over the next few cycles.
 - `guard` (default 0): army units (li/hv/rg, never workers) nearest your base that stay at the post when a push fires;
   the rest push. With army at or below `guard`, all hold the post. Does not change the `pushLight` trigger.
+- `group` (default 2): push cohesion. The push moves as its largest cluster of army units within this many steps of each other; army units outside it walk to join the cluster instead of attacking alone. If the cluster is smaller than `pushLight`, everyone gathers first.
+- `engage` (default 2): against an enemy inside `defend` but outside `panic`, fewer free army units than this hold the post instead of going out. Workers are not counted.
 - `target` (default null): `"x,y"` override. Unset, the reflex picks their base, then their nearest other building,
   then the far node, in that order.
 - `plan` (required): your plan in one line, your own words, at most 120 characters. It comes back on the next `F` beside what
