@@ -76,19 +76,24 @@ test('planTracker: step 1 with the replaced now step\'s metric/op carries best, 
   t.see('250 1 1');
   t.set([{ do: 'b', until: u('army', '>=', 4, 900) }, { do: 'c', until: u('foe_br', '==', 0, 1500) }], 'w2');
   t.set([{ do: 'b2', until: u('army', '>=', 4, 1000) }], 'w3');
-  assert.equal(t.read(), 'S plan 3 set t250; kept 0 calls; replaced 2x, last why: w3\nS1 now since t250: b2 | army>=4 by t1000: pending (max 2, t200); same claim since t100, by moved 2x, value 3>4');
+  assert.equal(t.read(), 'S plan 3 set t250; kept 0 calls; replaced 2x, last why: w3\nS1 now since t250: b2 | army>=4 by t1000: pending; same claim since t100, by moved 2x, value 3>4');
   assert.deepEqual(t.current(), { metric: 'army', op: '>=', value: 4, by: 1000, since: 100 });
   t.set([{ do: 'd', until: u('army', '<=', 1, 1000) }], null);
   assert.equal(t.read().split('\n')[1], 'S1 now since t250: d | army<=1 by t1000: pending');
 });
 
-test('planTracker: a restated claim that already held is done at once; the next step begins at the set', () => {
+test('planTracker: a changed value keeps the history but grades only from the set cycle on', () => {
   const t = planTracker(measure);
   t.see('100 0 1');
   t.set([{ do: 'a', until: u('army', '>=', 5, 800) }], null);
-  t.see('200 3 1');
+  t.see('200 4 1');
+  t.see('250 2 1');
   t.set([{ do: 'a', until: u('army', '>=', 3, 800) }, { do: 'b', until: u('foe_br', '==', 0, 900) }], null);
-  assert.match(t.read(), /\nS1 done t200: a \| army>=3 by t800: MET t200; same claim since t100, value 5>3\nS2 now since t200: b /);
+  const before = t.read();
+  assert.equal(before, 'S plan 2 set t250; kept 0 calls; replaced 1x\nS1 now since t250: a | army>=3 by t800: pending; same claim since t100, value 5>3\nS2 next: b | foe_br==0 by t900');
+  t.see('300 3 1');
+  const after = t.read();
+  assert.equal(after, 'S plan 2 set t250; kept 0 calls; replaced 1x\nS1 done t300: a | army>=3 by t800: MET t300; same claim since t100, value 5>3\nS2 now since t300: b | foe_br==0 by t900: pending (last 1, t300)');
 });
 
 test('stepReason: only a change to MET, MISSED or done', () => {
@@ -172,4 +177,24 @@ test('commanderModel steps, gate events: step MET, step MISSED and plan done rid
   await callModel({ packet: '1200 4 0' });
   assert.match(calls[3].packet, /\nS plan 2 set t1100; kept 0 calls; replaced 1x, last why: late; all steps done t1200\n[\s\S]*\nE plan done$/);
   await callModel.close();
+});
+
+test('planTracker seed: plan 1 in force at t0, exact header, keeps count, replacement header, invalid ignored', () => {
+  const seed = { steps: [{ do: 'hold', until: u('army', '>=', 3, 800) }, { do: 'push', until: u('foe_br', '==', 0, 1500) }] };
+  const t = planTracker(measure, { seed });
+  assert.equal(t.read(), 'S plan 1 set t0; kept 0 calls; given to you at the start\nS1 now since t0: hold | army>=3 by t800: pending\nS2 next: push | foe_br==0 by t1500');
+  t.set(null); t.set(null);
+  t.see('100 1 1');
+  assert.equal(t.read().split('\n')[0], 'S plan 1 set t0; kept 2 calls; given to you at the start');
+  t.set([{ do: 'kill br', until: u('foe_br', '==', 0, 500) }], 'new');
+  assert.equal(t.read().split('\n')[0], 'S plan 2 set t100; kept 0 calls; replaced 1x, last why: new');
+  assert.equal(planTracker(measure, { seed: { steps: [{ do: 'x' }] } }).read(), 'S none');
+  assert.equal(planTracker(measure, { seed: null }).read(), 'S none');
+});
+
+test('commanderModel steps+seed: the first packet carries the seed S block', async () => {
+  const seed = { steps: [{ do: 'hold', until: u('army', '>=', 3, 800) }] };
+  const { callModel, calls } = mkS({ seed });
+  await callModel({ packet: '100 0 1' });
+  assert.equal(calls[0].packet, '100 0 1\nF none\nS plan 1 set t0; kept 0 calls; given to you at the start\nS1 now since t0: hold | army>=3 by t800: pending (max 0, t100)\nO reach: army');
 });

@@ -2,7 +2,7 @@
 // Plan bench: given a fixed commander packet (real game layers + F + a hand-written S block + O lines), does the model
 // follow its plan, keep it, or replace it. One tool call per sample, scored by a predicate on the tool input.
 // node bin/plan-bench.mjs --prompt prompts/microrts/commander09-sonnet.md --cases test/prompts/microrts/plan-cases.mjs
-//                         [--model claude-sonnet-5] [--effort medium] [--repeats 8] [--only name] [--out runs/plan-bench-<ts>.jsonl] [--dry-run]
+//                         [--model claude-sonnet-5] [--effort medium] [--repeats 8] [--memory 300] [--only name] [--out runs/plan-bench-<ts>.jsonl] [--dry-run]
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -46,7 +46,8 @@ async function main() {
   const repeats = Number(flags.repeats ?? 8);
   const price = prices()[model];
   if (!price) throw new Error(`no price for "${model}" in config/prices.json`);
-  const tool = withMemory(toolSteps, MEMORY);
+  const mem = Number(flags.memory ?? MEMORY);
+  const tool = mem > 0 ? withMemory(toolSteps, mem) : toolSteps;
 
   const { default: Anthropic } = await import('@anthropic-ai/sdk');
   const client = new Anthropic();

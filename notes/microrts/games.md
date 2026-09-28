@@ -612,3 +612,25 @@ Sonnet at high effort, same cases: 1/32 ($0.36): 25 restate, 6 keep, 1 changes t
 **Game 215, Fable 5.1 commander09 steps + `gone,econ,home,push,trig,mine,threat,seen`, events gate, 30 s deadline, HeavyRush, 100 ms clock, run `mulep4n0`, $0.64.** Loss 4:27, t2665, 0 vs 4. 9 calls, 25 s a call, 2 aborted at the deadline; 6 plans, 1 kept. Every plan has two steps and a different claim (`foe_hv<=0` kill at home, grouped push at 5 then 6 li, `train hv` t1214 and t1814, push at 2 as ore ends). Plans 2, 3, 5 landed already MISSED: a call takes ~250 cycles at this clock, so a `by` set 200 ahead has passed when the plan lands (written ~t700, `by` t900, set t994). Revision is there; latency eats it.
 
 **2026-09-28, landing delay stated.** Steps mode F gains `answer read t700, landed t994` (measured, last landed answer); commander09 drops "about 45 cycles". Bench `lag` run on section and whole prompt.
+
+**Game 216, Fable 5.1 commander09 steps + answer lag in F, same set as 215, HeavyRush, run `mullbhrd`, $0.63.** Loss 2:48, t1674, 1 vs 4; base lost t1064. 7 calls, 19 s a call, 0 aborted; 6 plans, 1 kept. Measured lag 104–255 cycles (`read t394, landed t649`). Plans 3, 4, 5 still landed past their step-1 `by` (650 at t649, 800 at t869, 960 at t1069): `by` is set 150–250 past the packet read, the size of the lag itself. Each plan a new claim (kill hv at home with li+wk, panic 5 then 9, then "base lost; race their buildings", harvesters 0). `train li` throughout.
+
+**Game 217, Sonnet 5.5 (`claude-sonnet-5-5`, tool_choice auto) commander09 steps, HeavyRush, run `mullraqy`, $0.22.** Loss 2:20, t1389, base lost. 24 calls, 4 s a call: `steps: null` 24/24, `S none` all game; the plan went into N (`plan: ... | doing: ...`). Levers moved 18 times: `rg,li` t~700, `rg`, pushLight 5>7>9, harvesters 0 after the base fell. Not a test of steps mode.
+Fix tried: N format in commander09 is now `seen: ... | doing: ...` (the plan had two homes). Fixed packets, Sonnet 5.5: `first-plan` 0/8 (null on `S none`), moved-deadline cases 32/32 kept, $0.46; train `hv` 7/32, `rg` 4/32 (Sonnet 5: li 64/64). It changes unit type and never writes to `steps`.
+
+**2026-09-28, seed plan (`--commander-seed prompts/microrts/seed-light.json`; S header `given to you at the start`).** Seed: barracks by t300, army 3 by t650, their barracks down by t1500. Reading `seed` 32/32 whole prompt, $0.12. Fixed packets from game 214 with the seed graded by the tracker (`bin/seed-cases.mjs`, `plan-cases-seed.mjs`), new plan written n/8:
+| packet | board | Sonnet 5 | Sonnet 5.5 |
+|---|---|---|---|
+| t0 | start | 0 | 0 |
+| t609 | army 3, hv seen | 0 | 0 |
+| t904 | li lost to hv | 1 | 6 |
+| t1229 | base lost | 8 | 0 |
+$0.35 / $0.36. Sonnet 5 replaces after the base is lost, with rebuild army 3 then push, train li 30/32. Sonnet 5.5 replaces at the first losses (hold home, mass, `rg>=4`), train rg or mix 14/32; at t1229 it keeps the seed and moves levers only.
+
+**Game 218, Sonnet 5.5 commander09 steps + seed-light, HeavyRush, run `mulmakta`, $0.32.** Loss 3:28, t2075, 1 vs 7, base lost. 37 calls: `steps: null` 37/37; the seed stood all game, step 3 MISSED from t1500. Levers moved 26 times: train li > `li,rg` > `hv` > `rg,hv` > `rg` > li; pushLight 4>5>8>20>10>3; harvesters 2/3 alternating. Bench (6/8 replaced at t904) did not hold live: on the fixed packet `kept` was 15 and the note was blanked; live it had its own N. It reasons in levers and N, not in `steps`.
+
+**2026-09-28, where Sonnet 5.5 keeps its plan: game 218's packets (seq 12/17/23/29, seed in force), new plan written n/32.** N as recorded 1; N line blanked, `n` field still in the tool 3; no `n` field, no N line, no N in the prompt (`commander10-sonnet.md`, `--memory 0`) 14 (t604 2/8, t919 8/8, t1274 0/8, t1609 4/8). $0.30 each. The `n` field is the second home, not the N line. `plan-bench --memory 0` added.
+
+**Game 219, Sonnet 5.5 commander10 (no note, `--memory 0`) steps + seed-light, HeavyRush, run `mulmq4re`, $0.13.** Loss 1:35, t954, 1 vs 3, base lost. 17 calls: 15 kept, 2 plans (t554 "defend at post, build army of 5, then push" army>=5; t799 "survive heavies: lights vs hv, workers help" army>=3). One step each. Levers moved 14 times, harvesters 2/3 alternating, train li > `li,rg` > li. Plan 3 lowered the claim 5>3 and the carry-over marked it done t624, before it was set (t799): a lowered claim grades itself met. Writes plans live once the note is gone; they are one step and do not slow the lever churn.
+
+**2026-09-28, grading fix.** `planTracker`: a carried claim whose value changed keeps its history (`value 5>3`) and is graded from `set`; it can no longer be done before it was written. Legend updated in commander09 and commander10.

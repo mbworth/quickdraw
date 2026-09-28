@@ -148,7 +148,7 @@ export async function callPre({ client, model, system, effort, message, pre, pri
 async function main() {
   const { flagArgs, positional } = splitArgs(process.argv.slice(2), BOOL);
   const file = positional[0];
-  if (!file) { console.error('usage: replay-commander <run.jsonl> --prompt <file> [--model M] [--effort E] [--from-seq n] [--to-seq n] [--budget 1.0] [--at] [--classifiers a,b|all] [--out base] [--dry-run] [--gate [--max-every ms]] [--pre "question"] [--steps]'); process.exit(64); }
+  if (!file) { console.error('usage: replay-commander <run.jsonl> --prompt <file> [--model M] [--effort E] [--from-seq n] [--to-seq n] [--budget 1.0] [--at] [--classifiers a,b|all] [--out base] [--dry-run] [--gate [--max-every ms]] [--pre "question"] [--steps [--seed json]]'); process.exit(64); }
   const { flags } = await boot(flagArgs, { booleans: BOOL });
   if (!flags.prompt) throw new Error('--prompt is required');
 
@@ -160,6 +160,8 @@ async function main() {
   const cmd = await loadGameModule(game, 'policy/commander.mjs');
   const { DEFAULTS, decide } = policyMod;
   const steps = !!flags.steps;
+  const seed = flags.seed ? JSON.parse(fs.readFileSync(path.resolve(String(flags.seed)), 'utf8')) : null;
+  if (seed && !steps) throw new Error('--seed needs --steps');
   const { apply, measure, describe } = cmd, baseTool = steps ? cmd.toolSteps : cmd.tool, toolDescription = steps ? cmd.toolStepsDescription : cmd.toolDescription;
   const tool = cfg.memory > 0 ? withMemory(baseTool, cfg.memory) : baseTool;
 
@@ -177,7 +179,7 @@ async function main() {
   }
 
   const gate = flags.gate ? { observer: cmd.createObserver({ classifiers: String(flags.classifiers || '') }), maxEveryMs: Number(flags.maxEvery ?? 0) } : null;
-  const all = simulate(rows, { apply, decide, DEFAULTS, measure: gate ? measure : null, fromSeq: flags.fromSeq ?? 0, toSeq: flags.toSeq ?? Infinity, gate, plan: steps ? planTracker(measure) : null });
+  const all = simulate(rows, { apply, decide, DEFAULTS, measure: gate ? measure : null, fromSeq: flags.fromSeq ?? 0, toSeq: flags.toSeq ?? Infinity, gate, plan: steps ? planTracker(measure, { seed }) : null });
   const calls = gate ? gated(all) : all;
   if (gate) console.log(`gate: ${all.events} events, ${calls.length} of ${all.length} recorded launches kept`);
   const track = expectTracker(measure);

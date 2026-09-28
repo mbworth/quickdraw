@@ -50,7 +50,7 @@ export default [
 
   // Memory
   { name: 'memory-max-length', sections: ['Memory'], q: 'What is the maximum length, in characters, of your N note?', expect: '300' },
-  { name: 'memory-format', sections: ['Memory'], q: 'What two labeled fields does your N note format use, separated by `|`?', expect: a => hasAll(a, ['plan', 'doing']) },
+  { name: 'memory-format', sections: ['Memory'], q: 'What two labeled fields does your N note format use, separated by `|`?', expect: a => hasAll(a, ['seen', 'doing']) },
 
   // Your call
   { name: 'call-defend-default', sections: ['Your call'], q: 'What is the default value for `defend`?', expect: '6' },
@@ -291,4 +291,16 @@ export const lag = [
   { name: 'lag-read', sections: ['Feedback'], q: carry(FL, 'From the packet of which cycle was your last answer written?'), expect: n(700) },
   { name: 'lag-landed', sections: ['Feedback'], q: carry(FL, 'At what cycle did your last answer take effect?'), expect: n(994) },
   { name: 'lag-no-forecast', sections: ['Feedback'], q: carry(FL, 'Does this line say when your next answer will land? Answer yes or no.'), expect: NO },
+];
+
+// Seed: a plan the model did not write.
+const SS = `S plan 1 set t0; kept 3 calls; given to you at the start
+S1 done t249: build a barracks | br>=1 by t300: MET t249
+S2 now since t249: build an army of 3 | army>=3 by t650: pending (max 1, t334)
+S3 next: destroy their barracks | foe_br==0 by t1500`;
+export const seed = [
+  { name: 'seed-wrote', sections: PL, q: carry(SS, 'Did you write this plan? Answer yes or no.'), expect: NO },
+  { name: 'seed-inforce', sections: PL, q: carry(SS, 'Which step is in force?'), expect: n(2) },
+  { name: 'seed-kept', sections: PL, q: carry(SS, 'How many of your calls kept this plan?'), expect: n(3) },
+  { name: 'seed-before', sections: PL, q: carry(SS, 'How many plans did you write before this one?'), expect: a => /(^|\D)0(\D|$)|none|zero/i.test(a) },
 ];

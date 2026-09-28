@@ -70,7 +70,8 @@ const okSteps = s => {
   return out.every(Boolean) ? out : null;
 };
 const OPS_NAME = { met: 'MET', missed: 'MISSED' };
-export function planTracker(measure) {
+// seed {steps}: plan 1 starts in force at t0, given to the model before its first call.
+export function planTracker(measure, { seed = null } = {}) {
   let plan = null, planN = 0, kept = 0, at = null;
   const holds = s => s.best !== null && OPS[s.until.op](s.best, s.until.value);
   const nowOf = () => plan?.steps.find(s => s.state === 'now') ?? null;
@@ -92,16 +93,20 @@ export function planTracker(measure) {
     const seen = s.best === null ? '' : ` (${EXT[s.until.op]} ${s.best}${missed ? '' : `, t${s.bestT}`})`;
     return `${missed ? 'MISSED' : 'pending'}${seen}${tail}`;
   };
+  const fresh = (ns, setT, why, given = false) => ({ steps: ns.map(x => ({ ...x, state: 'next', began: null, since: null, doneT: null, best: null, bestT: null, moved: 0, values: [x.until.value] })), setT, given, why: typeof why === 'string' && why.trim() ? why.trim().slice(0, 80) : null });
+  const seeded = okSteps(seed?.steps);
+  if (seeded) { plan = fresh(seeded, 0, null, true); planN = 1; begin(0, 0); }
   return {
     set(steps, why = null) {
       const ns = okSteps(steps);
       if (!ns) { if (plan) kept++; return; }
       const old = nowOf(), setT = at ?? 0;
-      plan = { steps: ns.map(x => ({ ...x, state: 'next', began: null, since: null, doneT: null, best: null, bestT: null, moved: 0, values: [x.until.value] })), setT, why: typeof why === 'string' && why.trim() ? why.trim().slice(0, 80) : null };
+      plan = fresh(ns, setT, why);
       planN++; kept = 0;
       const s1 = plan.steps[0];
       if (old && old.until.metric === s1.until.metric && old.until.op === s1.until.op) {
-        Object.assign(s1, { since: old.since, best: old.best, bestT: old.bestT, moved: old.moved + (old.until.by !== s1.until.by ? 1 : 0), values: old.values.at(-1) === s1.until.value ? [...old.values] : [...old.values, s1.until.value] });
+        const same = old.values.at(-1) === s1.until.value;   // a changed value is graded from the set cycle on
+        Object.assign(s1, { since: old.since, best: same ? old.best : null, bestT: same ? old.bestT : null, moved: old.moved + (old.until.by !== s1.until.by ? 1 : 0), values: same ? [...old.values] : [...old.values, s1.until.value] });
       }
       begin(0, setT);
       if (holds(s1)) { s1.state = 'done'; s1.doneT = s1.bestT; begin(1, setT); }   // a restated claim that already held is done
@@ -123,7 +128,7 @@ export function planTracker(measure) {
     read() {
       if (!plan) return 'S none';
       const r = planN - 1, last = plan.steps.at(-1);
-      const head = `S plan ${planN} set t${plan.setT}; kept ${kept} calls${r > 0 ? `; replaced ${r}x${plan.why ? `, last why: ${plan.why}` : ''}` : plan.why ? `; why: ${plan.why}` : ''}${last.state === 'done' ? `; all steps done t${last.doneT}` : ''}`;
+      const head = `S plan ${planN} set t${plan.setT}; kept ${kept} calls${plan.given ? '; given to you at the start' : r > 0 ? `; replaced ${r}x${plan.why ? `, last why: ${plan.why}` : ''}` : plan.why ? `; why: ${plan.why}` : ''}${last.state === 'done' ? `; all steps done t${last.doneT}` : ''}`;
       return [head, ...plan.steps.map((s, i) => s.state === 'next' ? `S${i + 1} next: ${s.do} | ${condText(s.until)}`
         : `S${i + 1} ${s.state === 'done' ? `done t${s.doneT}` : `now since t${s.began}`}: ${s.do} | ${condText(s.until)}: ${gradeOf(s)}`)].join('\n');
     },
@@ -155,14 +160,14 @@ export function feedbackLayer({ setSeq = null, sinceN = 0, prev = null, cur = nu
 // observe.events() entry, the expect turning MET/MISSED, or maxEveryMs since the last start; the reasons ride as an `E` line and
 // summary.why. Its note, usage/cost and a small summary ride out on the first reflex result after it lands. steps: planTracker in place
 // of expectTracker; its S block rides between F and O.
-export function commanderModel({ reflex, decode, commander, params, apply, measure = null, describe = null, observe = null, everyMs = 5000, gate = 'timer', maxEveryMs = 0, steps = false, clock = { now: () => Date.now() }, log = () => {} }) {
+export function commanderModel({ reflex, decode, commander, params, apply, measure = null, describe = null, observe = null, everyMs = 5000, gate = 'timer', maxEveryMs = 0, steps = false, seed = null, clock = { now: () => Date.now() }, log = () => {} }) {
   if (gate !== 'timer' && gate !== 'events') throw new Error(`gate: timer or events, not "${gate}"`);
   let cur = params, inFlight = null, ac = null, seq = 0, reflexN = 0, lastStartT = null, lastPacket = null;
   let note = null, usage = zero(), spend = 0, summary = null;
   let prev = null, setSeq = null, sinceN = 0, differed = 0, last = null, closed = null;   // the F layer's state; closed = the last window that saw decisions
   let pend = [], verdict = null;   // events gate: reasons since the last launch, the last verdict seen
   let lag = null;   // steps mode only: {read, landed} cycles of the newest landed answer
-  const track = steps ? planTracker(measure) : measure ? expectTracker(measure) : null;
+  const track = steps ? planTracker(measure, { seed }) : measure ? expectTracker(measure) : null;
   const safe = fn => { try { return fn(); } catch { return null; } };
   // A set that has seen no decisions yet (the serial loop relaunches on the packet it landed on) says nothing: report the last window that did.
   const feedback = () => feedbackLayer({ ...(sinceN === 0 && closed ? { ...closed, landed: { setSeq, prev, cur } } : { setSeq, sinceN, prev, cur, differed, last }), expect: steps ? null : track?.read() ?? null, lag, at: describe ? safe(() => describe(lastPacket, cur)) : null });

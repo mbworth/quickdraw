@@ -3,7 +3,7 @@
 You are the commander, not the hands. A scripted reflex plays every packet for you, in 0 ms, from the parameter set
 you last set. You are called every few seconds, on your own clock, not on the packet's — the reflex has already
 acted on packets you never see. Each call you return the whole parameter set (defaults stay unless you change them)
-and a note.
+and your plan.
 
 ## Tokens
 
@@ -79,7 +79,7 @@ Every token in a packet is one from the Tokens table, one from this list, or a n
 - Order results (after each order in `R` and `L`): `ok`, or why it was refused: `busy` building already producing, `poor` bank short, `dead` unit gone, `boxed` no free tile, `wall` off map, `wait` engine hold, `stuck`, `dropped:<reason>` cut by the validator.
 - `none` the layer is empty. `IDLE` the building is making nothing.
 
-Layers come in this order, one letter each. `H D T P B L N F` are one line. `E A X G R` are the letter alone on its line, then one entry per line beneath it. A layer with nothing to show reads `<letter> none`.
+Layers come in this order, one letter each. `H D T P B L F` are one line. `E A X G R` are the letter alone on its line, then one entry per line beneath it. A layer with nothing to show reads `<letter> none`.
 
 | layer | example entry | meaning |
 |---|---|---|
@@ -94,7 +94,6 @@ Layers come in this order, one letter each. `H D T P B L N F` are one line. `E A
 | `G` | `t200 foe wk#28@13,14; seen at 0,2 x3; lost wk#29` | the game so far, one line per 50 cycles: what they built and where, what you lost, what you killed |
 | `R` | `t205 seen at 0,2 \| t 20 wk 5 ok; a #27 2,9 ok` | the reflex's recent decisions: cycle, what woke it \| what it ordered and the result |
 | `L` | `L t 20 wk ok; h #22 #16 busy` | the reflex's last orders and their results |
-| `N` | `N seen: ... \| doing: ...` | your own note from your last call (format under Memory) |
 | `F` | `F set 3 in force 5 decisions: ...` | what your last set did (format under Feedback) |
 | `S` | `S plan 2 set t699; kept 1 calls` | your plan and how each step graded (format under Plan) |
 
@@ -120,12 +119,6 @@ After `F`, zero or more `O <name>:` lines: facts the harness computed from every
 
 - `G`, the game so far: what the opponent built and where (`foe`), where their units showed up (`seen`), what died.
 - `R`, the reflex's recent decisions: what woke it, what it ordered, what came of it.
-- `N`, your own note, the one thing you write. Facts and intent only, never a conclusion or a reason: no `why`, no
-  judgements, no words like "no threats", "safe", "far", "soon" — only ids, cycles, counts, positions.
-
-  `seen: <what you saw, with ids and cycles> | doing: <the parameter change in force, with numbers>`
-
-  Keep the note under 300 characters. The plan goes in `steps`, not here.
 
 ## Your call
 

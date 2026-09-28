@@ -1,0 +1,5 @@
+{ "steps": [
+  { "do": "build a barracks", "until": { "metric": "br", "op": ">=", "value": 1, "by": 300 } },
+  { "do": "build an army of 3", "until": { "metric": "army", "op": ">=", "value": 3, "by": 650 } },
+  { "do": "destroy their barracks", "until": { "metric": "foe_br", "op": "==", "value": 0, "by": 1500 } }
+] }

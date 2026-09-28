@@ -2,7 +2,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 
 export const isHaiku = model => /haiku/i.test(model);
-export const isFable = model => /fable|opus-5-5/i.test(model);   // Fable and Opus 5.5 reject tool_choice tool/any; auto is the only forced-tool substitute
+export const isFable = model => /fable|opus-5-5|sonnet-5-5/i.test(model);   // Fable, Opus 5.5 and Sonnet 5.5 reject tool_choice tool/any; auto is the only forced-tool substitute
 
 export function buildRequest({ model, system, tool, toolName, toolDescription, thinking = 'adaptive', effort = 'low', reply = 'tool', stream = false, packet, maxTokens = 4096 }) {
   const req = {
