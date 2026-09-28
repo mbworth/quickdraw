@@ -9,7 +9,7 @@
 //      (a Worker produces Barracks: the producer need not be a building).
 //   4. Each finished barracks makes Light whenever it is IDLE and the bank covers one. One Light kills a worker a hit
 //      and takes four to die; it is worth two workers and change.
-//   5. Defence first: an enemy cluster within DEFEND of my base draws every fighter, and within PANIC the harvesters too.
+//   5. Defence first: an enemy cluster within DEFEND of my base draws every fighter (hunted by id when X has one), and within PANIC the harvesters too.
 //      Outside panic, below ENGAGE free army units hold the post instead of sortieing solo (workers-only defence unchanged).
 //   6. Attack when PUSH_LI Light are out, or PUSH_WK fighters with no barracks coming: the core (the largest cluster
 //      of soldiers within GROUP of each other) attacks, any straggler rejoins the core instead of recalling the
@@ -150,18 +150,19 @@ export function decideFacts(k, params = DEFAULTS) {
     if (guards.length) { orders.push(`a ${list(guards)} ${P(post)}`); why.push('guard'); }
   };
   if (raid) {
+    const rt = raid.ids?.length ? `${raid.ids[0]}` : P(raid);   // hunt the raider by id: a cell goes stale between calls
     const freeFighters = free(fighters);
     const freeArmy = freeFighters.filter(u => u.type !== 'wk');
     if (panic) {
       const who = free([...fighters, ...harvesters]);
-      if (who.length) orders.push(`a ${list(who)} ${P(raid)}`);
+      if (who.length) orders.push(`a ${list(who)} ${rt}`);
       why.push('defend:panic');
     } else if (freeArmy.length > 0 && freeArmy.length < ENGAGE) {
       // Below strength: hold the post rather than sortie into a fight that loses the army one at a time.
       if (freeFighters.length) orders.push(`a ${list(freeFighters)} ${P(post)}`);
       why.push('defend:hold');
     } else {
-      if (freeFighters.length) orders.push(`a ${list(freeFighters)} ${P(raid)}`);
+      if (freeFighters.length) orders.push(`a ${list(freeFighters)} ${rt}`);
       why.push('defend');
     }
   } else if (noEnemyMobile && enemyBuilding && target) {

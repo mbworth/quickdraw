@@ -76,6 +76,9 @@ export function createBuffer({ dropAfter = 20 } = {}) {
   };
 }
 
+// An attack lands on the cell after `at` cycles; a mover that arrives first has left it.
+const escapes = (o, t) => o.st === 'move' && !!o.dest && o.eta <= (t.at ?? 10);
+
 // nextStep → {action?, done?, spend?} for this cycle, or null when the goal cannot be stepped right now.
 function nextStep(n, byId, u, g, res, reserved) {
   const cellOf = d => (u.x + DX[d]) + (u.y + DY[d]) * n.width;
@@ -104,12 +107,15 @@ function nextStep(n, byId, u, g, res, reserved) {
       if (g.target != null) {
         const tgt = byId.get(g.target);
         if (!tgt || tgt.player === n.me || tgt.player < 0) return { done: true };
-        if (sqDist(u, tgt) <= rng) return { action: { type: ACT.ATTACK, x: tgt.x, y: tgt.y } };
-        const d = bfsStep(n, u, tgt, { adjacent: true, reserved });
+        if (sqDist(u, tgt) <= rng && !escapes(tgt, t)) return { action: { type: ACT.ATTACK, x: tgt.x, y: tgt.y } };
+        const aim = tgt.st === 'move' && tgt.dest ? tgt.dest : tgt;   // a mover is chased to where it lands
+        if (aim !== tgt && sqDist(u, aim) <= rng) return {};
+        const d = bfsStep(n, u, aim, { adjacent: true, reserved });
         return d < 0 ? null : { action: { type: ACT.MOVE, parameter: d }, cell: cellOf(d) };
       }
-      const near = foes.filter(o => sqDist(u, o) <= rng).sort((a, b) => sqDist(u, a) - sqDist(u, b) || a.id - b.id)[0];
+      const near = foes.filter(o => sqDist(u, o) <= rng && !escapes(o, t)).sort((a, b) => sqDist(u, a) - sqDist(u, b) || a.id - b.id)[0];
       if (near) return { action: { type: ACT.ATTACK, x: near.x, y: near.y } };   // attack-move: anything in range first
+      if (foes.some(o => o.st === 'move' && o.dest && sqDist(u, o.dest) <= rng)) return {};   // hit it where it lands
       // Standing on the spot is the order, not the end of it: a guard that completed on arrival went idle and let the
       // next enemy walk past it. The goal holds until it is replaced, killing whatever comes into range.
       if (u.x === g.x && u.y === g.y) return {};

@@ -25,12 +25,12 @@ test('simulate reconstructs one launch per landed commander seq', t => {
   }
 });
 
-// The run predates the tracker's first-claim `since` fix, so `claim since tN` is not compared.
+// The run predates the tracker's first-claim `since` fix and defend-by-id, so `claim since tN` and `last:` are not compared.
 test('simulate: the recorded model F equals the live F on the first 30 landings (at-clause stripped)', t => {
   if (!fs.existsSync(RUN)) return t.skip('run file absent');
   const rows = rowsOf();
   const rec = new Map(rows.filter(r => r.kind === 'call' && r.raw?.commander?.input).map(r => [r.raw.commander.seq, r.raw.commander.feedback]));
-  const norm = s => s.replace(/ \| at target[^|]*/, '').replace(/claim since t\d+/, 'claim since');
+  const norm = s => s.replace(/ \| at target[^|]*/, '').replace(/claim since t\d+/, 'claim since').replace(/ \| last: [^|]*/, '');
   const calls = simulate(rows, { apply, decide, DEFAULTS, measure }).slice(0, 30);
   assert.equal(calls.length, 30);
   for (const c of calls) assert.equal(norm(feedbackLayer({ ...c.fb, expect: c.oldExpect })), norm(rec.get(c.seq)), `seq ${c.seq}`);

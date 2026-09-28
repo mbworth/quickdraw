@@ -91,7 +91,7 @@ test('raid outside panic with 2 free army units: meets engage, sorties', () => {
     x: [{ type: 'li', n: 1, x: 8, y: 5, dB: 3, dA: null, ids: [40] }],
   };
   const r = decideFacts(k, DEFAULTS);
-  assert.equal(r.o, 'a #1,#2 8,5');
+  assert.equal(r.o, 'a #1,#2 40');
   assert.equal(r.why.at(-1), 'defend');
 });
 
@@ -102,7 +102,7 @@ test('panic with 1 free army unit still fights: engage gate does not apply insid
     x: [{ type: 'li', n: 1, x: 6, y: 5, dB: 1, dA: null, ids: [40] }],
   };
   const r = decideFacts(k, DEFAULTS);   // dB 1 <= panic 2
-  assert.equal(r.o, 'a #1 6,5');
+  assert.equal(r.o, 'a #1 40');
   assert.equal(r.why.at(-1), 'defend:panic');
 });
 
@@ -153,6 +153,6 @@ test('no army, workers only, raid: old behaviour preserved, free (non-builder) w
     x: [{ type: 'li', n: 1, x: 8, y: 5, dB: 3, dA: null, ids: [40] }],
   };
   const r = decideFacts(k, DEFAULTS);   // worker #9 (nearer base) is the standing "builder" candidate, excluded from free; #10 defends
-  assert.equal(r.o, 'a #10 8,5');
+  assert.equal(r.o, 'a #10 40');
   assert.equal(r.why.at(-1), 'defend');
 });

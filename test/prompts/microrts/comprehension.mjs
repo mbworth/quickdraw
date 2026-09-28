@@ -73,8 +73,6 @@ const TR = 'O trig: pushLight 3: my army 2 (+1 in last 100c); barracksAt 3: my w
 const HM = 'O home: my army 3: 3 within d6 of my base; my wk 5 at base; their nearest mobile d5';
 const EC = 'O econ: my bank 1 (0 committed); mined +2/99c, spent 2/99c; ba#20 idle 99/99c, br#29 idle 80/99c; most idle ba#20';
 const PU = 'O push: my army 3 nearest d12 to their ba@13,13, was d9 @t1314; orders last 100c: 1 at their ba, 11 between';
-const MS = 'O match: my li x3 vs their li x2: I strike first: I keep li x3 / they strike first: none left | +6 ore li x3 (480c at +1/100c) = my li x6: I strike first: I keep li x6 / they strike first: I keep li x4 | +6 ore hv x2 (520c at +1/100c) = my li x3 hv x2: I strike first: I keep li x3 hv x2 / they strike first: I keep li x1 hv x2 | +6 ore rg x3 (500c at +1/100c) = my li x3 rg x3: I strike first: I keep li x3 rg x3 / they strike first: I keep li x3';
-const MN = 'O match: my li x3 vs their li x2: I strike first: I keep li x3 / they strike first: none left | no income';
 export const composite = [
   { name: 'c-token-cost', sections: ['Tokens', 'Units'], q: 'How many ore does a Heavy cost?', expect: '3' },
   { name: 'c-x-vs-board', sections: ['The board', 'The packet'], q: 'An `X` entry reads `ba x1@13,13 d22/24 #21`. Is this your base or theirs?', expect: /their|enemy|not (mine|yours)/i },
@@ -88,22 +86,11 @@ export const composite = [
   { name: 'c-trig-panic', sections: ['O lines', 'Your call'], q: `The packet carries \`${TR}\`. Is their nearest mobile unit inside or outside your panic radius?`, expect: /outside/i },
   { name: 'c-home-out', sections: ['O lines', 'Your call'], q: `The packet carries \`${HM}\`. How many of your army units are outside your defend radius?`, expect: /^0$|none|zero/i },
   { name: 'c-econ-idle', sections: ['O lines', 'Your call'], q: `The packet carries \`${EC}\`. Which building was idle the most in the last window?`, expect: /ba|base/i },
-  { name: 'c-match-now', sections: ['Tokens', 'O lines'], q: 'The packet carries `O match: my li x2 vs their li x3: I strike first: none left / they strike first: they keep li x3 | +6 ore li x3 (240c) = my li x5: I strike first: I keep li x5 / they strike first: I keep li x2 | +6 ore hv x2 (240c) = my li x2 hv x2: I strike first: I keep li x2 hv x2 / they strike first: I keep hv x2 | +6 ore rg x3 (300c) = my li x2 rg x3: I strike first: I keep li x2 rg x2 / they strike first: they keep li x1`. If your army met theirs now and they strike first, which side has units left?', expect: /their|they|enemy/i },
-  { name: 'c-match-hv-left', sections: ['Tokens', 'O lines'], q: 'The packet carries `O match: my li x2 vs their li x3: I strike first: none left / they strike first: they keep li x3 | +6 ore li x3 (240c) = my li x5: I strike first: I keep li x5 / they strike first: I keep li x2 | +6 ore hv x2 (240c) = my li x2 hv x2: I strike first: I keep li x2 hv x2 / they strike first: I keep hv x2 | +6 ore rg x3 (300c) = my li x2 rg x3: I strike first: I keep li x2 rg x2 / they strike first: they keep li x1`. After spending 6 ore on `hv`, how many `hv` do you have left after the fight if they strike first?', expect: /(^|\D)2(\D|$)/ },
-  { name: 'c-match-rg-cycles', sections: ['Tokens', 'O lines'], q: 'The packet carries `O match: my li x2 vs their li x3: I strike first: none left / they strike first: they keep li x3 | +6 ore li x3 (240c) = my li x5: I strike first: I keep li x5 / they strike first: I keep li x2 | +6 ore hv x2 (240c) = my li x2 hv x2: I strike first: I keep li x2 hv x2 / they strike first: I keep hv x2 | +6 ore rg x3 (300c) = my li x2 rg x3: I strike first: I keep li x2 rg x2 / they strike first: they keep li x1`. How many cycles does one barracks need to build the `rg` entry?', expect: /300/ },
-  { name: 'c-match-army-after', sections: ['Tokens', 'O lines'], q: 'The packet carries `O match: my li x2 vs their li x3: I strike first: none left / they strike first: they keep li x3 | +6 ore li x3 (240c) = my li x5: I strike first: I keep li x5 / they strike first: I keep li x2 | +6 ore hv x2 (240c) = my li x2 hv x2: I strike first: I keep li x2 hv x2 / they strike first: I keep hv x2 | +6 ore rg x3 (300c) = my li x2 rg x3: I strike first: I keep li x2 rg x2 / they strike first: they keep li x1`. After spending 6 ore on `li`, how many `li` are in your army before the fight?', expect: /(^|\D)5(\D|$)/ },
-  { name: 'c-match-li-second', sections: ['Tokens', 'O lines'], q: 'The packet carries `O match: my li x2 vs their li x3: I strike first: none left / they strike first: they keep li x3 | +6 ore li x3 (240c) = my li x5: I strike first: I keep li x5 / they strike first: I keep li x2 | +6 ore hv x2 (240c) = my li x2 hv x2: I strike first: I keep li x2 hv x2 / they strike first: I keep hv x2 | +6 ore rg x3 (300c) = my li x2 rg x3: I strike first: I keep li x2 rg x2 / they strike first: they keep li x1`. After spending 6 ore on `li`, how many `li` do you keep if they strike first?', expect: /(^|\D)2(\D|$)/ },
-  { name: 'c-match-now-first', sections: ['Tokens', 'O lines'], q: 'The packet carries `O match: my li x2 vs their li x3: I strike first: none left / they strike first: they keep li x3 | +6 ore li x3 (240c) = my li x5: I strike first: I keep li x5 / they strike first: I keep li x2 | +6 ore hv x2 (240c) = my li x2 hv x2: I strike first: I keep li x2 hv x2 / they strike first: I keep hv x2 | +6 ore rg x3 (300c) = my li x2 rg x3: I strike first: I keep li x2 rg x2 / they strike first: they keep li x1`. If your army met theirs now and you strike first, who is left?', expect: /none|no one|nobody|neither|nothing/i },
-  { name: 'c-match-counts-wk', sections: ['Tokens', 'O lines'], q: 'Does `O match` count workers?', expect: /^no\b|not/i },
   { name: 'c-push-dist', sections: ['Tokens', 'O lines'], q: `The packet carries \`${PU}\`. How many steps is your nearest army unit from their base now?`, expect: /(^|\D)12(\D|$)/ },
   { name: 'c-push-was', sections: ['Tokens', 'O lines'], q: `The packet carries \`${PU}\`. How many steps was your nearest army unit from their base about 100 cycles earlier?`, expect: /(^|\D)9(\D|$)/ },
   { name: 'c-push-between', sections: ['Tokens', 'O lines'], q: `The packet carries \`${PU}\`. In the window, how many reflex packets sent your army to a point that is neither their building nor your base?`, expect: /(^|\D)11(\D|$)/ },
   { name: 'c-push-at-ba', sections: ['Tokens', 'O lines'], q: `The packet carries \`${PU}\`. In the window, how many reflex packets sent your army at their base?`, expect: /(^|\D)1(\D|$)/ },
   { name: 'c-push-closer', sections: ['Tokens', 'O lines'], q: `The packet carries \`${PU}\`. Is your nearest army unit closer to their base now than it was about 100 cycles earlier? Answer yes or no.`, expect: /^no\b/i },
-  { name: 'c-ore-cycles', sections: ['Tokens', 'O lines'], q: `The packet carries \`${MS}\`. How many cycles until the \`li\` entry is built?`, expect: /480/ },
-  { name: 'c-ore-income', sections: ['Tokens', 'O lines'], q: `The packet carries \`${MS}\`. How much ore did you mine per 100 cycles, by this line?`, expect: /(^|\D)1(\D|$)/ },
-  { name: 'c-ore-short', sections: ['Tokens', 'O lines'], q: `The packet carries \`${MS}\`. Does your bank hold 6 ore now? Answer yes or no.`, expect: /^no\b/i },
-  { name: 'c-ore-none', sections: ['Tokens', 'O lines'], q: `The packet carries \`${MN}\`. How much ore did you mine in the window?`, expect: /(^|\D)0(\D|$)|none|nothing|zero|no ore/i },
   { name: 'c-f-grade', sections: ['Your call', 'Feedback'], q: 'The packet carries `F set 4 in force 6 decisions: train li>hv | orders differed 3/6 | plan: heavies vs their lights | expect hv>=2 by t900: MISSED (max 1) | last: t 29 hv / was t 29 li`. Did your last plan reach its expect?', expect: /^no\b|missed/i },
   { name: 'c-f-took-effect', sections: ['Your call', 'Feedback'], q: 'The packet carries `F set 4 in force 6 decisions: train li>hv | orders differed 3/6 | plan: heavies vs their lights | expect hv>=2 by t900: MISSED (max 1) | last: t 29 hv / was t 29 li`. Has your change to train shown up in the reflex orders yet?', expect: /^yes/i },
   { name: 'c-note-content', sections: ['Memory', 'Your call'], q: 'Which of these belongs in the N note: (a) "no threats near", (b) "hv 2 at 3,3, defend 6", (c) "they are winning"?', expect: /\bb\b/i },
@@ -242,4 +229,26 @@ export const econ = [
   { name: 'e-mine-fourth', sections: OL, q: carry(M4, 'Which node does the fourth harvester take? Answer with its token and id.'), expect: /rs#?19/i },
   { name: 'e-harv-order', sections: YC, q: 'Which node does the first harvester take: the nearest to your base or the farthest?', expect: /near/i },
   { name: 'e-harv-third', sections: OY, q: carry(M2, 'You set `harvesters` to 3. Which node does the third harvester take? Answer with its token and id.'), expect: /rs#?18/i },
+];
+
+// O threat.
+const TH = 'O threat: their hv x1 d9 to my base; my base hp10';
+export const threat = [
+  { name: 'th-type', sections: OL, q: carry(TH, 'What unit type is nearest your base? Answer with the token.'), expect: /hv/i },
+  { name: 'th-dist', sections: OL, q: carry(TH, 'How many steps is it from your base?'), expect: n(9) },
+  { name: 'th-hp', sections: OL, q: carry(TH, 'What is your base hp?'), expect: n(10) },
+  { name: 'th-whose', sections: OL, q: carry(TH, 'Whose unit is the `hv`: yours or theirs?'), expect: /their/i },
+  { name: 'th-no-eta', sections: OL, q: carry(TH, 'Does this line say when their units will reach your base? Answer yes or no.'), expect: NO },
+];
+
+// O seen.
+const SE = 'O seen: their li 7 seen: 4th t660, 5th t740, 6th t820, 7th t900; their hv 2 seen: 1st t1010, 2nd t1130';
+export const seen = [
+  { name: 'se-li-total', sections: OL, q: carry(SE, 'How many different Lights of theirs have you ever seen?'), expect: n(7) },
+  { name: 'se-hv-total', sections: OL, q: carry(SE, 'How many different Heavies of theirs have you ever seen?'), expect: n(2) },
+  { name: 'se-li-7th-cycle', sections: OL, q: carry(SE, 'At what cycle did their 7th Light first appear?'), expect: n(900) },
+  { name: 'se-hv-1st-cycle', sections: OL, q: carry(SE, 'At what cycle did their first Heavy first appear?'), expect: n(1010) },
+  { name: 'se-rg-total', sections: OL, q: carry(SE, 'How many different Ranged of theirs have you seen per this line?'), expect: a => /(^|\D)0(\D|$)|none/i.test(a) },
+  { name: 'se-li-includes-dead', sections: OL, q: carry(SE, 'Does the count 7 include Lights that have since died? Answer yes or no.'), expect: YES },
+  { name: 'se-no-forecast', sections: OL, q: carry(SE, 'Does this line say how many units they will build next? Answer yes or no.'), expect: NO },
 ];

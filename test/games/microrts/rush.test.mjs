@@ -124,3 +124,19 @@ test('two idle br, bank 4, train li: both train', () => {
   const r = decideFacts({ ...BASE, b: BR2, h: { r: 4 }, a: WK3 }, { ...DEFAULTS, barracks: 2 });
   assert.equal(r.o, 't 30 li 5; t 31 li 5; a #2,#3 5,5');
 });
+
+const RAID = { ...BASE, a: [{ type: 'li', n: 1, x: 4, y: 5, state: 'i', ids: [1] }, { type: 'li', n: 1, x: 4, y: 6, state: 'i', ids: [2] }] };
+
+test('defend and panic hunt the raid cluster by its first id', () => {
+  const defend = decideFacts({ ...RAID, x: [{ type: 'hv', n: 2, x: 8, y: 5, dB: 3, dA: null, ids: [40, 41] }] }, DEFAULTS);
+  assert.match(defend.o, /a #1,#2 40$/);
+  assert.equal(defend.why.at(-1), 'defend');
+  const panic = decideFacts({ ...RAID, x: [{ type: 'hv', n: 1, x: 6, y: 6, dB: 1, dA: null, ids: [40] }] }, DEFAULTS);
+  assert.match(panic.o, /a #1,#2 40$/);
+  assert.equal(panic.why.at(-1), 'defend:panic');
+});
+
+test('defend falls back to the cell when the raid cluster has no ids', () => {
+  const r = decideFacts({ ...RAID, x: [{ type: 'hv', n: 1, x: 8, y: 5, dB: 3, dA: null, ids: [] }] }, DEFAULTS);
+  assert.match(r.o, /a #1,#2 8,5$/);
+});

@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { createObserver, CLASSIFIERS, fight, matchLine } from '../../../src/games/microrts/policy/observe.mjs';
+import { createObserver, CLASSIFIERS } from '../../../src/games/microrts/policy/observe.mjs';
 import { createObserver as fromCommander } from '../../../src/games/microrts/policy/commander.mjs';
 import { DEFAULTS } from '../../../src/games/microrts/policy/rush.mjs';
 import { ROOT } from '../../../bin/_boot.mjs';
@@ -12,18 +12,18 @@ const pk = ({ t, r = 0, d = 'none', tr = 'none', p = 'ba#20 IDLE', a = [], b = '
 const feed = (o, packets) => { for (const q of packets) o.see(pk(q)); return o; };
 const line = (o, name, { expect = null, params = null } = {}) => o.read(params, { expect })?.split('\n').find(l => l.startsWith(`O ${name}:`)) ?? null;
 const BANNED = /\b(afford|should|build|counter|recommend|attack|rush|reachable|unreachable|holds|crossing|gain|now)/i;
-const FORMAT = /^O (near|home|reach|foe|fight|gone|econ|trig|units|match|push|mine): /;
+const FORMAT = /^O (near|home|reach|foe|fight|gone|econ|trig|units|push|mine|threat|seen): /;
 
 test('no classifiers: read() is null; all enables every one; commander.mjs re-exports it', () => {
   assert.equal(feed(createObserver(), [{ t: 0 }]).read(null), null);
   const o = feed(createObserver({ classifiers: 'all' }), [{ t: 0 }]);
-  assert.match(o.read(DEFAULTS), /^O near: their mobile none\nO home: my base hp10; my army 0; my wk 0 at base; their nearest mobile none\nO trig: .*\nO econ: my bank 0\nO units: my none vs their none \| li 4hp 2dmg cost 2 80c: kills wk 1 swing, li 2, hv 4, rg 1 \| hv 8hp 4dmg cost 3 120c: kills wk 1, li 1, hv 2, rg 1 \| rg 1hp 1dmg range 3 cost 2 100c: kills wk 1, li 4, hv 8, rg 1\nO match: my none vs their none\nO mine: harvesters 2: no node with ore$/);
+  assert.match(o.read(DEFAULTS), /^O near: their mobile none\nO home: my base hp10; my army 0; my wk 0 at base; their nearest mobile none\nO trig: .*\nO econ: my bank 0\nO units: my none vs their none \| li 4hp 2dmg cost 2 80c: kills wk 1 swing, li 2, hv 4, rg 1 \| hv 8hp 4dmg cost 3 120c: kills wk 1, li 1, hv 2, rg 1 \| rg 1hp 1dmg range 3 cost 2 100c: kills wk 1, li 4, hv 8, rg 1\nO mine: harvesters 2: no node with ore$/);
   assert.equal(fromCommander, createObserver);
-  assert.deepEqual(CLASSIFIERS, ['near', 'home', 'reach', 'trig', 'foe', 'fight', 'gone', 'econ', 'units', 'match', 'push', 'mine']);
+  assert.deepEqual(CLASSIFIERS, ['near', 'home', 'reach', 'trig', 'foe', 'fight', 'gone', 'econ', 'units', 'push', 'mine', 'threat', 'seen']);
 });
 
 test('validation: an unknown name or a non-string/non-array throws', () => {
-  assert.throws(() => createObserver({ classifiers: 'near,threat' }), /unknown classifier "threat"/);
+  assert.throws(() => createObserver({ classifiers: 'near,nope' }), /unknown classifier "nope"/);
   assert.throws(() => createObserver({ classifiers: 5 }), /string or an array/);
   assert.throws(() => createObserver({ classifiers: ['econ', 'afford'] }), /unknown classifier/);
 });
@@ -98,6 +98,24 @@ test('foe: first barracks until t600, alive/peak per type and change over ~300c'
   assert.equal(line(o, 'foe'), 'O foe: their br 1; their wk 0 (peak 6, -5 since t600); their li 1 (peak 4, -3 since t600)');
 });
 
+test('seen: distinct units ever seen per type, newest four with ordinals; a repeat id not recounted; null when none', () => {
+  const o = feed(createObserver({ classifiers: ['seen'] }), [
+    { t: 0 },
+    { t: 100, x: ['li x2@10,10 d20/18 #1,#2'] },
+    { t: 300, x: ['li x1@10,10 d20/18 #3'] },
+    { t: 660, x: ['li x1@10,10 d20/18 #4'] },
+    { t: 740, x: ['li x1@10,10 d20/18 #5'] },
+    { t: 820, x: ['li x1@10,10 d20/18 #6'] },
+    { t: 900, x: ['li x1@10,10 d20/18 #7'] },
+    { t: 1010, x: ['hv x1@10,10 d20/18 #8'] },
+    { t: 1130, x: ['hv x1@10,10 d20/18 #9'] },
+  ]);
+  assert.equal(line(o, 'seen'), 'O seen: their li 7 seen: 4th t660, 5th t740, 6th t820, 7th t900; their hv 2 seen: 1st t1010, 2nd t1130');
+  feed(o, [{ t: 1200, x: ['li x1@10,10 d20/18 #7'] }]);
+  assert.equal(line(o, 'seen'), 'O seen: their li 7 seen: 4th t660, 5th t740, 6th t820, 7th t900; their hv 2 seen: 1st t1010, 2nd t1130');
+  assert.equal(line(feed(createObserver({ classifiers: ['seen'] }), [{ t: 0 }]), 'seen'), null);
+});
+
 test('fight: placed deaths collapse; a stale or missing position goes to the place-unknown bucket; last 2 kept', () => {
   const o = feed(createObserver({ classifiers: ['fight'] }), [
     { t: 100, a: ['li x2@6,7 a #1,#2'], x: ['wk x1@6,8 d9/1 #9'] },
@@ -157,44 +175,18 @@ test('units: my/their combat counts, li/hv/rg stats, swing labeled once', () => 
   assert.match(line(none, 'units'), /^O units: my none vs their none \|/);
 });
 
-test('fight: UTT model, rg gets 2 free ranged rounds before melee closes', () => {
-  // li 4hp 2dmg vs li: both sides focus-fire the front unit each round; 2 mine die outright, 3 theirs whittle to 2 survivors
-  assert.deepEqual(fight({ li: 2 }, { li: 3 }), { mine: {}, theirs: { li: 2 } });
-  // symmetric 3v3 li: both sides trade down to 0 together by round 5
-  assert.deepEqual(fight({ li: 3 }, { li: 3 }), { mine: {}, theirs: {} });
-  // 2 hv (8hp 4dmg) one-shot a li each per round; 3 li (2dmg) need 4 hits to kill a hv (8/2)
-  assert.deepEqual(fight({ hv: 2 }, { li: 3 }), { mine: { hv: 1 }, theirs: {} });
-  // hv front-load kills, li mop up the last li; mine lose 1 li, keep the rest
-  assert.deepEqual(fight({ li: 2, hv: 2 }, { li: 3 }), { mine: { li: 1, hv: 2 }, theirs: {} });
-  // rg (1hp 1dmg range 3) get 2 free rounds of chip damage before li close in and kill all 3 rg
-  assert.deepEqual(fight({ rg: 3 }, { li: 3 }), { mine: {}, theirs: { li: 1 } });
-  // no enemy: no rounds run
-  assert.deepEqual(fight({ li: 1 }, {}), { mine: { li: 1 }, theirs: {} });
+test('threat: nearest enemy combat cluster to my base, type, count and distance, then base hp; null with no combat unit or no base', () => {
+  const hv = feed(createObserver({ classifiers: ['threat'] }), [{ t: 100, x: ['hv x1@5,2 d5/3 #9'], b: 'ba#20@2,2 hp10' }]);
+  assert.equal(line(hv, 'threat'), 'O threat: their hv x1 d5 to my base; my base hp10');
+  const li = feed(createObserver({ classifiers: ['threat'] }), [{ t: 100, x: ['li x2@3,2 d3/3 #9,#10'], b: 'ba#20@2,2 hp4' }]);
+  assert.equal(line(li, 'threat'), 'O threat: their li x2 d3 to my base; my base hp4');
+  const rg = feed(createObserver({ classifiers: ['threat'] }), [{ t: 100, x: ['rg x1@3,2 d3/3 #9'], b: 'ba#20@2,2 hp10' }]);
+  assert.equal(line(rg, 'threat'), 'O threat: their rg x1 d3 to my base; my base hp10');
+  assert.equal(line(feed(createObserver({ classifiers: ['threat'] }), [{ t: 100, x: ['wk x1@3,2 d3/3 #9'] }]), 'threat'), null);
+  assert.equal(line(feed(createObserver({ classifiers: ['threat'] }), [{ t: 100, x: ['hv x1@5,2 d5/3 #9'], b: 'none' }]), 'threat'), null);
 });
 
-test('matchLine: current fight plus what +6 ore of each type would buy', () => {
-  assert.equal(matchLine({ li: 2 }, { li: 3 }),
-    'my li x2 vs their li x3: I strike first: none left / they strike first: they keep li x3 | +6 ore li x3 (240c) = my li x5: I strike first: I keep li x5 / they strike first: I keep li x2 | +6 ore hv x2 (240c) = my li x2 hv x2: I strike first: I keep li x2 hv x2 / they strike first: I keep hv x2 | +6 ore rg x3 (300c) = my li x2 rg x3: I strike first: I keep li x2 rg x2 / they strike first: they keep li x1');
-  assert.equal(matchLine({}, {}), 'my none vs their none');
-});
-
-test('matchLine: bank below ore waits on measured income, or spends the bank with no income', () => {
-  const rows = o => matchLine({ li: 2 }, { li: 3 }, o).split(' | ').map(r => r.split(' = ')[0]);
-  assert.equal(matchLine({ li: 2 }, { li: 3 }, { bank: 9, rate: 0 }), matchLine({ li: 2 }, { li: 3 }));
-  assert.deepEqual(rows({ bank: 2, rate: 0.02 }).slice(1), ['+6 ore li x3 (280c at +2/100c)', '+6 ore hv x2 (320c at +2/100c)', '+6 ore rg x3 (300c at +2/100c)']);
-  assert.deepEqual(rows({ bank: 2, rate: 0 }).slice(1), ['+2 ore li x1 (80c)', '+2 ore rg x1 (100c)', 'no income']);
-  assert.deepEqual(rows({ bank: 0, rate: 0 }).slice(1), ['no income']);
-});
-
-test('match: the units/fight classifier through the observer', () => {
-  const o = feed(createObserver({ classifiers: ['match'] }), [{ t: 300, a: ['li x2@10,12 i #1,#2'], x: ['li x3@6,6 d8/4'] }]);
-  assert.equal(line(o, 'match'),
-    'O match: my li x2 vs their li x3: I strike first: none left / they strike first: they keep li x3 | +6 ore li x3 (240c) = my li x5: I strike first: I keep li x5 / they strike first: I keep li x2 | +6 ore hv x2 (240c) = my li x2 hv x2: I strike first: I keep li x2 hv x2 / they strike first: I keep hv x2 | +6 ore rg x3 (300c) = my li x2 rg x3: I strike first: I keep li x2 rg x2 / they strike first: they keep li x1');
-  const none = feed(createObserver({ classifiers: ['match'] }), [{ t: 0 }]);
-  assert.equal(line(none, 'match'), 'O match: my none vs their none');
-});
-
-test('recorded run: every line is a fact in the O format, under 60 words (units 80, match 140: a row per unit type, both first-strike cases), no verdict words', t => {
+test('recorded run: every line is a fact in the O format, under 60 words (units 80: a row per unit type), no verdict words', t => {
   const file = path.join(ROOT, 'runs/microrts-basesWorkers16x16-GuidedRojoA3N-mub5ms7q.jsonl');
   if (!fs.existsSync(file)) return t.skip('run file absent');
   const rows = fs.readFileSync(file, 'utf8').split('\n').filter(Boolean).map(JSON.parse).filter(r => r.kind === 'call' && r.packet);
@@ -206,7 +198,7 @@ test('recorded run: every line is a fact in the O format, under 60 words (units 
     for (const l of (o.read(DEFAULTS, { expect }) || '').split('\n').filter(Boolean)) {
       n++;
       assert.match(l, FORMAT);
-      assert.ok(l.split(/\s+/).length <= (l.startsWith('O match:') ? 140 : l.startsWith('O units:') ? 80 : 60), l);
+      assert.ok(l.split(/\s+/).length <= (l.startsWith('O units:') ? 80 : 60), l);
       assert.doesNotMatch(l, BANNED, l);
     }
   }

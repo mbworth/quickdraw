@@ -65,6 +65,30 @@ test('attack-move to a cell shoots anything already in range first', () => {
   assert.deepEqual(act(b.step(n), 3), { type: ACT.ATTACK, x: 0, y: 2 });
 });
 
+test('a hunted mover is hit only if the hit lands before it leaves, else met where it lands', () => {
+  const b = createBuffer();
+  b.push([{ cmd: 'attack', units: [3], target: 4 }]);
+  const n = tiny({ units: [...tiny().units.slice(0, 3), { ...tiny().units[3], x: 0, y: 2, busy: true, st: 'move', dest: { x: 0, y: 3 }, eta: 3 }] });
+  assert.equal(act(b.step(n), 3), undefined, 'eta 3 < attackTime: the hit would land on an empty cell');
+  n.units[3].eta = 9;
+  assert.deepEqual(act(b.step(n), 3), { type: ACT.ATTACK, x: 0, y: 2 }, 'it is still there when the hit lands');
+  n.units[3] = { ...n.units[3], x: 2, y: 3, dest: { x: 1, y: 3 }, eta: 2 };
+  n.units[2] = { ...n.units[2], x: 1, y: 2 };
+  assert.equal(act(b.step(n), 3), undefined, 'it lands next to me: hold and hit it there');
+  n.units[2] = { ...n.units[2], x: 3, y: 2 };
+  assert.deepEqual(act(b.step(n), 3), { type: ACT.MOVE, parameter: 3 }, 'chase to a neighbour of where it lands (3,2 → 2,2 → 1,2), not beside where it stands (3,3)');
+  assert.equal(b.size, 1);
+});
+
+test('attack-move skips a foe leaving range and holds where one lands', () => {
+  const b = createBuffer();
+  b.push([{ cmd: 'attack', units: [3], x: 3, y: 3 }]);
+  const n = tiny(); n.units[3] = { ...n.units[3], x: 0, y: 2, busy: true, st: 'move', dest: { x: 0, y: 3 }, eta: 2 };
+  assert.notEqual(act(b.step(n), 3)?.type, ACT.ATTACK);
+  n.units[3] = { ...n.units[3], x: 0, y: 3, dest: { x: 0, y: 2 } };
+  assert.equal(act(b.step(n), 3), undefined);
+});
+
 test('production spends the bank once per unit and the count is what stands', () => {
   const b = createBuffer();
   b.push([{ cmd: 'train', building: 2, type: 'Worker', count: 2 }]);

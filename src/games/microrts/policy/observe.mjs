@@ -4,7 +4,7 @@
 import { read as readPacket } from '../read.mjs';
 import { measure } from './commander.mjs';
 
-export const CLASSIFIERS = ['near', 'home', 'reach', 'trig', 'foe', 'fight', 'gone', 'econ', 'units', 'match', 'push', 'mine'];
+export const CLASSIFIERS = ['near', 'home', 'reach', 'trig', 'foe', 'fight', 'gone', 'econ', 'units', 'push', 'mine', 'threat', 'seen'];
 // Standard microRTS UnitTypeTable (basic mod); not carried by any packet, so hardcoded here.
 const UTT = { li: { cost: 2, hp: 4, dmg: 2, pt: 80 }, hv: { cost: 3, hp: 8, dmg: 4, pt: 120 }, rg: { cost: 2, hp: 1, dmg: 1, pt: 100, rng: 3 } };
 const TARGETS = [['wk', 1], ['li', 4], ['hv', 8], ['rg', 1]];
@@ -19,65 +19,9 @@ const FIGHT_W = 30, FIGHT_R = 4, POS_FRESH = 20, FORGET = 500, MLOG_MAX = 2000;
 const d1 = (a, b) => Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
 const cheb = (a, b) => Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y));
 const sgn = v => (v > 0 ? `+${v}` : `${v}`);
+const ordinal = n => { const j = n % 10, k = n % 100; if (j === 1 && k !== 11) return `${n}st`; if (j === 2 && k !== 12) return `${n}nd`; if (j === 3 && k !== 13) return `${n}rd`; return `${n}th`; };
 const counts = o => Object.entries(o).map(([t, n]) => `${t} x${n}`).join(' ');
 const subject = metric => (metric.startsWith('foe_') ? `their ${metric.slice(4)}` : `my ${metric}`);
-
-// Deterministic UTT combat model: rounds simultaneous, rg-only for the first two (range), then all attack.
-// first 'mine'|'theirs': that side's whole army swings in round 1 (checked on 142 recorded fights: 94% winner with the true striker, 73% without).
-export function fight(mine, theirs, first = null) {
-  const build = o => ['li', 'hv', 'rg'].flatMap(ty => Array.from({ length: o[ty] || 0 }, () => ({ ty, hp: UTT[ty].hp })));
-  let a = build(mine), b = build(theirs);
-  const order = { hv: 0, li: 1, rg: 2 };
-  // One side's attackers (hv, li, rg order) each hit the lowest-hp not-yet-killed defender; ties by defender type.
-  const hit = (attackers, defenders) => {
-    const scratch = defenders.map(u => u.hp), alive = defenders.map((_, i) => i), dmg = defenders.map(() => 0);
-    for (const u of [...attackers].sort((x, y) => order[x.ty] - order[y.ty])) {
-      if (!alive.length) break;
-      let best = alive[0];
-      for (const i of alive) if (scratch[i] < scratch[best] || (scratch[i] === scratch[best] && order[defenders[i].ty] < order[defenders[best].ty])) best = i;
-      scratch[best] -= UTT[u.ty].dmg; dmg[best] += UTT[u.ty].dmg;
-      if (scratch[best] <= 0) alive.splice(alive.indexOf(best), 1);
-    }
-    return dmg;
-  };
-  for (let round = 1; round <= 200 && a.length && b.length; round++) {
-    const rgOnly = (l, side) => (round <= 2 && !(round === 1 && first === side) ? l.filter(u => u.ty === 'rg') : l);
-    const aAtk = rgOnly(a, 'mine'), bAtk = rgOnly(b, 'theirs');
-    const dmgB = hit(aAtk, b), dmgA = hit(bAtk, a);
-    a.forEach((u, i) => (u.hp -= dmgA[i])); b.forEach((u, i) => (u.hp -= dmgB[i]));
-    a = a.filter(u => u.hp > 0); b = b.filter(u => u.hp > 0);
-  }
-  const survivors = list => { const o = {}; for (const ty of ['li', 'hv', 'rg']) { const n = list.filter(u => u.ty === ty).length; if (n) o[ty] = n; } return o; };
-  return { mine: survivors(a), theirs: survivors(b) };
-}
-
-const outcome = r => {
-  const my = counts(r.mine), th = counts(r.theirs);
-  if (my && !th) return `I keep ${my}`;
-  if (th && !my) return `they keep ${th}`;
-  return 'none left';
-};
-
-// Current fight, then what n more of each type (n = floor(ore/cost)) would buy; both first-strike cases when they differ.
-const both = (m, t) => {
-  const a = outcome(fight(m, t, 'mine')), b = outcome(fight(m, t, 'theirs'));
-  return a === b ? a : `I strike first: ${a} / they strike first: ${b}`;
-};
-// rate: ore mined per cycle over the last `span` cycles, null = unknown; below `ore` in the bank, rows wait on income.
-export function matchLine(mine, theirs, { ore = 6, bank = ore, rate = null, span = 100 } = {}) {
-  if (!Object.keys(theirs).length) return `my ${counts(mine) || 'none'} vs their none`;
-  const segs = [`my ${counts(mine) || 'none'} vs their ${counts(theirs)}: ${both(mine, theirs)}`];
-  const broke = rate !== null && rate <= 0 && bank < ore, slow = rate > 0 && bank < ore, have = broke ? bank : ore;
-  for (const ty of ['li', 'hv', 'rg']) {
-    const n = Math.floor(have / UTT[ty].cost);
-    if (broke && !n) continue;
-    const cycles = slow ? Math.max(n * UTT[ty].pt, Math.ceil((ore - bank) / rate) + UTT[ty].pt) : n * UTT[ty].pt;
-    const add = Object.fromEntries(['li', 'hv', 'rg'].map(t => [t, (mine[t] || 0) + (t === ty ? n : 0)]).filter(([, v]) => v));
-    segs.push(`+${have} ore ${ty} x${n} (${cycles}c${slow ? ` at ${sgn(Math.round(rate * span))}/${span}c` : ''}) = my ${counts(add)}: ${both(add, theirs)}`);
-  }
-  if (broke) segs.push('no income');
-  return segs.join(' | ');
-}
 
 function nearest(x) {
   const mob = x.filter(c => MOBILE.includes(c.type) && c.dB != null);
@@ -96,6 +40,8 @@ export function createObserver({ classifiers = [] } = {}) {
   const mlog = [];                 // {t, m}: reach's history, longer than hist
   const pos = new Map();           // id → {x, y, t}
   const dead = new Map();          // id → t
+  const seenIds = new Map();       // id → first-seen t
+  const seenLog = { li: [], hv: [], rg: [] };   // per-type first-seen t, in order
   const fights = [];               // {t0, t1, x, y, k, lost, killed}
   const bld = new Map();           // key → {label, type, x, y, goneT}
   const peak = {}, zeroT = {};
@@ -132,6 +78,7 @@ export function createObserver({ classifiers = [] } = {}) {
     const present = new Set(), foe = {};
     for (const c of k.x) {
       foe[c.type] = (foe[c.type] || 0) + c.n;
+      if (seenLog[c.type] && c.ids.length) for (const id of c.ids) if (!seenIds.has(id)) { seenIds.set(id, t); seenLog[c.type].push(t); }
       if (!BLD.has(c.type)) continue;
       if (c.type === 'br' && firstBr === null) firstBr = t;
       if (c.ids.length) for (const id of c.ids) { const key = `${c.type}#${id}`; present.add(key); bld.set(key, { label: key, type: c.type, x: c.x, y: c.y, goneT: null }); }
@@ -351,11 +298,12 @@ export function createObserver({ classifiers = [] } = {}) {
       };
       return [`my ${counts(mine) || 'none'} vs their ${counts(theirs) || 'none'}`, stat('li'), stat('hv'), stat('rg')].join(' | ');
     },
-    match() {
-      const m = hist[hist.length - 1].m, mine = {}, theirs = {};
-      for (const ty of ['li', 'hv', 'rg']) { if (m[ty]) mine[ty] = m[ty]; if (m[`foe_${ty}`]) theirs[ty] = m[`foe_${ty}`]; }
-      const { now, span, mined } = flow();
-      return matchLine(mine, theirs, { bank: now.bank, rate: span > 0 ? mined / span : null, span });
+    // Their nearest combat cluster to my base, then my base's hp.
+    threat() {
+      const now = hist[hist.length - 1], cs = now.mob.filter(c => COMBAT.has(c.type) && c.dB != null);
+      if (!now.base || !cs.length) return null;
+      const c = cs.reduce((a, o) => (o.dB < a.dB ? o : a));
+      return `their ${c.type} x${c.n} d${c.dB} to my base; my base hp${now.base.hp}`;
     },
     push() {
       const now = hist[hist.length - 1], army = now.a.filter(c => COMBAT.has(c.type)), n = army.reduce((s, c) => s + c.n, 0);
@@ -381,6 +329,16 @@ export function createObserver({ classifiers = [] } = {}) {
       const parts = ore.slice(0, H).map((n, i) => `${ord(i)} ${fmt(n)}`);
       if (H > ore.length) parts.push(`${H - ore.length} more share ${ore.at(-1).type}#${ore.at(-1).id}`);
       return `harvesters ${H}: ${parts.join('; ') || 'none'}${H >= 0 && H < ore.length ? `; next ${ord(H)} ${fmt(ore[H])}` : ''}`;
+    },
+    seen() {
+      const parts = [];
+      for (const ty of ['li', 'hv', 'rg']) {
+        const log = seenLog[ty];
+        if (!log.length) continue;
+        const recent = log.slice(-4).map((t, i) => `${ordinal(log.length - Math.min(4, log.length) + i + 1)} t${t}`);
+        parts.push(`their ${ty} ${log.length} seen: ${recent.join(', ')}`);
+      }
+      return parts.length ? parts.join('; ') : null;
     },
   };
 
