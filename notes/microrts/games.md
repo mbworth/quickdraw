@@ -634,3 +634,14 @@ $0.35 / $0.36. Sonnet 5 replaces after the base is lost, with rebuild army 3 the
 **Game 219, Sonnet 5.5 commander10 (no note, `--memory 0`) steps + seed-light, HeavyRush, run `mulmq4re`, $0.13.** Loss 1:35, t954, 1 vs 3, base lost. 17 calls: 15 kept, 2 plans (t554 "defend at post, build army of 5, then push" army>=5; t799 "survive heavies: lights vs hv, workers help" army>=3). One step each. Levers moved 14 times, harvesters 2/3 alternating, train li > `li,rg` > li. Plan 3 lowered the claim 5>3 and the carry-over marked it done t624, before it was set (t799): a lowered claim grades itself met. Writes plans live once the note is gone; they are one step and do not slow the lever churn.
 
 **2026-09-28, grading fix.** `planTracker`: a carried claim whose value changed keeps its history (`value 5>3`) and is graded from `set`; it can no longer be done before it was written. Legend updated in commander09 and commander10.
+
+**Game 220, Sonnet 5.5 commander10 (no note) steps + seed-light, grading fix in, HeavyRush, run `mulmz91x`, $0.19.** Loss 2:07, t1254, 1 vs 4, base lost. 22 calls: 20 kept, 2 plans. t469 replaced the seed at step 2: "defend vs hv with hv/rg, build army of 4", why "their hv beats li"; train `hv,rg` then `rg` held t500–t1150. Graded correctly: raised claim 3>4 MET t624, after set. Then `all steps done` for 12 calls, t624–t1179, and no new plan until the base was gone ("workers attack their base"). 18 lever sets; harvesters 2/3 alternating on most calls.
+
+**2026-09-28, finished plan (`plan-cases-done.mjs`, game 220 seq 12/15/18/21, `all steps done t624`, no note), new plan written n/8.**
+| packet | board | Sonnet 5.5 | Sonnet 5 |
+|---|---|---|---|
+| t679 | army 3, hv x2 d7 | 0 | 8 |
+| t834 | army 2, hv d6 | 0 | 8 |
+| t989 | army 1, home ore low | 5 | 8 |
+| t1139 | base gone | 8 | 8 |
+$0.28 / $0.36. Reading set `done` on Sonnet 5.5 (thinking adaptive; it rejects thinking off) 24/24, $0.10. Sonnet 5 refills an empty slot every time; Sonnet 5.5 leaves it empty until the board is bad.

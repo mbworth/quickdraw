@@ -304,3 +304,11 @@ export const seed = [
   { name: 'seed-kept', sections: PL, q: carry(SS, 'How many of your calls kept this plan?'), expect: n(3) },
   { name: 'seed-before', sections: PL, q: carry(SS, 'How many plans did you write before this one?'), expect: a => /(^|\D)0(\D|$)|none|zero/i.test(a) },
 ];
+
+const SD = `S plan 2 set t469; kept 5 calls; replaced 1x, last why: their hv beats li; all steps done t624
+S1 done t624: defend vs hv with hv/rg, build army of 4 | army>=4 by t900: MET t624`;
+export const done = [
+  { name: 'd-inforce', sections: ['Plan'], q: carry(SD, 'Is any step of your plan in force? Answer yes or no.'), expect: NO },
+  { name: 'd-when', sections: ['Plan'], q: carry(SD, 'At what cycle were all steps of your plan done?'), expect: n(624) },
+  { name: 'd-steps', sections: ['Plan'], q: carry(SD, 'How many steps does this plan have?'), expect: n(1) },
+];

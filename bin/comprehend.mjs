@@ -6,7 +6,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ROOT, boot, prices } from './_boot.mjs';
-import { buildRequest, cost, pickUsage } from '../src/core/model.mjs';
+import { buildRequest, cost, pickUsage, isFable } from '../src/core/model.mjs';
 
 const BOOL = ['dry-run', 'why'];
 const CONCURRENCY = 4;
@@ -66,7 +66,7 @@ async function main() {
 
   const model = flags.model || 'claude-sonnet-5';
   const effort = flags.effort || 'low';
-  const thinking = flags.thinking || 'off';
+  const thinking = flags.thinking || (isFable(model) ? 'adaptive' : 'off');   // these models reject thinking off
   const repeats = Number(flags.repeats ?? 8);
   const ctx = String(flags.context || 'case');
   const preface = flags.message ? fs.readFileSync(path.resolve(String(flags.message)), 'utf8').trim() + '\n\nQuestion: ' : '';
