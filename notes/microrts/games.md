@@ -645,3 +645,6 @@ $0.35 / $0.36. Sonnet 5 replaces after the base is lost, with rebuild army 3 the
 | t989 | army 1, home ore low | 5 | 8 |
 | t1139 | base gone | 8 | 8 |
 $0.28 / $0.36. Reading set `done` on Sonnet 5.5 (thinking adaptive; it rejects thinking off) 24/24, $0.10. Sonnet 5 refills an empty slot every time; Sonnet 5.5 leaves it empty until the board is bad.
+
+**Game 221, Sonnet 5 commander10 (no note) steps + `seed-heavy.json` (barracks; train Heavy hv>=2 by t900; army 4 by t1300; their barracks by t2000), HeavyRush, run `mulna2ln`, $0.39. WIN 4:55, t2935, 10 vs 0, base hp10.** First HeavyRush win since game 207 (0/13). 50 calls: 38 kept, 12 plans, all two or three steps. `train hv` set on call 2 and held to t2750. Kept the seed 10 calls, then developed it: hv>=3 then push; "3 hv trade 1-for-1, mass 5 before pushing"; hv>=5 moved twice then lowered to 4 ("econ stalled"), workers 6>3 harvesters 2>1 to fund it; hv 4 MET t2220, push, their base dead by t2750. Still moves deadlines (by moved 4x on hv>=5/4) but the claim and the levers change with it.
+Control, script:rush `{"train":"hv","pushLight":4}`, HeavyRush, $0: loss t1310, loss t1310, draw t2985 (4 vs 3). Heavy alone does not win; the commander's hold-and-mass did.
