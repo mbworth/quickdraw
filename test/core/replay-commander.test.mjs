@@ -5,7 +5,7 @@ import path from 'node:path';
 import { simulate, splitArgs, gated, callPre, callNew } from '../../bin/replay-commander.mjs';
 import { ROOT } from '../../bin/_boot.mjs';
 import { readRun } from '../../src/core/record.mjs';
-import { feedbackLayer, expectTracker } from '../../src/core/commander.mjs';
+import { feedbackLayer, expectTracker, planTracker } from '../../src/core/commander.mjs';
 import { apply, measure, createObserver } from '../../src/games/microrts/policy/commander.mjs';
 import { DEFAULTS, decide } from '../../src/games/microrts/policy/rush.mjs';
 
@@ -84,4 +84,23 @@ test('simulate --gate: first launch kept, each kept launch is the first at or af
   assert.ok(base && Number(base.cycle) >= 2018 && all[all.indexOf(base) - 1].cycle < 2018);
   const hb = run(20000).filter(c => c.why);
   assert.ok(hb.length > kept.length && hb.some(c => c.why.includes('heartbeat 20 s')));
+});
+
+test('simulate with plan: S rebuilt from recorded steps; a run without steps reads S none', () => {
+  const pk = (n, t, hv) => ({ kind: 'call', n, packet: `H t${t} r0 u0/0\nA\nwk x1@1,1 i #1${hv ? `\nhv x${hv}@2,2 i #9` : ''}\nB ba#20@2,2 hp10\nX none` });
+  const land = (seq, apiPacketN, input) => ({ raw: { commander: { seq, apiPacketN, input } } });
+  const rows = [
+    { ...pk(1, 10, 0) },
+    { ...pk(2, 20, 0), ...land(1, 1, { steps: [{ do: 'mass hv', until: { metric: 'hv', op: '>=', value: 2, by: 500 } }], why: 'go' }) },
+    { ...pk(3, 30, 2), ...land(2, 2, { steps: null, why: null }) },
+  ];
+  const calls = simulate(rows, { apply, decide, DEFAULTS, plan: planTracker(measure) });
+  assert.deepEqual(calls.map(c => c.S), [
+    'S none',
+    'S plan 1 set t10; kept 0 calls; why: go\nS1 now since t10: mass hv | hv>=2 by t500: pending (max 0, t20)',
+  ]);
+  // lag: null before any answer has landed, then {read: <launch cycle>, landed: <landing cycle>}.
+  assert.deepEqual(calls.map(c => c.lag), [null, { read: '10', landed: '20' }]);
+  const plain = simulate(rows.map(r => (r.raw ? { ...r, raw: { commander: { ...r.raw.commander, input: { plan: 'x' } } } } : r)), { apply, decide, DEFAULTS, plan: planTracker(measure) });
+  assert.deepEqual(plain.map(c => c.S), ['S none', 'S none']);
 });

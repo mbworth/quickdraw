@@ -59,11 +59,11 @@ export default [
   { name: 'call-pullback-lever', sections: ['Your call'], q: 'Once a push has launched, which lever can still pull units back?', expect: /defend/i },
   { name: 'call-group', sections: ['Your call'], q: 'With `group` at 2, what does an army unit 5 steps from the largest cluster do when the push fires?', expect: /join|walk|toward|to the cluster|rejoin|gather/i },
   { name: 'call-engage', sections: ['Your call'], q: 'With `engage` at 2, one free army unit, and an enemy at d4 (inside `defend` 6, outside `panic` 2): does that unit go out or hold the post?', expect: /hold/i },
-  { name: 'call-required-fields', sections: ['Your call'], q: 'What are the two required fields on every tool call?', expect: a => hasAll(a, ['plan', 'expect']) },
+  { name: 'call-required-fields', sections: ['Your call'], q: 'Besides the levers, what are the two fields every tool call carries for your plan?', expect: a => hasAll(a, ['steps', 'why']) },
 
   // Feedback
   { name: 'feedback-orders-differed', sections: ['Feedback'], q: 'What does `orders differed 0/5` mean?', expect: /same|identical|n.t.*shown|no.*effect|unchanged|not.*played/i },
-  { name: 'feedback-example-verdict', sections: ['Feedback'], q: 'Given the line `F set 3 in force 5 decisions: defend 6>4 | orders differed 2/5 | plan: pull back and hold | expect hv>=3 by t1300: MET t1250 | last: a #5 3,3 ok / was m #5 3,3 ok`, was the expect MET, MISSED, or pending?', expect: /met/i },
+  { name: 'feedback-example-differed', sections: ['Feedback'], q: 'Given the line `F set 3 in force 5 decisions: defend 6>4 | orders differed 2/5 | last: a #5 3,3 ok / was m #5 3,3 ok`, in how many of the 5 decisions did the reflex issue orders different from what the old set would have given?', expect: '2' },
   { name: 'feedback-f-none', sections: ['Feedback'], q: 'What does `F none` mean?', expect: /first|before|no (parameter|set|prior|previous|feedback)|not.*(yet|before)/i },
 ];
 
@@ -251,4 +251,44 @@ export const seen = [
   { name: 'se-rg-total', sections: OL, q: carry(SE, 'How many different Ranged of theirs have you seen per this line?'), expect: a => /(^|\D)0(\D|$)|none/i.test(a) },
   { name: 'se-li-includes-dead', sections: OL, q: carry(SE, 'Does the count 7 include Lights that have since died? Answer yes or no.'), expect: YES },
   { name: 'se-no-forecast', sections: OL, q: carry(SE, 'Does this line say how many units they will build next? Answer yes or no.'), expect: NO },
+];
+
+// S (Plan) reading: one field per question, no arithmetic.
+const PL = ['Plan'];
+const SB = `S plan 3 set t699; kept 4 calls; replaced 2x, last why: lost li to hv
+S1 done t754: hold post, guard 1 | army>=3 by t800: MET t754
+S2 now since t754: mass li to 5 | army>=5 by t1050: pending (max 3, t814)
+S3 next: push their base | foe_br==0 by t1500`;
+const SM = `S plan 4 set t1064; kept 1 calls; replaced 3x, last why: hv waves
+S1 now since t1064: mass li to 5 | army>=5 by t1200: MISSED (max 3); same claim since t754, by moved 2x
+S2 next: push their base | foe_br==0 by t1700`;
+export const plan = [
+  { name: 'p-sb-inforce', sections: PL, q: carry(SB, 'Which step number is in force?'), expect: n(2) },
+  { name: 'p-sb-step1-done', sections: PL, q: carry(SB, 'At what cycle was step 1 done?'), expect: n(754) },
+  { name: 'p-sb-step2-deadline', sections: PL, q: carry(SB, 'What is the deadline cycle of step 2?'), expect: n(1050) },
+  { name: 'p-sb-step2-best', sections: PL, q: carry(SB, 'What is the best army value measured during step 2?'), expect: n(3) },
+  { name: 'p-sb-step2-passed', sections: PL, q: carry(SB, "Has step 2's deadline passed? Answer yes or no."), expect: NO },
+  { name: 'p-sb-step3-begun', sections: PL, q: carry(SB, 'Has step 3 begun? Answer yes or no.'), expect: NO },
+  { name: 'p-sb-plans-before', sections: PL, q: carry(SB, 'How many plans did you write before this one?'), expect: n(2) },
+  { name: 'p-sb-kept-calls', sections: PL, q: carry(SB, 'How many of your calls kept this plan?'), expect: n(4) },
+  { name: 'p-sb-why', sections: PL, q: carry(SB, 'What reason did you give for this plan?'), expect: /lost li to hv/i },
+  { name: 'p-sb-set-cycle', sections: PL, q: carry(SB, 'At what cycle did you write this plan?'), expect: n(699) },
+  { name: 'p-sb-step3-metric', sections: PL, q: carry(SB, 'What metric ends step 3?'), expect: /foe_br/i },
+  { name: 'p-sm-step1-held', sections: PL, q: carry(SM, "Did step 1's condition hold before its deadline? Answer yes or no."), expect: NO },
+  { name: 'p-sm-deadline-moved', sections: PL, q: carry(SM, "How many times has this claim's deadline been changed?"), expect: n(2) },
+  { name: 'p-sm-inforce', sections: PL, q: carry(SM, 'Which step is in force?'), expect: n(1) },
+  { name: 'p-sm-best-since', sections: PL, q: carry(SM, 'Since what cycle has the best value been counted?'), expect: n(754) },
+  { name: 'p-tool-null-keeps', sections: YC, q: 'What value of `steps` keeps the plan in force?', expect: /null/i },
+  { name: 'p-tool-max-steps', sections: YC, q: 'What is the most steps a plan can have?', expect: n(4) },
+  { name: 'p-tool-why-null', sections: YC, q: 'What must `why` be when `steps` is null?', expect: /null/i },
+  { name: 'p-tool-no-harness-change', sections: PL, q: 'Does the harness change your plan when a step is MISSED? Answer yes or no.', expect: NO },
+  { name: 'p-tool-s-none', sections: PL, q: 'With `S none`, do you have a plan? Answer yes or no.', expect: NO },
+];
+
+// F lag clause: the read/landed cycles of the commander's last answer.
+const FL = 'F set 5 in force 3 decisions: pushLight 3>5 | orders differed 1/3 | answer read t700, landed t994 | last: a 12,13 / was h 5';
+export const lag = [
+  { name: 'lag-read', sections: ['Feedback'], q: carry(FL, 'From the packet of which cycle was your last answer written?'), expect: n(700) },
+  { name: 'lag-landed', sections: ['Feedback'], q: carry(FL, 'At what cycle did your last answer take effect?'), expect: n(994) },
+  { name: 'lag-no-forecast', sections: ['Feedback'], q: carry(FL, 'Does this line say when your next answer will land? Answer yes or no.'), expect: NO },
 ];

@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { encode } from '../../../src/games/microrts/coder.mjs';
 import { read } from '../../../src/games/microrts/read.mjs';
 import { decide, decideFacts, DEFAULTS } from '../../../src/games/microrts/policy/rush.mjs';
-import { defaults, apply, tool, measure, METRICS, describe } from '../../../src/games/microrts/policy/commander.mjs';
+import { defaults, apply, tool, toolSteps, measure, METRICS, describe } from '../../../src/games/microrts/policy/commander.mjs';
 import { assemble } from '../../../src/core/packet.mjs';
 import { tinySnap } from './helpers.mjs';
 
@@ -138,4 +138,21 @@ test('apply clamps barracks; tool schema lists and requires it', () => {
   assert.equal(apply({ barracks: 'x' }, { ...defaults, barracks: 2 }).barracks, 2);
   assert.equal(defaults.barracks, 1);
   assert.ok(tool.properties.barracks && tool.required.includes('barracks'));
+});
+
+test('toolSteps: tool with plan/expect swapped for required steps and why; until is expect\'s shape', () => {
+  assert.equal(toolSteps.properties.plan, undefined);
+  assert.equal(toolSteps.properties.expect, undefined);
+  assert.deepEqual(toolSteps.required, [...tool.required.filter(k => k !== 'plan' && k !== 'expect'), 'steps', 'why']);
+  const s = toolSteps.properties.steps;
+  assert.deepEqual(s.type, ['array', 'null']);
+  assert.deepEqual(s.items.required, ['do', 'until']);
+  assert.equal(s.items.additionalProperties, false);
+  const until = s.items.properties.until;
+  assert.equal(until.type, 'object');
+  assert.deepEqual(until.properties, tool.properties.expect.properties);
+  assert.deepEqual(until.required, ['metric', 'op', 'value', 'by']);
+  assert.deepEqual(toolSteps.properties.why.type, ['string', 'null']);
+  for (const k of Object.keys(tool.properties).filter(k => k !== 'plan' && k !== 'expect')) assert.deepEqual(toolSteps.properties[k], tool.properties[k]);
+  assert.deepEqual(apply({ steps: [], why: 'x' }, defaults), defaults);
 });

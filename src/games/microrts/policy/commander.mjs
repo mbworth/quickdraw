@@ -72,6 +72,33 @@ export const tool = Object.freeze({
 
 export const toolDescription = 'Set the plan the reflex plays until your next call: the parameter set behind rules 1-7, plus an optional push/post target, your plan in one line and the expect it is graded on.';
 
+// --commander-steps: `plan`/`expect` give way to `steps` (a multi-step plan, graded step by step) and `why`.
+const { plan: _plan, expect: _expect, ...levers } = tool.properties;
+export const toolSteps = Object.freeze({
+  ...tool,
+  properties: {
+    ...levers,
+    steps: {
+      type: ['array', 'null'],
+      description: 'null keeps the plan in force; 1-4 steps replace it, step 1 begins when your answer lands',
+      minItems: 1,
+      items: {
+        type: 'object',
+        properties: {
+          do: { type: 'string', description: 'the step in your own words, at most 80 characters' },
+          until: { ...tool.properties.expect, type: 'object', description: 'the checkable condition that ends the step' },
+        },
+        required: ['do', 'until'],
+        additionalProperties: false,
+      },
+    },
+    why: { type: ['string', 'null'], description: 'with steps, the reason for the new plan, at most 80 characters; null with steps null' },
+  },
+  required: [...tool.required.filter(k => k !== 'plan' && k !== 'expect'), 'steps', 'why'],
+});
+
+export const toolStepsDescription = 'Set the plan the reflex plays until your next call: the parameter set behind rules 1-7, plus an optional push/post target, and your steps, kept or replaced.';
+
 const clamp = (v, lo, hi, fallback) => (Number.isInteger(v) ? Math.min(hi, Math.max(lo, v)) : fallback);
 const parseTarget = (v, fallback) => {
   if (v === null) return null;
@@ -87,8 +114,8 @@ const parseTrain = (v, fallback) => {
   return types.length ? types.join(',') : fallback;
 };
 
-// apply(input, prev) → params. Pure: any field out of range or the wrong shape falls back to prev's value. `plan` and `expect` are
-// not reflex params: core reads them off the tool input and grades them (src/core/commander.mjs).
+// apply(input, prev) → params. Pure: any field out of range or the wrong shape falls back to prev's value. `plan`, `expect`, `steps`
+// and `why` are not reflex params: core reads them off the tool input and grades them (src/core/commander.mjs).
 export function apply(input, prev = defaults) {
   const i = input || {};
   const defend = clamp(i.defend, 0, 16, prev.defend);

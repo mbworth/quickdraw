@@ -7,21 +7,23 @@
 //
 // Usage: node bin/replay-commander.mjs <run.jsonl> --prompt <file> [--model claude-sonnet-5] [--effort low]
 //        [--from-seq n] [--to-seq n] [--budget 1.0] [--at] [--classifiers near,reach,trig,foe,fight,gone,econ,units,push,mine,seen|all]
-//        [--out <base>] [--dry-run] [--gate [--max-every ms]] [--pre "question"]
+//        [--out <base>] [--dry-run] [--gate [--max-every ms]] [--pre "question"] [--steps]
 // --gate keeps only the recorded launches the events gate (commanderModel gate 'events') would have made: the first at or after
 // each observer event or recorded-expect MET/MISSED, plus heartbeats; each kept call carries its `E` line.
 // --pre: each call becomes two — a plain text question first, its answer folded into the message (Q:/A:) before the tool call.
+// --steps: the steps tool, and each call's S block rebuilt from the recorded answers (a run without steps reads `S none`).
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ROOT, boot } from './_boot.mjs';
 import { loadGameModule } from '../src/core/args.mjs';
 import { readRun } from '../src/core/record.mjs';
-import { feedbackLayer, expectTracker } from '../src/core/commander.mjs';
+import { feedbackLayer, expectTracker, planTracker, stepReason } from '../src/core/commander.mjs';
 import { withMemory, buildRequest, cost, pickUsage } from '../src/core/model.mjs';
 
-const BOOL = ['at', 'dry-run', 'gate'];
+const BOOL = ['at', 'dry-run', 'gate', 'steps'];
 
+const stepsOf = i => JSON.stringify({ steps: i?.steps ?? null, why: i?.why ?? null });
 const cycleOf = packet => (/^H t(\d+)/m.exec(packet) || [])[1] ?? '?';
 const diffParams = (a, b) => {
   const keys = [...new Set([...Object.keys(a || {}), ...Object.keys(b || {})])];
@@ -40,15 +42,18 @@ function policyOf(cfg) {
 // (a closed window + landed when the set in force has seen no decisions), oldExpect the recorded model's own plan/grade (measure given),
 // since the packets after the prior launch up to this one, curBefore the params in force at launch.
 // gate {observer, maxEveryMs} (needs measure): each result also gets `why`, the events-gate reasons, or null if the gate skips it.
-export function simulate(rows, { apply, decide, DEFAULTS, measure = null, fromSeq = 0, toSeq = Infinity, gate = null } = {}) {
+// plan (a planTracker): fed the recorded steps; each result also gets `S`, `until` (its current()) and `lag` ({read, landed} cycles
+// of the plan in force, or null), and the gate its step reasons.
+export function simulate(rows, { apply, decide, DEFAULTS, measure = null, fromSeq = 0, toSeq = Infinity, gate = null, plan = null } = {}) {
   const calls = rows.filter(r => r.kind === 'call').sort((a, b) => a.n - b.n);
   const ok = c => c?.input && !c.error;
   const byApiPacketN = new Map();
   for (const R of calls) { const c = R.raw?.commander; if (ok(c)) byApiPacketN.set(c.apiPacketN, c); }
+  const packetByN = new Map(calls.map(R => [R.n, R.packet]));
   const track = measure ? expectTracker(measure) : null;
-  let cur = DEFAULTS, prev = null, setSeq = null, sinceN = 0, differed = 0, last = null, closed = null, prevLaunch = 0;
+  let cur = DEFAULTS, prev = null, setSeq = null, sinceN = 0, differed = 0, last = null, closed = null, prevLaunch = 0, lag = null;
   const results = [];
-  let pending = [], pend = [], verdict = null, keptT = null, events = 0;
+  let pending = [], pend = [], verdict = null, pv = null, keptT = null, events = 0;
   for (const R of calls) {
     const landing = R.raw?.commander;
     if (ok(landing)) {
@@ -57,13 +62,20 @@ export function simulate(rows, { apply, decide, DEFAULTS, measure = null, fromSe
       if (setSeq !== null && sinceN > 0) closed = { setSeq, sinceN, prev, cur: was, differed, last };
       prev = was; setSeq = landing.seq; sinceN = 0; differed = 0; last = null;
       track?.set(landing.input.expect, landing.input.plan);
+      plan?.set(landing.input.steps, landing.input.why);
+      if (plan) {
+        const readC = cycleOf(packetByN.get(landing.apiPacketN) ?? ''), landedC = cycleOf(R.packet);
+        if (readC !== '?' && landedC !== '?') lag = { read: readC, landed: landedC };
+      }
     }
     track?.see(R.packet);
+    plan?.see(R.packet);
     pending.push(R.packet);
     if (gate) {
       gate.observer.see(R.packet, cur);
       const ev = gate.observer.events(), v = track?.read().grade.verdict ?? null;
       if (v !== verdict && (v === 'met' || v === 'missed')) ev.push(`expect ${v.toUpperCase()}`);
+      if (plan) { const p = plan.verdict(), r = stepReason(pv, p); if (r) ev.push(r); pv = p; }
       verdict = v; events += ev.length; pend.push(...ev);
     }
     const launched = byApiPacketN.get(R.n);
@@ -74,7 +86,7 @@ export function simulate(rows, { apply, decide, DEFAULTS, measure = null, fromSe
         why = [keptT === null ? 'first call' : null, ...pend, keptT !== null && gate.maxEveryMs > 0 && R.t - keptT >= gate.maxEveryMs ? `heartbeat ${Math.round(gate.maxEveryMs / 1000)} s` : null].filter(Boolean);
         if (why.length) { pend = []; keptT = R.t; } else why = null;
       }
-      results.push({ seq: launched.seq, apiPacketN: R.n, prevApiPacketN: prevLaunch, oldInput: launched.input, fb, oldExpect: track?.read() ?? null, since: pending, packet: R.packet, cycle: cycleOf(R.packet), curBefore: cur, ...(gate ? { why } : {}) });
+      results.push({ seq: launched.seq, apiPacketN: R.n, prevApiPacketN: prevLaunch, oldInput: launched.input, fb, oldExpect: track?.read() ?? null, since: pending, packet: R.packet, cycle: cycleOf(R.packet), curBefore: cur, ...(gate ? { why } : {}), ...(plan ? { S: plan.read(), until: plan.current(), lag } : {}) });
       pending = []; prevLaunch = R.n;
     }
     if (setSeq !== null) {
@@ -136,7 +148,7 @@ export async function callPre({ client, model, system, effort, message, pre, pri
 async function main() {
   const { flagArgs, positional } = splitArgs(process.argv.slice(2), BOOL);
   const file = positional[0];
-  if (!file) { console.error('usage: replay-commander <run.jsonl> --prompt <file> [--model M] [--effort E] [--from-seq n] [--to-seq n] [--budget 1.0] [--at] [--classifiers a,b|all] [--out base] [--dry-run] [--gate [--max-every ms]] [--pre "question"]'); process.exit(64); }
+  if (!file) { console.error('usage: replay-commander <run.jsonl> --prompt <file> [--model M] [--effort E] [--from-seq n] [--to-seq n] [--budget 1.0] [--at] [--classifiers a,b|all] [--out base] [--dry-run] [--gate [--max-every ms]] [--pre "question"] [--steps]'); process.exit(64); }
   const { flags } = await boot(flagArgs, { booleans: BOOL });
   if (!flags.prompt) throw new Error('--prompt is required');
 
@@ -147,7 +159,8 @@ async function main() {
   const policyMod = await loadGameModule(game, `policy/${name}.mjs`);
   const cmd = await loadGameModule(game, 'policy/commander.mjs');
   const { DEFAULTS, decide } = policyMod;
-  const { apply, tool: baseTool, toolDescription, measure, describe } = cmd;
+  const steps = !!flags.steps;
+  const { apply, measure, describe } = cmd, baseTool = steps ? cmd.toolSteps : cmd.tool, toolDescription = steps ? cmd.toolStepsDescription : cmd.toolDescription;
   const tool = cfg.memory > 0 ? withMemory(baseTool, cfg.memory) : baseTool;
 
   const model = flags.model || 'claude-sonnet-5';
@@ -164,7 +177,7 @@ async function main() {
   }
 
   const gate = flags.gate ? { observer: cmd.createObserver({ classifiers: String(flags.classifiers || '') }), maxEveryMs: Number(flags.maxEvery ?? 0) } : null;
-  const all = simulate(rows, { apply, decide, DEFAULTS, measure: gate ? measure : null, fromSeq: flags.fromSeq ?? 0, toSeq: flags.toSeq ?? Infinity, gate });
+  const all = simulate(rows, { apply, decide, DEFAULTS, measure: gate ? measure : null, fromSeq: flags.fromSeq ?? 0, toSeq: flags.toSeq ?? Infinity, gate, plan: steps ? planTracker(measure) : null });
   const calls = gate ? gated(all) : all;
   if (gate) console.log(`gate: ${all.events} events, ${calls.length} of ${all.length} recorded launches kept`);
   const track = expectTracker(measure);
@@ -195,14 +208,14 @@ async function main() {
     if (observer) for (const pk of c.since) observer.see(pk);
     if (!mine) mine = c.curBefore;
     let at = null; if (AT) { try { at = describe(c.packet, mine); } catch { at = null; } }
-    const F = feedbackLayer({ ...c.fb, expect: track.read(), at });
+    const F = feedbackLayer({ ...c.fb, expect: steps ? null : track.read(), at, lag: c.lag });
     let O = null;
-    if (observer) { try { O = observer.read(mine, { expect: track.current?.() ?? null }); } catch { O = null; } }
+    if (observer) { try { O = observer.read(mine, { expect: steps ? c.until : track.current?.() ?? null }); } catch { O = null; } }
     const E = c.why ? `E ${c.why.join('; ')}` : null;
-    let message = [c.packet, F, O, E].filter(Boolean).join('\n');
+    let message = [c.packet, F, c.S, O, E].filter(Boolean).join('\n');
 
     if (dryRun) {
-      console.log(`--- seq${c.seq} t${c.cycle}\nF: ${F}${O ? `\nO: ${O}` : ''}${E ? `\n${E}` : ''}${flags.pre ? `\nQ: ${flags.pre}` : ''}\n`);
+      console.log(`--- seq${c.seq} t${c.cycle}\nF: ${F}${c.S ? `\n${c.S}` : ''}${O ? `\nO: ${O}` : ''}${E ? `\n${E}` : ''}${flags.pre ? `\nQ: ${flags.pre}` : ''}\n`);
       continue;
     }
 
@@ -219,14 +232,14 @@ async function main() {
     let res;
     try { res = await callNew({ client, model, system, tool, toolDescription, effort, message, price }); }
     catch (err) { process.stderr.write(`seq ${c.seq}: ERROR ${err.message}\n`); continue; }
-    track.set(res.input?.expect, res.input?.plan);
+    if (!steps) track.set(res.input?.expect, res.input?.plan);
     totalSpend += res.spend;
     const newParams = res.input ? apply(res.input, c.curBefore) : null;
     if (newParams) mine = newParams;
     const rec = {
       seq: c.seq, cycle: c.cycle, F, O, ...(E ? { E } : {}), ...(preRec ? { pre: preRec } : {}),
       oldDiff: diffParams(oldParams, c.curBefore), newDiff: newParams ? diffParams(newParams, c.curBefore) : ['NO ANSWER'],
-      oldPlan: c.oldInput.plan ?? null, newPlan: res.input?.plan ?? null,
+      ...(c.S ? { S: c.S } : {}), oldPlan: steps ? stepsOf(c.oldInput) : c.oldInput.plan ?? null, newPlan: steps ? stepsOf(res.input) : res.input?.plan ?? null,
       usage: res.usage, spend: res.spend, cumSpend: totalSpend,
     };
     results.push(rec);

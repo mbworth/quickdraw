@@ -391,6 +391,13 @@ test('feedbackLayer appends the at clause after expect and before last', () => {
   assert.ok(F.includes(' | at target 1,1: x'));
 });
 
+test('feedbackLayer: lag rides right after orders differed, before expect/at/last; absent without it', () => {
+  const F = feedbackLayer({ setSeq: 1, sinceN: 1, prev: { a: 1 }, cur: { a: 2 }, differed: 0, last: { o: 'x', was: 'y' }, at: 'at target 1,1: x', lag: { read: 700, landed: 994 } });
+  assert.equal(F, 'F set 1 in force 1 decisions: a 1>2 | orders differed 0/1 | answer read t700, landed t994 | at target 1,1: x | last: x / was y');
+  const noLag = feedbackLayer({ setSeq: 1, sinceN: 1, prev: { a: 1 }, cur: { a: 2 }, differed: 0, last: null });
+  assert.ok(!noLag.includes('answer read'));
+});
+
 test('commanderModel feeds the game\'s describe(lastPacket, params) into the packet the commander receives', async () => {
   const { callModel, clock, calls } = mk({ describe: (packet, params) => `at target ${params.push},${packet}` });
   await callModel({ packet: 'P1' });

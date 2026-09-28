@@ -1,0 +1,175 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { planTracker, stepReason, commanderModel } from '../../src/core/commander.mjs';
+import { virtualClock } from '../../src/core/clock.mjs';
+
+// packet "cycle army foe_br"
+const measure = p => { const m = /^(\d+) (\d+) (\d+)$/.exec(p); if (!m) throw new Error('unmeasurable'); return { cycle: +m[1], army: +m[2], foe_br: +m[3] }; };
+const u = (metric, op, value, by) => ({ metric, op, value, by });
+const THREE = [{ do: 'hold post, guard 1', until: u('army', '>=', 3, 800) }, { do: 'mass li to 5', until: u('army', '>=', 5, 1050) }, { do: 'push their base', until: u('foe_br', '==', 0, 1500) }];
+
+test('planTracker: S none, then the S block exactly', () => {
+  const t = planTracker(measure);
+  assert.equal(t.read(), 'S none');
+  assert.equal(t.current(), null);
+  assert.equal(t.verdict(), null);
+  t.see('54 0 1');
+  t.set([{ do: 'kill br', until: u('foe_br', '==', 0, 500) }], '  first  ');
+  assert.equal(t.read(), 'S plan 1 set t54; kept 0 calls; why: first\nS1 now since t54: kill br | foe_br==0 by t500: pending');
+  t.see('300 1 1');
+  t.set([{ do: 'kill br again', until: u('foe_br', '==', 0, 900) }], null);
+  t.see('699 2 1');
+  t.set(THREE, 'lost li to hv');
+  for (let i = 0; i < 4; i++) t.set(null, null);
+  t.see('754 3 1'); t.see('814 3 1');
+  assert.equal(t.read(), [
+    'S plan 3 set t699; kept 4 calls; replaced 2x, last why: lost li to hv',
+    'S1 done t754: hold post, guard 1 | army>=3 by t800: MET t754',
+    'S2 now since t754: mass li to 5 | army>=5 by t1050: pending (max 3, t754)',
+    'S3 next: push their base | foe_br==0 by t1500',
+  ].join('\n'));
+  assert.deepEqual(t.current(), { metric: 'army', op: '>=', value: 5, by: 1050, since: 754 });
+});
+
+test('planTracker: null and invalid steps keep the plan; kept is a no-op with no plan; do and why are cut to 80', () => {
+  const t = planTracker(measure);
+  t.set(null); t.set([]);
+  assert.equal(t.read(), 'S none');
+  t.see('10 0 1');
+  t.set([{ do: 'x'.repeat(100), until: u('army', '>=', 2, 90) }], 'y'.repeat(100));
+  for (const bad of [null, [], [{ do: 'a' }], [{ do: 'a', until: u('army', '>', 1, 5) }], [{ until: u('army', '>=', 1, 5) }], Array(5).fill(THREE[0]), 'go']) t.set(bad, 'ignored');
+  const s = t.read();
+  assert.match(s, /^S plan 1 set t10; kept 7 calls; why: y{80}\nS1 now since t10: x{80} \|/);
+});
+
+test('planTracker: steps advance; a packet meeting several cascades; all done lands in the header', () => {
+  const t = planTracker(measure);
+  t.see('100 0 1');
+  t.set(THREE, 'go');
+  t.see('200 2 1');
+  assert.deepEqual(t.verdict(), { plan: 1, step: 1, verdict: 'pending' });
+  t.see('300 5 1');   // step 1 and 2 at once
+  assert.match(t.read(), /\nS1 done t300: .*MET t300\nS2 done t300: .*MET t300\nS3 now since t300: push their base \| foe_br==0 by t1500: pending \(last 1, t300\)$/);
+  assert.deepEqual(t.verdict(), { plan: 1, step: 2, verdict: 'met' });
+  t.see('400 5 0');
+  assert.equal(t.read().split('\n')[0], 'S plan 1 set t100; kept 0 calls; why: go; all steps done t400');
+  assert.equal(t.current(), null);
+  assert.deepEqual(t.verdict(), { plan: 1, step: 3, verdict: 'done' });
+});
+
+test('planTracker: past by without holding reads MISSED and the step stays now', () => {
+  const t = planTracker(measure);
+  t.see('100 0 1');
+  t.set(THREE.slice(0, 2), null);
+  t.see('500 2 1'); t.see('801 1 1');
+  assert.equal(t.read(), 'S plan 1 set t100; kept 0 calls\nS1 now since t100: hold post, guard 1 | army>=3 by t800: MISSED (max 2)\nS2 next: mass li to 5 | army>=5 by t1050');
+  assert.deepEqual(t.verdict(), { plan: 1, step: 1, verdict: 'missed' });
+  t.see('900 3 1');   // late, still done
+  assert.match(t.read(), /\nS1 done t900: .*MET t900\nS2 now since t900: .*pending \(max 3, t900\)$/);
+});
+
+test('planTracker: step 1 with the replaced now step\'s metric/op carries best, since, moved and values; a different one starts fresh', () => {
+  const t = planTracker(measure);
+  t.see('100 0 1');
+  t.set([{ do: 'a', until: u('army', '>=', 3, 800) }], 'w1');
+  t.see('200 2 1');
+  t.see('250 1 1');
+  t.set([{ do: 'b', until: u('army', '>=', 4, 900) }, { do: 'c', until: u('foe_br', '==', 0, 1500) }], 'w2');
+  t.set([{ do: 'b2', until: u('army', '>=', 4, 1000) }], 'w3');
+  assert.equal(t.read(), 'S plan 3 set t250; kept 0 calls; replaced 2x, last why: w3\nS1 now since t250: b2 | army>=4 by t1000: pending (max 2, t200); same claim since t100, by moved 2x, value 3>4');
+  assert.deepEqual(t.current(), { metric: 'army', op: '>=', value: 4, by: 1000, since: 100 });
+  t.set([{ do: 'd', until: u('army', '<=', 1, 1000) }], null);
+  assert.equal(t.read().split('\n')[1], 'S1 now since t250: d | army<=1 by t1000: pending');
+});
+
+test('planTracker: a restated claim that already held is done at once; the next step begins at the set', () => {
+  const t = planTracker(measure);
+  t.see('100 0 1');
+  t.set([{ do: 'a', until: u('army', '>=', 5, 800) }], null);
+  t.see('200 3 1');
+  t.set([{ do: 'a', until: u('army', '>=', 3, 800) }, { do: 'b', until: u('foe_br', '==', 0, 900) }], null);
+  assert.match(t.read(), /\nS1 done t200: a \| army>=3 by t800: MET t200; same claim since t100, value 5>3\nS2 now since t200: b /);
+});
+
+test('stepReason: only a change to MET, MISSED or done', () => {
+  const p = (plan, step, verdict) => ({ plan, step, verdict });
+  assert.equal(stepReason(null, null), null);
+  assert.equal(stepReason(null, p(1, 1, 'pending')), null);
+  assert.equal(stepReason(p(1, 1, 'pending'), p(1, 1, 'met')), 'step 1 MET');
+  assert.equal(stepReason(p(1, 1, 'met'), p(1, 1, 'met')), null);
+  assert.equal(stepReason(p(1, 1, 'met'), p(1, 2, 'missed')), 'step 2 MISSED');
+  assert.equal(stepReason(p(1, 2, 'met'), p(1, 3, 'done')), 'plan done');
+  assert.equal(stepReason(p(1, 1, 'met'), p(2, 1, 'met')), 'step 1 MET');
+});
+
+const answer = input => ({ act: false, orders: [], note: null, usage: null, stop: 'tool_use', latencyMs: 5, cost: 0, raw: { content: [{ type: 'tool_use', name: 'plan', input }] } });
+function fake() {
+  const calls = [];
+  const fn = async ({ packet, signal }) => { const c = { packet }; c.done = new Promise(r => (c.resolve = r)); signal?.addEventListener('abort', () => c.resolve({ stop: 'aborted', usage: null, cost: 0 }), { once: true }); calls.push(c); return c.done; };
+  return { fn, calls };
+}
+const mkS = (over = {}) => {
+  const clock = virtualClock(), { fn, calls } = fake();
+  const observe = { see() {}, read: (_, { expect }) => `O reach: ${expect ? expect.metric : 'none'}`, events: () => [] };
+  const callModel = commanderModel({ reflex: (_, p) => ({ o: `m${p.push}`, why: [] }), decode: ({ o }) => ({ act: true, orders: [{ cmd: o }] }), commander: fn, params: { push: 1 }, apply: (i, prev) => ({ push: Number.isFinite(i.push) ? i.push : prev.push }), measure, observe, steps: true, clock, ...over });
+  return { callModel, clock, calls };
+};
+
+test('commanderModel steps: S rides between F and O, F carries no plan/expect, the answer sets the plan and summary.plan holds S', async () => {
+  const { callModel, clock, calls } = mkS();
+  await callModel({ packet: '100 0 1' });
+  assert.equal(calls[0].packet, '100 0 1\nF none\nS none\nO reach: none');
+  calls[0].resolve(answer({ push: 2, steps: THREE.slice(0, 2), why: 'mass', plan: 'ignored', expect: u('army', '>=', 1, 200), n: 'note' }));
+  await clock.advance(5000);
+  const r = await callModel({ packet: '200 3 1' });
+  assert.equal(r.note, 'note');
+  assert.equal(r.raw.commander.plan, 'S none');
+  const [, F, S1, S2, S3, O] = calls[1].packet.split('\n');
+  assert.equal(F, 'F set 1 in force 0 decisions: push 1>2 | orders differed 0/0 | answer read t100, landed t100');
+  assert.equal(S1, 'S plan 1 set t100; kept 0 calls; why: mass');
+  assert.equal(S2, 'S1 done t200: hold post, guard 1 | army>=3 by t800: MET t200');
+  assert.match(S3, /^S2 now since t200: mass li to 5/);
+  assert.equal(O, 'O reach: army');
+  calls[1].resolve(answer({ push: 2, steps: null, why: null }));
+  await clock.advance(10);
+  const r2 = await callModel({ packet: '210 3 1' });
+  assert.match(r2.raw.commander.plan, /^S plan 1 set t100; kept 0 calls/);
+  assert.match(callModel.feedback(), /^F set 2 /);
+  await clock.advance(5000);
+  await callModel({ packet: '220 3 1' });
+  assert.match(calls[2].packet, /\nS plan 1 set t100; kept 1 calls; why: mass\n/);
+  await callModel.close();
+});
+
+test('commanderModel steps: F\'s answer read/landed cycles are those of the newest landed answer, absent before any lands', async () => {
+  const { callModel, clock, calls } = mkS();
+  await callModel({ packet: '100 0 1' });
+  await callModel({ packet: '150 1 1' });   // no new launch: the first is still in flight
+  assert.equal(calls.length, 1);
+  calls[0].resolve(answer({ push: 2, steps: THREE.slice(0, 1), why: 'go' }));
+  await clock.advance(5000);
+  await callModel({ packet: '200 3 1' });
+  const [, F] = calls[1].packet.split('\n');
+  assert.equal(F, 'F set 1 in force 0 decisions: push 1>2 | orders differed 0/0 | answer read t100, landed t150');
+  await callModel.close();
+});
+
+test('commanderModel steps, gate events: step MET, step MISSED and plan done ride as E reasons', async () => {
+  const { callModel, clock, calls } = mkS({ gate: 'events' });
+  await callModel({ packet: '100 0 1' });
+  calls[0].resolve(answer({ steps: THREE, why: null }));
+  await clock.advance(6000);
+  await callModel({ packet: '200 1 1' });
+  assert.equal(calls.length, 1);
+  await callModel({ packet: '300 3 1' });
+  assert.match(calls[1].packet, /\nE step 1 MET$/);
+  calls[1].resolve(answer({ steps: null, why: null }));
+  await clock.advance(6000);
+  await callModel({ packet: '1100 4 1' });
+  assert.match(calls[2].packet, /\nE step 2 MISSED$/);
+  calls[2].resolve(answer({ steps: [{ do: 'raze', until: u('foe_br', '==', 0, 2000) }], why: 'late' }));
+  await clock.advance(6000);
+  await callModel({ packet: '1200 4 0' });
+  assert.match(calls[3].packet, /\nS plan 2 set t1100; kept 0 calls; replaced 1x, last why: late; all steps done t1200\n[\s\S]*\nE plan done$/);
+  await callModel.close();
+});

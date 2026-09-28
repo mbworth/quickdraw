@@ -26,6 +26,7 @@ that, not against win rate alone. Full log: `notes/microrts/games.md` (games 38�
   and says why ("stop chasing rg at d10: defend 5", "switch to Light vs the rg pair: 1 swing kill", `harvesters` 4). Live at equal lag
   (Fable on a 400 ms clock) Fable built 5 Heavies to Sonnet's 1, kept the barracks fed (17% idle-broke vs 51%), and landed the only hit any of our
   armies has made on CoacAI's base (10 → 6 hp). It still lost, at $1.98 a game vs $0.08.
+- 2026-09-28 steps mode (`--commander-steps true`, `commander09-sonnet.md`): the plan is 1–4 graded steps the model keeps (`steps: null`) or replaces with a `why`; `S` block after F. Reading 160/160, fixed-packet behaviour (`bin/plan-bench.mjs`) 63/64. Live game 214: Sonnet holds a plan (15/22 calls kept) and writes one two-step plan, then six one-step plans that only move `by` (5x). Holding is fixed; revision is still the model.
 - The ceiling has moved from the commander to the reflex: the push leaves strung out over three tiles and every fighter dies alone; the base is
   sniped by Ranged at three tiles with nothing adjacent; there is no recall.
 - Reflex rules built since (games 86–156, $0): group push with a core of the largest cluster, engage gate, mop-up hunt by unit id, opening
