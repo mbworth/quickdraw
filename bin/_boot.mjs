@@ -34,6 +34,8 @@ const policyOf = async (adapter, game, model, prefix) => {
 // --model commander:<name>: that policy is the reflex (0 ms, every packet) and policy/commander.mjs's schema is the API model's
 // parameter set, rewritten in the background every --commander-every ms (--commander-gate events: only when something happened).
 // --commander-steps true: the commander writes a multi-step plan (toolSteps) in place of plan/expect.
+// --strategist-model <id>: a second model (toolStrategist, its own prompt) writes only the steps, every --strategist-every ms at most.
+// --strategist-lock true: only the strategist writes the plan; the commander gets toolLevers.
 // --script-params '{"train":"hv"}' overrides the policy's DEFAULTS for a script arm (a fixed commander setting at $0).
 export async function modelFor({ adapter, game, model, system, thinking = 'adaptive', effort = 'low', reply = 'tool', stream = false, memory = 0, decisionDeadlineMs, clock, opts = {} }) {
   if (isScript(model)) {
@@ -47,22 +49,29 @@ export async function modelFor({ adapter, game, model, system, thinking = 'adapt
     const { decide } = await import(path.join(dir, `${name}.mjs`));
     const commander = await import(path.join(dir, 'commander.mjs'));
     const { default: Anthropic } = await import('@anthropic-ai/sdk');
-    const mem = Number(memory) || 0, steps = !!opts.commanderSteps, ctool = steps ? commander.toolSteps : commander.tool;
+    const mem = Number(memory) || 0, steps = !!opts.commanderSteps, lock = !!opts.strategistLock, ctool = lock ? commander.toolLevers : steps ? commander.toolSteps : commander.tool;
     const call = createModel({
       client: new Anthropic(), model: opts.commanderModel ?? 'claude-sonnet-5', system,
-      tool: mem > 0 ? withMemory(ctool, mem) : ctool, toolName: 'plan', toolDescription: steps ? commander.toolStepsDescription : commander.toolDescription,
+      tool: mem > 0 ? withMemory(ctool, mem) : ctool, toolName: 'plan', toolDescription: lock ? commander.toolLeversDescription : steps ? commander.toolStepsDescription : commander.toolDescription,
       decode: input => ({ act: false, orders: [], note: typeof input.n === 'string' ? input.n : null }),
       thinking: String(thinking), effort, reply: 'tool', decisionDeadlineMs, prices: prices(), clock,
     });
-    return commanderModel({ reflex: decide, decode: adapter.decode, commander: call, params: commander.defaults, apply: commander.apply, measure: commander.measure ?? null, describe: commander.describe ?? null, observe: commander.createObserver && opts.classifiers ? commander.createObserver({ classifiers: opts.classifiers }) : null, everyMs: opts.commanderEveryMs ?? 5000, gate: opts.commanderGate ?? 'timer', maxEveryMs: opts.commanderMaxEveryMs ?? 0, steps, seed: opts.commanderSeed ?? null, clock });
+    const strategist = opts.strategistModel ? {
+      call: createModel({
+        client: new Anthropic(), model: opts.strategistModel, system: opts.strategistSystem ?? '', tool: commander.toolStrategist, toolName: 'plan', toolDescription: commander.toolStrategistDescription,
+        decode: () => ({ act: false, orders: [], note: null }), thinking: 'adaptive', effort: opts.strategistEffort ?? 'medium', reply: 'tool', decisionDeadlineMs: opts.strategistDeadlineMs ?? 60000, prices: prices(), clock,
+      }),
+      everyMs: opts.strategistEveryMs ?? 30000, lock,
+    } : null;
+    return commanderModel({ reflex: decide, decode: adapter.decode, commander: call, params: commander.defaults, apply: commander.apply, measure: commander.measure ?? null, describe: commander.describe ?? null, observe: commander.createObserver && opts.classifiers ? commander.createObserver({ classifiers: opts.classifiers }) : null, everyMs: opts.commanderEveryMs ?? 5000, gate: opts.commanderGate ?? 'timer', maxEveryMs: opts.commanderMaxEveryMs ?? 0, steps, seed: opts.commanderSeed ?? null, strategist, clock });
   }
   const { default: Anthropic } = await import('@anthropic-ai/sdk');
   return createModel({ client: new Anthropic(), model, system, tool: adapter.tool, toolName: adapter.meta.toolName, toolDescription: adapter.meta.toolDescription, decode: adapter.decode, thinking: String(thinking), effort, reply: String(reply), stream: !!stream, memory: Number(memory) || 0, decisionDeadlineMs, prices: prices(), clock });
 }
 
 // The commander's tool schema, for the run's config line (the API sees this, not adapter.tool).
-export async function commanderToolFor({ adapter, game, model, memory = 0, steps = false }) {
+export async function commanderToolFor({ adapter, game, model, memory = 0, steps = false, lock = false }) {
   const { dir } = await policyOf(adapter, game, model, 'commander:');
-  const c = await import(path.join(dir, 'commander.mjs')), tool = steps ? c.toolSteps : c.tool;
+  const c = await import(path.join(dir, 'commander.mjs')), tool = lock ? c.toolLevers : steps ? c.toolSteps : c.tool;
   return memory > 0 ? withMemory(tool, memory) : tool;
 }

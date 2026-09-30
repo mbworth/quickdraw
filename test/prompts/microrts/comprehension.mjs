@@ -294,15 +294,19 @@ export const lag = [
 ];
 
 // Seed: a plan the model did not write.
-const SS = `S plan 1 set t0; kept 3 calls; given to you at the start
+const SS = `S plan 1 set t0; kept 3 calls; given to you
 S1 done t249: build a barracks | br>=1 by t300: MET t249
 S2 now since t249: build an army of 3 | army>=3 by t650: pending (max 1, t334)
 S3 next: destroy their barracks | foe_br==0 by t1500`;
+const SG = `S plan 3 set t900; kept 1 calls; given to you, why: their hv beat li
+S1 now since t900: mass hv to 3 | hv>=3 by t1300: pending (max 1, t950)`;
 export const seed = [
   { name: 'seed-wrote', sections: PL, q: carry(SS, 'Did you write this plan? Answer yes or no.'), expect: NO },
   { name: 'seed-inforce', sections: PL, q: carry(SS, 'Which step is in force?'), expect: n(2) },
   { name: 'seed-kept', sections: PL, q: carry(SS, 'How many of your calls kept this plan?'), expect: n(3) },
   { name: 'seed-before', sections: PL, q: carry(SS, 'How many plans did you write before this one?'), expect: a => /(^|\D)0(\D|$)|none|zero/i.test(a) },
+  { name: 'seed-mid-wrote', sections: PL, q: carry(SG, 'Did you write this plan? Answer yes or no.'), expect: NO },
+  { name: 'seed-mid-why', sections: PL, q: carry(SG, 'What reason was given with this plan?'), expect: /their hv beat li/i },
 ];
 
 const SD = `S plan 2 set t469; kept 5 calls; replaced 1x, last why: their hv beats li; all steps done t624
@@ -311,4 +315,15 @@ export const done = [
   { name: 'd-inforce', sections: ['Plan'], q: carry(SD, 'Is any step of your plan in force? Answer yes or no.'), expect: NO },
   { name: 'd-when', sections: ['Plan'], q: carry(SD, 'At what cycle were all steps of your plan done?'), expect: n(624) },
   { name: 'd-steps', sections: ['Plan'], q: carry(SD, 'How many steps does this plan have?'), expect: n(1) },
+];
+
+// Lock: commander12, only the strategist writes the plan.
+const SL = `S plan 2 set t640; given to you, why: their hv beat li
+S1 done t700: train 2 hv | hv>=2 by t900: MET t700
+S2 now since t700: army of 4 | army>=4 by t1100: pending (max 3, t760)`;
+export const lock = [
+  { name: 'lock-wrote', sections: PL, q: carry(SL, 'Did you write this plan? Answer yes or no.'), expect: NO },
+  { name: 'lock-now', sections: PL, q: carry(SL, 'Which step is in force?'), expect: n(2) },
+  { name: 'lock-change', sections: PL, q: carry(SL, 'Can you change this plan? Answer yes or no.'), expect: NO },
+  { name: 'lock-why', sections: PL, q: carry(SL, 'What reason was given with this plan?'), expect: /their hv beat li/i },
 ];

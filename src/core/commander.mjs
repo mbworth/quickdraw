@@ -70,7 +70,7 @@ const okSteps = s => {
   return out.every(Boolean) ? out : null;
 };
 const OPS_NAME = { met: 'MET', missed: 'MISSED' };
-// seed {steps}: plan 1 starts in force at t0, given to the model before its first call.
+// seed {steps}: plan 1 starts in force at t0, given to the model before its first call. set(..., {given}): a plan the model did not write.
 export function planTracker(measure, { seed = null } = {}) {
   let plan = null, planN = 0, kept = 0, at = null;
   const holds = s => s.best !== null && OPS[s.until.op](s.best, s.until.value);
@@ -97,11 +97,11 @@ export function planTracker(measure, { seed = null } = {}) {
   const seeded = okSteps(seed?.steps);
   if (seeded) { plan = fresh(seeded, 0, null, true); planN = 1; begin(0, 0); }
   return {
-    set(steps, why = null) {
+    set(steps, why = null, { given = false } = {}) {
       const ns = okSteps(steps);
       if (!ns) { if (plan) kept++; return; }
       const old = nowOf(), setT = at ?? 0;
-      plan = fresh(ns, setT, why);
+      plan = fresh(ns, setT, why, given);
       planN++; kept = 0;
       const s1 = plan.steps[0];
       if (old && old.until.metric === s1.until.metric && old.until.op === s1.until.op) {
@@ -117,6 +117,7 @@ export function planTracker(measure, { seed = null } = {}) {
       for (let s = nowOf(); s && grade(s, m); s = nowOf()) begin(plan.steps.indexOf(s) + 1, m.cycle);
     },
     current: () => { const s = nowOf(); return s ? { ...s.until, since: s.since } : null; },
+    n: () => planN,
     verdict() {
       if (!plan) return null;
       const s = nowOf();
@@ -125,10 +126,10 @@ export function planTracker(measure, { seed = null } = {}) {
       if (at !== null && at > s.until.by) return { plan: planN, step: i + 1, verdict: 'missed' };
       return i > 0 ? { plan: planN, step: i, verdict: 'met' } : { plan: planN, step: 1, verdict: 'pending' };
     },
-    read() {
+    read({ locked = false } = {}) {   // locked: only the strategist writes the plan, so no kept count
       if (!plan) return 'S none';
       const r = planN - 1, last = plan.steps.at(-1);
-      const head = `S plan ${planN} set t${plan.setT}; kept ${kept} calls${plan.given ? '; given to you at the start' : r > 0 ? `; replaced ${r}x${plan.why ? `, last why: ${plan.why}` : ''}` : plan.why ? `; why: ${plan.why}` : ''}${last.state === 'done' ? `; all steps done t${last.doneT}` : ''}`;
+      const head = `S plan ${planN} set t${plan.setT}${locked ? '' : `; kept ${kept} calls`}${plan.given ? `; given to you${plan.why ? `, why: ${plan.why}` : ''}` : r > 0 ? `; replaced ${r}x${plan.why ? `, last why: ${plan.why}` : ''}` : plan.why ? `; why: ${plan.why}` : ''}${last.state === 'done' ? `; all steps done t${last.doneT}` : ''}`;
       return [head, ...plan.steps.map((s, i) => s.state === 'next' ? `S${i + 1} next: ${s.do} | ${condText(s.until)}`
         : `S${i + 1} ${s.state === 'done' ? `done t${s.doneT}` : `now since t${s.began}`}: ${s.do} | ${condText(s.until)}: ${gradeOf(s)}`)].join('\n');
     },
@@ -159,23 +160,28 @@ export function feedbackLayer({ setSeq = null, sinceN = 0, prev = null, cur = nu
 // this is the first call or everyMs has passed since the last one started. gate 'events' also needs a reason: the first call, an
 // observe.events() entry, the expect turning MET/MISSED, or maxEveryMs since the last start; the reasons ride as an `E` line and
 // summary.why. Its note, usage/cost and a small summary ride out on the first reflex result after it lands. steps: planTracker in place
-// of expectTracker; its S block rides between F and O.
-export function commanderModel({ reflex, decode, commander, params, apply, measure = null, describe = null, observe = null, everyMs = 5000, gate = 'timer', maxEveryMs = 0, steps = false, seed = null, clock = { now: () => Date.now() }, log = () => {} }) {
+// of expectTracker; its S block rides between F and O. strategist {call, everyMs, lock} (steps only): a second serial loop that only writes
+// the plan, first at once, then everyMs after its last start once a reason is pending; an operator's steps read under an older plan drop.
+// lock: operator answers never touch the plan.
+export function commanderModel({ reflex, decode, commander, params, apply, measure = null, describe = null, observe = null, everyMs = 5000, gate = 'timer', maxEveryMs = 0, steps = false, seed = null, strategist = null, clock = { now: () => Date.now() }, log = () => {} }) {
   if (gate !== 'timer' && gate !== 'events') throw new Error(`gate: timer or events, not "${gate}"`);
+  if (strategist && !steps) throw new Error('strategist needs steps');
   let cur = params, inFlight = null, ac = null, seq = 0, reflexN = 0, lastStartT = null, lastPacket = null;
   let note = null, usage = zero(), spend = 0, summary = null;
   let prev = null, setSeq = null, sinceN = 0, differed = 0, last = null, closed = null;   // the F layer's state; closed = the last window that saw decisions
   let pend = [], verdict = null;   // events gate: reasons since the last launch, the last verdict seen
   let lag = null;   // steps mode only: {read, landed} cycles of the newest landed answer
+  let sInFlight = null, sAc = null, sSeq = 0, sLastStartT = null, sPend = [], sSummary = null;   // the strategist's loop
   const track = steps ? planTracker(measure, { seed }) : measure ? expectTracker(measure) : null;
   const safe = fn => { try { return fn(); } catch { return null; } };
+  const locked = !!strategist?.lock, readS = () => track.read({ locked });
   // A set that has seen no decisions yet (the serial loop relaunches on the packet it landed on) says nothing: report the last window that did.
   const feedback = () => feedbackLayer({ ...(sinceN === 0 && closed ? { ...closed, landed: { setSeq, prev, cur } } : { setSeq, sinceN, prev, cur, differed, last }), expect: steps ? null : track?.read() ?? null, lag, at: describe ? safe(() => describe(lastPacket, cur)) : null });
 
   function launch(packet, atN, why = null) {
     const my = new AbortController(), n = ++seq, F = feedback(), O = observe ? safe(() => observe.read(cur, { expect: track?.current() ?? null })) : null;
-    const E = why ? `E ${why.join('; ')}` : null, S = steps ? track.read() : null;
-    const readT = steps ? safe(() => measure(packet).cycle) : null;
+    const E = why ? `E ${why.join('; ')}` : null, S = steps ? readS() : null;
+    const readT = steps ? safe(() => measure(packet).cycle) : null, planN = steps ? track.n() : null;
     const meta = { apiPacketN: atN, feedback: F, ...(S ? { plan: S } : {}), ...(O ? { observe: O } : {}), ...(why ? { why } : {}) };
     ac = my; lastStartT = clock.now();
     const p = (async () => {
@@ -193,7 +199,9 @@ export function commanderModel({ reflex, decode, commander, params, apply, measu
       if (setSeq !== null && sinceN > 0) closed = { setSeq, sinceN, prev, cur: was, differed, last };
       prev = was; setSeq = n; sinceN = 0; differed = 0; last = null;
       if (steps) {
-        track.set(input.steps, input.why);
+        const stale = !locked && Array.isArray(input.steps) && planN !== track.n();
+        if (stale) meta.staleSteps = true;
+        if (!locked) track.set(stale ? null : input.steps, input.why);
         const landedT = safe(() => measure(lastPacket).cycle);
         if (Number.isFinite(readT) && Number.isFinite(landedT)) lag = { read: readT, landed: landedT };
       } else track?.set(input.expect, input.plan);
@@ -203,22 +211,47 @@ export function commanderModel({ reflex, decode, commander, params, apply, measu
     inFlight = p;
   }
 
+  function launchStrategist(packet, why) {
+    const my = new AbortController(), n = ++sSeq, S = readS(), O = observe ? safe(() => observe.read(cur, { expect: track.current() })) : null;
+    const readT = safe(() => measure(packet).cycle), base = { seq: n, readT, plan: S };
+    sAc = my; sLastStartT = clock.now();
+    sInFlight = (async () => {
+      let res;
+      try { res = await strategist.call({ packet: [packet, S, O, `E ${why.join('; ')}`].filter(Boolean).join('\n'), signal: my.signal }); }
+      catch (err) { sSummary = { ...base, input: null, stop: 'error:unknown', error: String(err?.message || err), latencyMs: 0, landedT: safe(() => measure(lastPacket).cycle) }; log('strategist failed', err); return; }
+      add(usage, res.usage); spend += res.cost || 0;
+      const input = answered(res.stop) ? toolInput(res) : null;
+      if (input && okSteps(input.steps)) track.set(input.steps, input.why, { given: true });
+      const error = res.error || (answered(res.stop) && !input ? 'no tool_use' : undefined);
+      sSummary = { ...base, input, stop: res.stop, latencyMs: res.latencyMs, ...(error ? { error } : {}), landedT: safe(() => measure(lastPacket).cycle) };
+    })().finally(() => { if (sAc === my) { sAc = null; sInFlight = null; } });
+  }
+
   async function callModel({ packet, signal, onOrders = null } = {}) {
     const t0 = clock.now(), n = ++reflexN;
     track?.see(packet);
     observe?.see(packet, cur);
     lastPacket = packet;
-    if (signal) signal.addEventListener('abort', () => ac?.abort(), { once: true });
+    if (signal) signal.addEventListener('abort', () => { ac?.abort(); sAc?.abort(); }, { once: true });
     const due = !inFlight && (lastStartT === null || clock.now() - lastStartT >= everyMs);
-    if (gate === 'timer') { if (due) launch(packet, n); }
-    else {
-      pend.push(...(safe(() => observe?.events?.()) ?? []));
-      if (steps) { const v = track.verdict(), r = stepReason(verdict, v); if (r) pend.push(r); verdict = v; }
+    const reasons = [];   // gathered once: events() drains
+    if (gate === 'events' || strategist) {
+      reasons.push(...(safe(() => observe?.events?.()) ?? []));
+      if (steps) { const v = track.verdict(), r = stepReason(verdict, v); if (r) reasons.push(r); verdict = v; }
       else {
         const v = track?.read().grade.verdict ?? null;
-        if (v !== verdict && (v === 'met' || v === 'missed')) pend.push(`expect ${v.toUpperCase()}`);
+        if (v !== verdict && (v === 'met' || v === 'missed')) reasons.push(`expect ${v.toUpperCase()}`);
         verdict = v;
       }
+    }
+    if (strategist) {
+      sPend.push(...reasons);
+      const first = sLastStartT === null;
+      if (!sInFlight && (first || (sPend.length && clock.now() - sLastStartT >= (strategist.everyMs ?? 30000)))) { const why = [...(first ? ['first call'] : []), ...sPend]; sPend = []; launchStrategist(packet, why); }
+    }
+    if (gate === 'timer') { if (due) launch(packet, n); }
+    else {
+      pend.push(...reasons);
       if (due) {
         const why = [lastStartT === null ? 'first call' : null, ...pend, lastStartT !== null && maxEveryMs > 0 && clock.now() - lastStartT >= maxEveryMs ? `heartbeat ${Math.round(maxEveryMs / 1000)} s` : null].filter(Boolean);
         if (why.length) { pend = []; launch(packet, n, why); }
@@ -238,9 +271,9 @@ export function commanderModel({ reflex, decode, commander, params, apply, measu
       if (d.orders.length && onOrders) onOrders(d.orders);
       const out = {
         act: d.act, orders: d.orders, note, usage, stop: 'tool_use', latencyMs: clock.now() - t0, cost: spend,
-        raw: { o, why, params: cur, ...(summary ? { commander: summary } : {}) }, streamed: onOrders ? d.orders.length : 0,
+        raw: { o, why, params: cur, ...(summary ? { commander: summary } : {}), ...(sSummary ? { strategist: sSummary } : {}) }, streamed: onOrders ? d.orders.length : 0,
       };
-      note = null; usage = zero(); spend = 0; summary = null;   // each rides out exactly once
+      note = null; usage = zero(); spend = 0; summary = null; sSummary = null;   // each rides out exactly once
       return out;
     } catch (err) {
       return { act: false, orders: [], note: null, usage: zero(), stop: 'error:read', error: String(err?.message || err), latencyMs: clock.now() - t0, cost: 0 };
@@ -248,6 +281,6 @@ export function commanderModel({ reflex, decode, commander, params, apply, measu
   }
   callModel.params = () => cur;
   callModel.feedback = feedback;
-  callModel.close = () => { ac?.abort(); return inFlight || Promise.resolve(); };
+  callModel.close = () => { ac?.abort(); sAc?.abort(); return Promise.all([inFlight, sInFlight]).then(() => {}); };
   return callModel;
 }

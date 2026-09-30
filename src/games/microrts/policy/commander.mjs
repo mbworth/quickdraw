@@ -99,6 +99,21 @@ export const toolSteps = Object.freeze({
 
 export const toolStepsDescription = 'Set the plan the reflex plays until your next call: the parameter set behind rules 1-7, plus an optional push/post target, and your steps, kept or replaced.';
 
+// --strategist-model: the plan alone, no levers.
+export const toolStrategist = Object.freeze({
+  type: 'object',
+  properties: { steps: toolSteps.properties.steps, why: toolSteps.properties.why },
+  required: ['steps', 'why'],
+  additionalProperties: false,
+});
+
+export const toolStrategistDescription = 'Keep or replace the plan the operator reads in S.';
+
+// --strategist-lock: the operator sets levers only.
+export const toolLevers = Object.freeze({ ...tool, properties: levers, required: tool.required.filter(k => k !== 'plan' && k !== 'expect') });
+
+export const toolLeversDescription = 'Set the parameter set behind rules 1-7 the reflex plays until your next call, plus an optional push/post target.';
+
 const clamp = (v, lo, hi, fallback) => (Number.isInteger(v) ? Math.min(hi, Math.max(lo, v)) : fallback);
 const parseTarget = (v, fallback) => {
   if (v === null) return null;

@@ -182,10 +182,10 @@ test('commanderModel steps, gate events: step MET, step MISSED and plan done rid
 test('planTracker seed: plan 1 in force at t0, exact header, keeps count, replacement header, invalid ignored', () => {
   const seed = { steps: [{ do: 'hold', until: u('army', '>=', 3, 800) }, { do: 'push', until: u('foe_br', '==', 0, 1500) }] };
   const t = planTracker(measure, { seed });
-  assert.equal(t.read(), 'S plan 1 set t0; kept 0 calls; given to you at the start\nS1 now since t0: hold | army>=3 by t800: pending\nS2 next: push | foe_br==0 by t1500');
+  assert.equal(t.read(), 'S plan 1 set t0; kept 0 calls; given to you\nS1 now since t0: hold | army>=3 by t800: pending\nS2 next: push | foe_br==0 by t1500');
   t.set(null); t.set(null);
   t.see('100 1 1');
-  assert.equal(t.read().split('\n')[0], 'S plan 1 set t0; kept 2 calls; given to you at the start');
+  assert.equal(t.read().split('\n')[0], 'S plan 1 set t0; kept 2 calls; given to you');
   t.set([{ do: 'kill br', until: u('foe_br', '==', 0, 500) }], 'new');
   assert.equal(t.read().split('\n')[0], 'S plan 2 set t100; kept 0 calls; replaced 1x, last why: new');
   assert.equal(planTracker(measure, { seed: { steps: [{ do: 'x' }] } }).read(), 'S none');
@@ -196,5 +196,121 @@ test('commanderModel steps+seed: the first packet carries the seed S block', asy
   const seed = { steps: [{ do: 'hold', until: u('army', '>=', 3, 800) }] };
   const { callModel, calls } = mkS({ seed });
   await callModel({ packet: '100 0 1' });
-  assert.equal(calls[0].packet, '100 0 1\nF none\nS plan 1 set t0; kept 0 calls; given to you at the start\nS1 now since t0: hold | army>=3 by t800: pending (max 0, t100)\nO reach: army');
+  assert.equal(calls[0].packet, '100 0 1\nF none\nS plan 1 set t0; kept 0 calls; given to you\nS1 now since t0: hold | army>=3 by t800: pending (max 0, t100)\nO reach: army');
+});
+
+test('planTracker: a given plan with a why reads given to you, why; n() is the plan number', () => {
+  const t = planTracker(measure);
+  assert.equal(t.n(), 0);
+  t.see('900 1 1');
+  t.set([{ do: 'mass hv', until: u('army', '>=', 3, 1200) }], 'their hv beat li', { given: true });
+  t.set(null);
+  assert.equal(t.read().split('\n')[0], 'S plan 1 set t900; kept 1 calls; given to you, why: their hv beat li');
+  assert.equal(t.n(), 1);
+});
+
+const cost = (input, c = 0.01) => ({ ...answer(input), usage: { input_tokens: 10, cache_creation_input_tokens: 0, cache_read_input_tokens: 0, output_tokens: 2 }, cost: c });
+const mkT = (over = {}) => { const st = fake(), r = mkS({ strategist: { call: st.fn, everyMs: 30000 }, ...over }); return { ...r, scalls: st.calls }; };
+
+test('strategist: first call at once, then only after everyMs with a reason pending; packet is packet, S, O, E', async () => {
+  const q = [];
+  const { callModel, clock, scalls } = mkT({ observe: { see() {}, read: () => 'O x', events: () => q.splice(0) } });
+  await callModel({ packet: '100 0 1' });
+  assert.equal(scalls[0].packet, '100 0 1\nS none\nO x\nE first call');
+  scalls[0].resolve(cost({ steps: null, why: null }));
+  await clock.advance(40000);
+  await callModel({ packet: '200 0 1' });
+  assert.equal(scalls.length, 1);   // no reason
+  q.push('gone: their br#25 gone t250');
+  await callModel({ packet: '250 0 1' });
+  assert.equal(scalls.length, 2);
+  assert.match(scalls[1].packet, /\nE gone: their br#25 gone t250$/);
+  q.push('home: x');
+  await clock.advance(40000);
+  await callModel({ packet: '300 0 1' });   // in flight: waits
+  assert.equal(scalls.length, 2);
+  scalls[1].resolve(cost({ steps: null, why: null }));
+  await clock.advance(10);
+  await callModel({ packet: '310 0 1' });
+  assert.match(scalls[2].packet, /\nE home: x$/);
+  await callModel.close();
+});
+
+test('strategist: a valid plan is given, rides out once as raw.strategist with its cost summed; null does not bump kept', async () => {
+  const { callModel, clock, calls, scalls } = mkT();
+  await callModel({ packet: '100 0 1' });
+  scalls[0].resolve(cost({ steps: THREE.slice(0, 1), why: 'their hv beat li' }, 0.05));
+  calls[0].resolve(cost({ push: 2, steps: null, why: null }, 0.01));
+  await clock.advance(10);
+  const r = await callModel({ packet: '150 1 1' });
+  assert.equal(r.cost, 0.060000000000000005);
+  assert.equal(r.usage.input_tokens, 20);
+  assert.deepEqual(r.raw.strategist, { seq: 1, readT: 100, plan: 'S none', input: { steps: THREE.slice(0, 1), why: 'their hv beat li' }, stop: 'tool_use', latencyMs: 5, landedT: 100 });
+  const r2 = await callModel({ packet: '160 1 1' });
+  assert.equal(r2.raw.strategist, undefined);
+  await clock.advance(5000);
+  await callModel({ packet: '170 1 1' });
+  assert.match(calls[1].packet, /\nS plan 1 set t100; kept 1 calls; given to you, why: their hv beat li\n/);   // the operator's null landed after
+  await callModel.close();
+});
+
+test('strategist: operator steps read under an older plan drop (staleSteps), levers still apply', async () => {
+  const { callModel, clock, calls, scalls } = mkT();
+  await callModel({ packet: '100 0 1' });
+  scalls[0].resolve(cost({ steps: THREE.slice(0, 1), why: 'given' }));
+  await clock.advance(10);
+  await callModel({ packet: '110 0 1' });
+  calls[0].resolve(cost({ push: 7, steps: [{ do: 'mine', until: u('army', '>=', 9, 2000) }], why: 'mine' }));
+  await clock.advance(10);
+  const r = await callModel({ packet: '120 0 1' });
+  assert.equal(r.raw.commander.staleSteps, true);
+  assert.deepEqual(callModel.params(), { push: 7 });
+  await clock.advance(5000);
+  await callModel({ packet: '130 0 1' });
+  assert.match(calls[1].packet, /\nS plan 1 set t100; kept 1 calls; given to you, why: given\n/);
+  calls[1].resolve(cost({ push: 7, steps: [{ do: 'mine', until: u('army', '>=', 9, 2000) }], why: 'mine' }));
+  await clock.advance(10);
+  const r2 = await callModel({ packet: '140 0 1' });
+  assert.equal(r2.raw.commander.staleSteps, undefined);
+  await clock.advance(5000);
+  await callModel({ packet: '150 0 1' });
+  assert.match(calls[2].packet, /\nS plan 2 set t130; kept 0 calls; replaced 1x, last why: mine\n/);
+  await callModel.close();
+});
+
+test('strategist: close aborts its call; steps required; no strategist leaves events() undrained under gate timer', async () => {
+  const { callModel, scalls } = mkT();
+  await callModel({ packet: '100 0 1' });
+  await callModel.close();
+  assert.equal(scalls.length, 1);
+  assert.throws(() => mkS({ steps: false, strategist: { call: async () => ({}) } }), /strategist needs steps/);
+  let drained = 0;
+  const { callModel: plain } = mkS({ observe: { see() {}, read: () => null, events: () => { drained++; return []; } } });
+  await plain({ packet: '100 0 1' });
+  assert.equal(drained, 0);
+  await plain.close();
+});
+
+test('planTracker read locked: header drops kept', () => {
+  const t = planTracker(measure);
+  t.see('900 1 1');
+  t.set([{ do: 'mass hv', until: u('army', '>=', 3, 1200) }], 'their hv beat li', { given: true });
+  assert.equal(t.read({ locked: true }).split('\n')[0], 'S plan 1 set t900; given to you, why: their hv beat li');
+});
+
+test('strategist lock: operator steps never touch the plan or kept; lag still recorded', async () => {
+  const st = fake(), { callModel, clock, calls } = mkS({ strategist: { call: st.fn, everyMs: 30000, lock: true } });
+  await callModel({ packet: '100 0 1' });
+  st.calls[0].resolve(cost({ steps: THREE.slice(0, 1), why: 'given' }));
+  await clock.advance(10);
+  await callModel({ packet: '110 0 1' });
+  calls[0].resolve(cost({ push: 7, steps: [{ do: 'mine', until: u('army', '>=', 9, 2000) }], why: 'mine' }));
+  await clock.advance(10);
+  const r = await callModel({ packet: '120 0 1' });
+  assert.equal(r.raw.commander.staleSteps, undefined);
+  assert.deepEqual(callModel.params(), { push: 7 });
+  await clock.advance(5000);
+  await callModel({ packet: '130 0 1' });
+  assert.match(calls[1].packet, /answer read t100, landed t110.*\nS plan 1 set t100; given to you, why: given\nS1 now since t100: hold post, guard 1 \| army>=3 by t800: pending/);
+  await callModel.close();
 });
