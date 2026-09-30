@@ -327,3 +327,16 @@ export const lock = [
   { name: 'lock-change', sections: PL, q: carry(SL, 'Can you change this plan? Answer yes or no.'), expect: NO },
   { name: 'lock-why', sections: PL, q: carry(SL, 'What reason was given with this plan?'), expect: /their hv beat li/i },
 ];
+
+// Strategist: strategist03, a seed given, then its own plan.
+const SGV = `S plan 1 set t0; given to you, why: they are expected to train Heavy; Heavy beats Light
+S1 done t249: build a barracks | br>=1 by t300: MET t249
+S2 now since t249: train Heavy | hv>=2 by t900: pending (max 1, t400)`;
+const SY = `S plan 2 set t640; yours, why: their rg outrange li
+S1 now since t640: train 2 hv | hv>=2 by t900: pending (max 0, t640)`;
+export const strat = [
+  { name: 'strat-given-wrote', sections: PL, q: carry(SGV, 'Did you write this plan? Answer yes or no.'), expect: NO },
+  { name: 'strat-yours-wrote', sections: PL, q: carry(SY, 'Did you write this plan? Answer yes or no.'), expect: YES },
+  { name: 'strat-given-why', sections: PL, q: carry(SGV, 'What reason was given with this plan?'), expect: /expected to train Heavy/i },
+  { name: 'strat-given-now', sections: PL, q: carry(SGV, 'Which step is in force?'), expect: n(2) },
+];

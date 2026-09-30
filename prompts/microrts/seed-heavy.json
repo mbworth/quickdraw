@@ -1,4 +1,5 @@
-{ "steps": [
+{ "why": "they are expected to train Heavy, and Heavy beats Light",
+  "steps": [
   { "do": "build a barracks", "until": { "metric": "br", "op": ">=", "value": 1, "by": 300 } },
   { "do": "train Heavy", "until": { "metric": "hv", "op": ">=", "value": 2, "by": 900 } },
   { "do": "build an army of 4", "until": { "metric": "army", "op": ">=", "value": 4, "by": 1300 } },

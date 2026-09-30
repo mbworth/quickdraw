@@ -203,7 +203,7 @@ test('planTracker: a given plan with a why reads given to you, why; n() is the p
   const t = planTracker(measure);
   assert.equal(t.n(), 0);
   t.see('900 1 1');
-  t.set([{ do: 'mass hv', until: u('army', '>=', 3, 1200) }], 'their hv beat li', { given: true });
+  t.set([{ do: 'mass hv', until: u('army', '>=', 3, 1200) }], 'their hv beat li', { author: 'strategist' });
   t.set(null);
   assert.equal(t.read().split('\n')[0], 'S plan 1 set t900; kept 1 calls; given to you, why: their hv beat li');
   assert.equal(t.n(), 1);
@@ -294,7 +294,7 @@ test('strategist: close aborts its call; steps required; no strategist leaves ev
 test('planTracker read locked: header drops kept', () => {
   const t = planTracker(measure);
   t.see('900 1 1');
-  t.set([{ do: 'mass hv', until: u('army', '>=', 3, 1200) }], 'their hv beat li', { given: true });
+  t.set([{ do: 'mass hv', until: u('army', '>=', 3, 1200) }], 'their hv beat li', { author: 'strategist' });
   assert.equal(t.read({ locked: true }).split('\n')[0], 'S plan 1 set t900; given to you, why: their hv beat li');
 });
 
@@ -312,5 +312,33 @@ test('strategist lock: operator steps never touch the plan or kept; lag still re
   await clock.advance(5000);
   await callModel({ packet: '130 0 1' });
   assert.match(calls[1].packet, /answer read t100, landed t110.*\nS plan 1 set t100; given to you, why: given\nS1 now since t100: hold post, guard 1 \| army>=3 by t800: pending/);
+  await callModel.close();
+});
+
+test('planTracker viewer: headers by author; operator view unchanged; seed why', () => {
+  const seed = { why: 'they train hv', steps: [{ do: 'hold', until: u('army', '>=', 3, 800) }] };
+  const t = planTracker(measure, { seed }), h = o => t.read(o).split('\n')[0];
+  assert.equal(h(), 'S plan 1 set t0; kept 0 calls; given to you, why: they train hv');
+  assert.equal(h({ viewer: 'strategist' }), 'S plan 1 set t0; kept 0 calls; given to you, why: they train hv');
+  assert.equal(h({ viewer: 'strategist', locked: true }), 'S plan 1 set t0; given to you, why: they train hv');
+  t.see('100 1 1');
+  t.set([{ do: 'mass hv', until: u('hv', '>=', 3, 1200) }], 'hv beat li', { author: 'strategist' });
+  assert.equal(h({ viewer: 'strategist' }), 'S plan 2 set t100; kept 0 calls; yours, why: hv beat li');
+  assert.equal(h({ locked: true }), 'S plan 2 set t100; given to you, why: hv beat li');
+  t.set([{ do: 'mine', until: u('bank', '>=', 5, 1500) }], 'save');
+  assert.equal(h({ viewer: 'strategist' }), "S plan 3 set t100; kept 0 calls; the operator's, why: save");
+  assert.equal(h(), 'S plan 3 set t100; kept 0 calls; replaced 2x, last why: save');
+});
+
+test('strategist with a seed: no first call; launches on the first reason, packet heads the seed as given', async () => {
+  const q = [], seed = { why: 'they train hv', steps: [{ do: 'hold', until: u('army', '>=', 3, 800) }] };
+  const { callModel, scalls } = mkT({ seed, observe: { see() {}, read: () => null, events: () => q.splice(0) } });
+  await callModel({ packet: '100 0 1' });
+  await callModel({ packet: '110 0 1' });
+  assert.equal(scalls.length, 0);
+  q.push('gone: their br#25 gone t120');
+  await callModel({ packet: '120 0 1' });
+  assert.equal(scalls.length, 1);
+  assert.equal(scalls[0].packet, '120 0 1\nS plan 1 set t0; kept 0 calls; given to you, why: they train hv\nS1 now since t0: hold | army>=3 by t800: pending (max 0, t100)\nE gone: their br#25 gone t120');
   await callModel.close();
 });

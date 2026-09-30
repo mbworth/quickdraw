@@ -70,7 +70,7 @@ const okSteps = s => {
   return out.every(Boolean) ? out : null;
 };
 const OPS_NAME = { met: 'MET', missed: 'MISSED' };
-// seed {steps}: plan 1 starts in force at t0, given to the model before its first call. set(..., {given}): a plan the model did not write.
+// seed {steps, why}: plan 1 starts in force at t0. set(..., {author}): 'operator' | 'strategist'; read({viewer}) heads the plan by who wrote it.
 export function planTracker(measure, { seed = null } = {}) {
   let plan = null, planN = 0, kept = 0, at = null;
   const holds = s => s.best !== null && OPS[s.until.op](s.best, s.until.value);
@@ -93,15 +93,15 @@ export function planTracker(measure, { seed = null } = {}) {
     const seen = s.best === null ? '' : ` (${EXT[s.until.op]} ${s.best}${missed ? '' : `, t${s.bestT}`})`;
     return `${missed ? 'MISSED' : 'pending'}${seen}${tail}`;
   };
-  const fresh = (ns, setT, why, given = false) => ({ steps: ns.map(x => ({ ...x, state: 'next', began: null, since: null, doneT: null, best: null, bestT: null, moved: 0, values: [x.until.value] })), setT, given, why: typeof why === 'string' && why.trim() ? why.trim().slice(0, 80) : null });
+  const fresh = (ns, setT, why, author) => ({ steps: ns.map(x => ({ ...x, state: 'next', began: null, since: null, doneT: null, best: null, bestT: null, moved: 0, values: [x.until.value] })), setT, author, why: typeof why === 'string' && why.trim() ? why.trim().slice(0, 80) : null });
   const seeded = okSteps(seed?.steps);
-  if (seeded) { plan = fresh(seeded, 0, null, true); planN = 1; begin(0, 0); }
+  if (seeded) { plan = fresh(seeded, 0, seed.why, 'seed'); planN = 1; begin(0, 0); }
   return {
-    set(steps, why = null, { given = false } = {}) {
+    set(steps, why = null, { author = 'operator' } = {}) {
       const ns = okSteps(steps);
       if (!ns) { if (plan) kept++; return; }
       const old = nowOf(), setT = at ?? 0;
-      plan = fresh(ns, setT, why, given);
+      plan = fresh(ns, setT, why, author);
       planN++; kept = 0;
       const s1 = plan.steps[0];
       if (old && old.until.metric === s1.until.metric && old.until.op === s1.until.op) {
@@ -126,10 +126,12 @@ export function planTracker(measure, { seed = null } = {}) {
       if (at !== null && at > s.until.by) return { plan: planN, step: i + 1, verdict: 'missed' };
       return i > 0 ? { plan: planN, step: i, verdict: 'met' } : { plan: planN, step: 1, verdict: 'pending' };
     },
-    read({ locked = false } = {}) {   // locked: only the strategist writes the plan, so no kept count
+    read({ locked = false, viewer = 'operator' } = {}) {   // locked: only the strategist writes the plan, so no kept count
       if (!plan) return 'S none';
-      const r = planN - 1, last = plan.steps.at(-1);
-      const head = `S plan ${planN} set t${plan.setT}${locked ? '' : `; kept ${kept} calls`}${plan.given ? `; given to you${plan.why ? `, why: ${plan.why}` : ''}` : r > 0 ? `; replaced ${r}x${plan.why ? `, last why: ${plan.why}` : ''}` : plan.why ? `; why: ${plan.why}` : ''}${last.state === 'done' ? `; all steps done t${last.doneT}` : ''}`;
+      const r = planN - 1, last = plan.steps.at(-1), w = plan.why ? `, why: ${plan.why}` : '';
+      const who = viewer === 'strategist' ? `; ${{ strategist: 'yours', seed: 'given to you', operator: "the operator's" }[plan.author]}${w}`
+        : plan.author !== 'operator' ? `; given to you${w}` : r > 0 ? `; replaced ${r}x${plan.why ? `, last why: ${plan.why}` : ''}` : plan.why ? `; why: ${plan.why}` : '';
+      const head = `S plan ${planN} set t${plan.setT}${locked ? '' : `; kept ${kept} calls`}${who}${last.state === 'done' ? `; all steps done t${last.doneT}` : ''}`;
       return [head, ...plan.steps.map((s, i) => s.state === 'next' ? `S${i + 1} next: ${s.do} | ${condText(s.until)}`
         : `S${i + 1} ${s.state === 'done' ? `done t${s.doneT}` : `now since t${s.began}`}: ${s.do} | ${condText(s.until)}: ${gradeOf(s)}`)].join('\n');
     },
@@ -161,7 +163,7 @@ export function feedbackLayer({ setSeq = null, sinceN = 0, prev = null, cur = nu
 // observe.events() entry, the expect turning MET/MISSED, or maxEveryMs since the last start; the reasons ride as an `E` line and
 // summary.why. Its note, usage/cost and a small summary ride out on the first reflex result after it lands. steps: planTracker in place
 // of expectTracker; its S block rides between F and O. strategist {call, everyMs, lock} (steps only): a second serial loop that only writes
-// the plan, first at once, then everyMs after its last start once a reason is pending; an operator's steps read under an older plan drop.
+// the plan, first at once (with a seed in force, on the first reason), then everyMs after its last start once a reason is pending; an operator's steps read under an older plan drop.
 // lock: operator answers never touch the plan.
 export function commanderModel({ reflex, decode, commander, params, apply, measure = null, describe = null, observe = null, everyMs = 5000, gate = 'timer', maxEveryMs = 0, steps = false, seed = null, strategist = null, clock = { now: () => Date.now() }, log = () => {} }) {
   if (gate !== 'timer' && gate !== 'events') throw new Error(`gate: timer or events, not "${gate}"`);
@@ -174,7 +176,7 @@ export function commanderModel({ reflex, decode, commander, params, apply, measu
   let sInFlight = null, sAc = null, sSeq = 0, sLastStartT = null, sPend = [], sSummary = null;   // the strategist's loop
   const track = steps ? planTracker(measure, { seed }) : measure ? expectTracker(measure) : null;
   const safe = fn => { try { return fn(); } catch { return null; } };
-  const locked = !!strategist?.lock, readS = () => track.read({ locked });
+  const locked = !!strategist?.lock, readS = () => track.read({ locked }), seeded = steps && track.n() > 0;
   // A set that has seen no decisions yet (the serial loop relaunches on the packet it landed on) says nothing: report the last window that did.
   const feedback = () => feedbackLayer({ ...(sinceN === 0 && closed ? { ...closed, landed: { setSeq, prev, cur } } : { setSeq, sinceN, prev, cur, differed, last }), expect: steps ? null : track?.read() ?? null, lag, at: describe ? safe(() => describe(lastPacket, cur)) : null });
 
@@ -212,7 +214,7 @@ export function commanderModel({ reflex, decode, commander, params, apply, measu
   }
 
   function launchStrategist(packet, why) {
-    const my = new AbortController(), n = ++sSeq, S = readS(), O = observe ? safe(() => observe.read(cur, { expect: track.current() })) : null;
+    const my = new AbortController(), n = ++sSeq, S = track.read({ locked, viewer: 'strategist' }), O = observe ? safe(() => observe.read(cur, { expect: track.current() })) : null;
     const readT = safe(() => measure(packet).cycle), base = { seq: n, readT, plan: S };
     sAc = my; sLastStartT = clock.now();
     sInFlight = (async () => {
@@ -221,7 +223,7 @@ export function commanderModel({ reflex, decode, commander, params, apply, measu
       catch (err) { sSummary = { ...base, input: null, stop: 'error:unknown', error: String(err?.message || err), latencyMs: 0, landedT: safe(() => measure(lastPacket).cycle) }; log('strategist failed', err); return; }
       add(usage, res.usage); spend += res.cost || 0;
       const input = answered(res.stop) ? toolInput(res) : null;
-      if (input && okSteps(input.steps)) track.set(input.steps, input.why, { given: true });
+      if (input && okSteps(input.steps)) track.set(input.steps, input.why, { author: 'strategist' });
       const error = res.error || (answered(res.stop) && !input ? 'no tool_use' : undefined);
       sSummary = { ...base, input, stop: res.stop, latencyMs: res.latencyMs, ...(error ? { error } : {}), landedT: safe(() => measure(lastPacket).cycle) };
     })().finally(() => { if (sAc === my) { sAc = null; sInFlight = null; } });
@@ -246,8 +248,8 @@ export function commanderModel({ reflex, decode, commander, params, apply, measu
     }
     if (strategist) {
       sPend.push(...reasons);
-      const first = sLastStartT === null;
-      if (!sInFlight && (first || (sPend.length && clock.now() - sLastStartT >= (strategist.everyMs ?? 30000)))) { const why = [...(first ? ['first call'] : []), ...sPend]; sPend = []; launchStrategist(packet, why); }
+      const first = sLastStartT === null && !seeded;
+      if (!sInFlight && (first || (sPend.length && (sLastStartT === null || clock.now() - sLastStartT >= (strategist.everyMs ?? 30000))))) { const why = [...(first ? ['first call'] : []), ...sPend]; sPend = []; launchStrategist(packet, why); }
     }
     if (gate === 'timer') { if (due) launch(packet, n); }
     else {
